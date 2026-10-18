@@ -28,8 +28,10 @@
   --step-name: 12px;
   --step-title: 15px;
 
-  --rail: 13.5rem;
-  --rail-2: 15rem;
+  /* The sidebar adapts to the window instead of being a fixed column, so the
+     transcript keeps the space it needs on a laptop and gains more on a wide
+     display. */
+  --rail: clamp(11rem, 17vw, 17rem);
   --pad: 14px;
   --rule-w: 1px;
 }
@@ -302,20 +304,30 @@ body::before {
 
 .body {
   display: grid;
-  /* workspaces | panes | transcript */
-  grid-template-columns: var(--rail) var(--rail-2) minmax(0, 1fr);
+  /* sidebar | content */
+  grid-template-columns: var(--rail) minmax(0, 1fr);
   min-height: 0;
 }
 
 /* ---------------------------------------------------------------- ledger */
 
-.rail,
-.panes {
-  display: flex;
-  flex-direction: column;
+.sidebar {
+  display: grid;
+  /* spaces on top, agents underneath, each scrolling on its own */
+  grid-template-rows: minmax(5rem, 0.4fr) minmax(0, 1fr);
   min-height: 0;
   border-right: var(--rule-w) solid var(--rule-strong);
   background: var(--surface);
+}
+
+.side {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.side + .side {
+  border-top: var(--rule-w) solid var(--rule-strong);
 }
 
 .col__head {
@@ -431,9 +443,9 @@ body::before {
 .row {
   position: relative;
   display: grid;
-  grid-template-columns: 9px 5.5rem minmax(0, 1fr);
+  grid-template-columns: 9px 4.5rem minmax(0, 1fr) auto;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   width: 100%;
   padding: 3px 9px 3px 4px;
   text-align: left;
@@ -1118,6 +1130,39 @@ body::before {
   background: var(--surface);
 }
 
+/* A level header: the first level toggles, the second is a plain label. */
+.sheet__level {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 12px 5px;
+  border-bottom: var(--rule-w) solid var(--rule);
+  font-family: var(--font-label);
+  font-size: var(--step-micro);
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  text-align: left;
+}
+
+.sheet__level--toggle:hover {
+  color: var(--ink);
+  background: var(--rule);
+}
+
+.sheet__level-current {
+  margin-left: auto;
+  letter-spacing: 0.1em;
+  color: var(--ink-dim);
+  text-transform: none;
+}
+
+.sheet__chevron {
+  color: var(--ink-dim);
+}
+
 .sheet__title {
   font-family: var(--font-label);
   font-size: var(--step-label);
@@ -1160,7 +1205,7 @@ body::before {
 /* Sheet rows carry the workspace, because every workspace is listed here. */
 .srow {
   display: grid;
-  grid-template-columns: 9px 4.5rem minmax(0, 1fr);
+  grid-template-columns: 9px 4rem minmax(0, 1fr);
   align-items: center;
   gap: 7px;
   width: 100%;
@@ -1273,30 +1318,19 @@ body::before {
 
 /* --------------------------------------------------------------- narrow */
 
-/* Two columns: the workspace rail folds into the header picker, and the pane
-   list keeps the space it needs to stay readable. */
-@media (max-width: 1180px) {
+/* The sidebar folds into the header picker once the transcript needs the room;
+   above this the two share the window by proportion. */
+@media (max-width: 900px) {
   .body {
-    grid-template-columns: var(--rail-2) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .rail {
+  .sidebar {
     display: none;
   }
 
   .stage__pick {
     display: block;
-  }
-}
-
-/* One column: the pane list becomes the sheet, so nothing scrolls sideways. */
-@media (max-width: 720px) {
-  .body {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .panes {
-    display: none;
   }
 
   .scope__display {

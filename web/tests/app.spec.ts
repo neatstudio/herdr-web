@@ -101,14 +101,20 @@ async function installBridge(page: Page, options: FixtureOptions = {}): Promise<
 
 /* ------------------------------------------------------------- the two columns */
 
-test("the rail groups workspaces and the pane column groups their panes", async ({ page }) => {
+test("the sidebar splits spaces from agents, and each half groups itself", async ({ page }) => {
   await installBridge(page);
   await page.goto("/");
 
-  // The rail lists workspaces by their own status: blocked first.
-  await expect(page.locator(".rail .group__label-text")).toHaveText(["needs input", "idle"]);
-  // The blocked workspace opens by default, so its panes fill the second column.
-  await expect(page.locator(".panes .row")).toHaveCount(1);
+  // Spaces by their own status: blocked first.
+  await expect(page.locator(".side--spaces .group__label-text")).toHaveText(["needs input", "idle"]);
+  // Agents by pane status, across every space, which is what needs attention.
+  await expect(page.locator(".side--agents .group__label-text")).toHaveText([
+    "needs input",
+    "working",
+    "idle",
+  ]);
+  await expect(page.locator(".side--agents .row")).toHaveCount(3);
+  // The blocked workspace opens by default.
   await expect(page.locator(".stage__status")).toContainText("needs input");
 });
 
@@ -116,30 +122,31 @@ test("the rail shows how much work each workspace holds", async ({ page }) => {
   await installBridge(page);
   await page.goto("/");
 
-  await expect(page.locator(".rail [data-workspace-id]")).toHaveCount(2);
-  await expect(page.locator('.rail [data-workspace-id="w1"]')).toContainText("web");
+  await expect(page.locator(".side--spaces [data-workspace-id]")).toHaveCount(2);
+  await expect(page.locator('.side--spaces [data-workspace-id="w1"]')).toContainText("web");
   // Two panes, both of which herdr recognised as an agent.
-  await expect(page.locator('.rail [data-workspace-id="w1"] .wrow__count')).toHaveText("2p2a");
-  await expect(page.locator('.rail [data-workspace-id="w2"] .wrow__count')).toHaveText("1p");
+  await expect(page.locator('.side--spaces [data-workspace-id="w1"] .wrow__count')).toHaveText("2p2a");
+  await expect(page.locator('.side--spaces [data-workspace-id="w2"] .wrow__count')).toHaveText("1p");
 });
 
-test("opening a workspace fills the pane column and opens one of its panes", async ({ page }) => {
+test("opening a space shows its pane tabs and opens one of its panes", async ({ page }) => {
   await installBridge(page);
   await page.goto("/");
 
-  await page.locator('.rail [data-workspace-id="w1"]').click();
-  await expect(page.locator(".panes .row")).toHaveCount(2);
+  await page.locator('.side--spaces [data-workspace-id="w1"]').click();
+  // The tabs above the transcript are that space's panes.
+  await expect(page.locator('.strip [role="tab"]')).toHaveCount(2);
   // One rule picks it: blocked, else the pane herdr reports as focused.
-  await expect(page.locator('.row[aria-current="true"]')).toHaveAttribute("data-pane-id", "w1:p1");
+  await expect(page.locator('.tab[aria-selected="true"]')).toHaveAttribute("data-pane-id", "w1:p1");
   await expect(page.locator("#herdr-feed-text")).toContainText("plain line");
 });
 
-test("clicking a pane row opens that pane in the third column", async ({ page }) => {
+test("clicking an agent row opens that pane in the transcript", async ({ page }) => {
   await installBridge(page);
   await page.goto("/");
-  await page.locator('.rail [data-workspace-id="w1"]').click();
+  await page.locator('.side--spaces [data-workspace-id="w1"]').click();
 
-  await page.locator('.panes .row[data-pane-id="w1:p1"]').click();
+  await page.locator('.side--agents .row[data-pane-id="w1:p1"]').click();
   await expect(page.locator('.row[aria-current="true"]')).toHaveAttribute("data-pane-id", "w1:p1");
   await expect(page.locator("h1")).toContainText("Deploy Watch");
   await expect(page.locator("h1 .stage__pane-id")).toHaveText("w1:p1");
@@ -148,15 +155,19 @@ test("clicking a pane row opens that pane in the third column", async ({ page })
 test("panes are labelled with their herdr name, with the id kept as context", async ({ page }) => {
   await installBridge(page);
   await page.goto("/");
-  await page.locator('.rail [data-workspace-id="w1"]').click();
+  await page.locator('.side--spaces [data-workspace-id="w1"]').click();
 
   // Rows are grouped by status, so assert on identity rather than position.
-  const named = page.locator('.panes .row[data-pane-id="w1:p1"]');
-  const title = page.locator('.panes .row[data-pane-id="w1:p2"]');
+  const named = page.locator('.side--agents .row[data-pane-id="w1:p1"]');
+  const title = page.locator('.side--agents .row[data-pane-id="w1:p2"]');
   await expect(named).toContainText("Deploy Watch");
   await expect(title).toContainText("vnstat 区间流量合计脚本 - grok");
-  await expect(named.locator(".row__id")).toHaveText("p1");
+  await expect(named.locator(".row__workspace")).toHaveText("web");
   await expect(named).toHaveAttribute("title", "Deploy Watch — w1:p1 (web)");
+  // The tab above the transcript names the same pane, with the id beside it.
+  const tab = page.locator('.tab[data-pane-id="w1:p1"]');
+  await expect(tab).toContainText("Deploy Watch");
+  await expect(tab.locator(".tab__id")).toHaveText("p1");
 });
 
 test("an unnamed pane falls back to its id and never shows it twice", async ({ page }) => {
@@ -165,7 +176,7 @@ test("an unnamed pane falls back to its id and never shows it twice", async ({ p
   });
   await page.goto("/");
 
-  const row = page.locator('.panes .row[data-pane-id="w2:p1"]');
+  const row = page.locator('.side--agents .row[data-pane-id="w2:p1"]');
   await expect(row.locator(".row__agent")).toHaveText("shell");
   await expect(row.locator(".row__name")).toHaveText("w2:p1");
   await expect(row.locator(".row__id")).toHaveCount(0);
@@ -179,39 +190,40 @@ test("an unnamed pane with an agent is identified by its directory, not a repeat
   });
   await page.goto("/");
 
-  const row = page.locator('.panes .row[data-pane-id="w2:p1"]');
+  const row = page.locator('.side--agents .row[data-pane-id="w2:p1"]');
   await expect(row.locator(".row__agent")).toHaveText("agy");
   await expect(row.locator(".row__name")).toHaveText("app");
   await expect(row.locator(".row__id")).toHaveCount(0);
 });
 
-test("the pane filter narrows the open workspace and clears again", async ({ page }) => {
+test("the agent filter narrows the whole sidebar and clears again", async ({ page }) => {
   await installBridge(page);
   await page.goto("/");
-  await page.locator('.rail [data-workspace-id="w1"]').click();
-  await expect(page.locator(".panes .row")).toHaveCount(2);
+  await expect(page.locator(".side--agents .row")).toHaveCount(3);
 
-  const filter = page.locator("#herdr-fleet-filter");
+  // The filter searches every space at once, so a pane in another space is
+  // findable without switching to it first.
+  const filter = page.locator("#herdr-agent-filter");
   await filter.fill("grok");
-  await expect(page.locator(".panes .row")).toHaveCount(1);
-  await expect(page.locator(".panes .col__head")).toContainText("1/2");
+  await expect(page.locator(".side--agents .row")).toHaveCount(1);
+  await expect(page.locator(".side--agents .col__head")).toContainText("1/3");
 
-  await expect(page.locator(".panes .row")).toContainText("grok");
+  await expect(page.locator(".side--agents .row")).toContainText("grok");
 
   // A term that matches nothing says so instead of showing an empty list.
   await filter.fill("nothing-here");
-  await expect(page.locator(".panes .row")).toHaveCount(0);
-  await expect(page.locator(".panes .col__empty")).toContainText("No pane matches");
+  await expect(page.locator(".side--agents .row")).toHaveCount(0);
+  await expect(page.locator(".side--agents .col__empty")).toContainText("No pane matches");
 
-  await page.locator("#herdr-fleet-clear").click();
-  await expect(page.locator(".panes .row")).toHaveCount(2);
-  await expect(page.locator(".panes .col__head")).toContainText("2/2 agents");
+  await page.locator("#herdr-agent-clear").click();
+  await expect(page.locator(".side--agents .row")).toHaveCount(3);
+  await expect(page.locator(".side--agents .col__head")).toContainText("2/3");
 });
 
 test("a workspace with no panes says so and leaves the stage idle", async ({ page }) => {
   await installBridge(page, { panes: [] });
   await page.goto("/");
-  await expect(page.locator(".panes .col__empty")).toContainText("no panes");
+  await expect(page.locator(".side--agents .col__empty")).toContainText("No panes reported");
   await expect(page.locator(".scope__idle")).toContainText("no pane selected");
   await expect(page.locator("#herdr-input")).toHaveCount(0);
 });
@@ -221,18 +233,18 @@ test("a workspace with no panes says so and leaves the stage idle", async ({ pag
 test("right-click opens a menu on a pane row, a rail row and the header name", async ({ page }) => {
   await installBridge(page);
   await page.goto("/");
-  await page.locator('.rail [data-workspace-id="w1"]').click();
-  await page.locator('.panes .row[data-pane-id="w1:p2"]').click();
+  await page.locator('.side--spaces [data-workspace-id="w1"]').click();
+  await page.locator('.side--agents .row[data-pane-id="w1:p2"]').click();
 
   // A pane row: the full pane menu.
-  await page.locator('.panes .row[data-pane-id="w1:p2"]').click({ button: "right" });
+  await page.locator('.side--agents .row[data-pane-id="w1:p2"]').click({ button: "right" });
   await expect(page.locator('[role="menu"]')).toBeVisible();
   await expect(page.locator('[role="menu"]')).toContainText("Copy pane id");
   await page.keyboard.press("Escape");
   await expect(page.locator('[role="menu"]')).toHaveCount(0);
 
   // A rail row: the workspace menu.
-  await page.locator('.rail [data-workspace-id="w1"]').click({ button: "right" });
+  await page.locator('.side--spaces [data-workspace-id="w1"]').click({ button: "right" });
   await expect(page.locator('[role="menu"]')).toContainText("Rename workspace");
   await expect(page.locator('[role="menu"]')).toContainText("Copy workspace id");
   await page.keyboard.press("Escape");
@@ -249,7 +261,7 @@ test("a long press opens the same menus, because touch has no right-click", asyn
   await installBridge(page);
   await page.goto("/");
 
-  const rail = page.locator('.rail [data-workspace-id="w1"]');
+  const rail = page.locator('.side--spaces [data-workspace-id="w1"]');
   const railBox = (await rail.boundingBox()) ?? { x: 0, y: 0, width: 10, height: 10 };
   await rail.dispatchEvent("touchstart", {
     touches: [{ identifier: 1, clientX: railBox.x + 5, clientY: railBox.y + 5 }],
@@ -257,8 +269,8 @@ test("a long press opens the same menus, because touch has no right-click", asyn
   await expect(page.locator('[role="menu"]')).toBeVisible({ timeout: 3000 });
   await page.keyboard.press("Escape");
 
-  await page.locator('.rail [data-workspace-id="w1"]').click();
-  const row = page.locator('.panes .row[data-pane-id="w1:p2"]');
+  await page.locator('.side--spaces [data-workspace-id="w1"]').click();
+  const row = page.locator('.side--agents .row[data-pane-id="w1:p2"]');
   const rowBox = (await row.boundingBox()) ?? { x: 0, y: 0, width: 10, height: 10 };
   const x = rowBox.x + rowBox.width / 2;
   const y = rowBox.y + rowBox.height / 2;
@@ -281,9 +293,9 @@ test("a pane is renamed from its row, and clearing it restores the id", async ({
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
   });
   await page.goto("/");
-  await page.locator('.rail [data-workspace-id="w1"]').click();
+  await page.locator('.side--spaces [data-workspace-id="w1"]').click();
 
-  await page.locator('.panes .row[data-pane-id="w1:p1"]').click({ button: "right" });
+  await page.locator('.side--agents .row[data-pane-id="w1:p1"]').click({ button: "right" });
   await page.getByRole("menuitem", { name: /Rename/ }).click();
   const input = page.locator("#herdr-rename-input");
   await expect(input).toHaveValue("Deploy Watch");
@@ -302,7 +314,7 @@ test("a workspace is renamed from the rail, and cannot be left nameless", async 
   });
   await page.goto("/");
 
-  await page.locator('.rail [data-workspace-id="w1"]').click({ button: "right" });
+  await page.locator('.side--spaces [data-workspace-id="w1"]').click({ button: "right" });
   await page.getByRole("menuitem", { name: /Rename workspace/ }).click();
   const input = page.locator("#herdr-rename-input");
   await expect(input).toHaveValue("web");
@@ -522,27 +534,49 @@ test("theme switch flips the palette and persists", async ({ page }) => {
 
 /* ------------------------------------------------------------------ phone */
 
-test("a phone hides the columns behind one picker instead of scrolling them", async ({ page }) => {
+test("a phone hides the sidebar behind one picker, in two levels", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 780 });
   await installBridge(page);
   await page.goto("/");
 
-  // Neither column is on screen, and nothing scrolls sideways to reach them.
-  await expect(page.locator(".rail")).toBeHidden();
-  await expect(page.locator(".panes")).toBeHidden();
+  // The sidebar is off screen, and nothing scrolls sideways to reach it.
+  await expect(page.locator(".sidebar")).toBeHidden();
 
   const pick = page.locator("#herdr-picker-open");
   await expect(pick).toBeVisible();
   await pick.click();
 
-  // The sheet reaches every pane in every workspace, in one tap each.
   const sheet = page.locator(".sheet");
   await expect(sheet).toBeVisible();
-  await expect(sheet.locator("[data-workspace-id]")).toHaveCount(2);
-  await sheet.locator('.srow[data-pane-id="w1:p2"]').click();
+  // Level one starts collapsed, naming only the space you are in.
+  const spaces = page.locator("#herdr-sheet-spaces");
+  await expect(spaces).toHaveAttribute("aria-expanded", "false");
+  await expect(spaces).toContainText("api");
+  await expect(sheet.locator("[data-workspace-id]")).toHaveCount(0);
+
+  // Level two is open: this space's panes are one tap away.
+  await expect(sheet.locator(".srow[data-pane-id]")).toHaveCount(1);
+  await sheet.locator('.srow[data-pane-id="w2:p1"]').click();
 
   await expect(sheet).toHaveCount(0);
-  await expect(page.locator("h1")).toContainText("vnstat 区间流量合计脚本");
+  await expect(page.locator("h1")).toContainText("w2:p1");
+});
+
+test("the spaces level opens, switches space and folds itself back", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 780 });
+  await installBridge(page);
+  await page.goto("/");
+  await page.locator("#herdr-picker-open").click();
+
+  await page.locator("#herdr-sheet-spaces").click();
+  await expect(page.locator("#herdr-sheet-spaces")).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator(".sheet [data-workspace-id]")).toHaveCount(2);
+
+  // Picking a space swaps level two to its panes and folds level one back.
+  await page.locator('.sheet [data-workspace-id="w1"]').click();
+  await expect(page.locator("#herdr-sheet-spaces")).toHaveAttribute("aria-expanded", "false");
+  await expect(page.locator(".sheet .srow[data-pane-id]")).toHaveCount(2);
+  await expect(page.locator("#herdr-sheet-title")).toHaveText("web");
 });
 
 test("the picker searches every pane at once", async ({ page }) => {

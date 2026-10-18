@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { PaneList } from "@/components/PaneList";
+import { PaneTabs } from "@/components/PaneTabs";
 import { PickerSheet } from "@/components/PickerSheet";
-import { WorkspaceRail } from "@/components/WorkspaceRail";
+import { Sidebar } from "@/components/Sidebar";
 import { Masthead } from "@/components/Masthead";
 import { TargetMenu, type MenuTarget } from "@/components/TargetMenu";
 import { PromptBar } from "@/components/PromptBar";
@@ -167,19 +167,15 @@ export function App() {
       <Masthead status={status} choice={choice} onChoice={chooseTheme} />
 
       <div className="body">
-        <WorkspaceRail
+        <Sidebar
           workspaces={workspaces}
           panes={panes}
-          selectedId={shownWorkspaceId}
-          onSelect={openWorkspace}
-          onMenu={(workspace, x, y) => setMenu(workspaceTarget(workspace, x, y))}
-        />
-        <PaneList
-          panes={workspacePanes}
-          workspaces={workspaces}
+          selectedWorkspaceId={shownWorkspaceId}
           selectedPaneId={paneId}
-          onSelect={(pane) => openPaneId(pane.id)}
-          onMenu={(pane, x, y) => setMenu(paneTarget(pane, x, y))}
+          onWorkspace={openWorkspace}
+          onPane={(pane) => openPaneId(pane.id)}
+          onWorkspaceMenu={(workspace, x, y) => setMenu(workspaceTarget(workspace, x, y))}
+          onPaneMenu={(pane, x, y) => setMenu(paneTarget(pane, x, y))}
         />
 
         <main className="stage">
@@ -254,6 +250,19 @@ export function App() {
             )}
           </div>
 
+          <PaneTabs
+            panes={workspacePanes}
+            workspaceName={activeWorkspace?.name ?? ""}
+            activeId={paneId}
+            onSelect={openPaneId}
+            onMenu={(id, x, y) => {
+              const pane = panes.find((candidate) => candidate.id === id);
+              if (pane !== undefined) {
+                setMenu(paneTarget(pane, x, y));
+              }
+            }}
+          />
+
           {activePane !== null ? (
             <Scope key={activePane.id} paneId={activePane.id} theme={theme} display={display} onDisplay={chooseDisplay} />
           ) : (
@@ -287,7 +296,8 @@ export function App() {
         panes={panes}
         selectedWorkspaceId={shownWorkspaceId}
         selectedPaneId={paneId}
-        onPick={(pane) => openPaneId(pane.id)}
+        onWorkspace={openWorkspace}
+        onPane={(pane) => openPaneId(pane.id)}
         onClose={() => setPicker(false)}
       />
 
