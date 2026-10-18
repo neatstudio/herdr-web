@@ -1,0 +1,19 @@
+# Build output
+/herdr-web
+*.test
+*.out
+
+# Embedded frontend bundle: built by `make web`, except the placeholder that
+# keeps the go:embed pattern valid on a fresh clone.
+/web/dist/*
+!/web/dist/.gitkeep
+/web/test-results/
+/web/playwright-report/
+/web/.vite/
+/web/node_modules/
+
+# Editor and OS noise
+.idea/
+.vscode/*.log
+.DS_Store
+Thumbs.db
