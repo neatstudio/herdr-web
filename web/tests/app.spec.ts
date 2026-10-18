@@ -645,6 +645,62 @@ test("exact mode keeps one terminal row per line", async ({ page }) => {
   expect(overflow).toBe(true);
 });
 
+test("a path in the output opens its preview, and Escape closes it", async ({ page }) => {
+  await installBridge(page, { readText: "wrote /tmp/chart.png and /tmp/run.log\n" });
+  await page.route("**/api/v1/herdr/file?*", (route) => {
+    const path = new URL(route.request().url()).searchParams.get("path");
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(
+        path === "/tmp/chart.png"
+          ? { path, name: "chart.png", bytes: 2048, kind: "image" }
+          : { path, name: "run.log", bytes: 12, kind: "text", text: "hello herdr\n", truncated: false },
+      ),
+    });
+  });
+  await page.goto("/");
+
+  // Two paths in a line are two separate links, and prose is not.
+  const links = page.locator("#herdr-feed-text .path");
+  await expect(links).toHaveCount(2);
+  await expect(links.nth(0)).toHaveAttribute("data-path", "/tmp/chart.png");
+
+  await links.nth(0).click();
+  const viewer = page.locator(".viewer");
+  await expect(viewer).toBeVisible();
+  await expect(viewer).toHaveAttribute("data-kind", "image");
+  await expect(page.locator("#herdr-viewer-image")).toHaveAttribute(
+    "src",
+    /^\/api\/v1\/herdr\/file\/raw\?path=%2Ftmp%2Fchart.png$/,
+  );
+
+  await page.keyboard.press("Escape");
+  await expect(viewer).toHaveCount(0);
+
+  // A text file shows its contents in place.
+  await links.nth(1).click();
+  await expect(page.locator("#herdr-viewer-text")).toContainText("hello herdr");
+});
+
+test("a path that is not on this host says so instead of showing nothing", async ({ page }) => {
+  await installBridge(page, { readText: "wrote /remote/only/chart.png\n" });
+  await page.route("**/api/v1/herdr/file?*", (route) =>
+    route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({ error: { code: "not_found", message: "file not found" } }),
+    }),
+  );
+  await page.goto("/");
+
+  await page.locator("#herdr-feed-text .path").first().click();
+  await expect(page.locator(".viewer")).toHaveAttribute("data-kind", "missing");
+  await expect(page.locator(".viewer__note")).toContainText("not on this host");
+  await page.locator("#herdr-viewer-close").click();
+  await expect(page.locator(".viewer")).toHaveCount(0);
+});
+
 /* ----------------------------------------------------------------- prompt */
 
 test("enter sends the line with a trailing newline and keeps history", async ({ page }) => {

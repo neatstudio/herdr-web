@@ -41,9 +41,11 @@ type Props = {
   theme: PageTheme;
   display: DisplayMode;
   onDisplay: (mode: DisplayMode) => void;
+  /** A path in the output was clicked; the caller opens its preview. */
+  onOpenPath?: (path: string) => void;
 };
 
-export function Scope({ paneId, theme, display, onDisplay }: Props) {
+export function Scope({ paneId, theme, display, onDisplay, onOpenPath }: Props) {
   const [lines, setLines] = useState<string[]>([]);
   const [truncated, setTruncated] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -166,6 +168,16 @@ export function Scope({ paneId, theme, display, onDisplay }: Props) {
         style={{
           ...(backdrop !== null ? { background: backdrop } : {}),
           ...(display === "fit" ? { fontSize: `${fontPx.toFixed(2)}px` } : {}),
+        }}
+        // A path link is rendered by the ANSI renderer, so the click is
+        // delegated here rather than attaching a handler per line.
+        onClick={(event) => {
+          const link = (event.target as HTMLElement).closest("[data-path]");
+          if (link === null || onOpenPath === undefined) {
+            return;
+          }
+          event.preventDefault();
+          onOpenPath(link.getAttribute("data-path") ?? "");
         }}
         onScroll={(event) => {
           const element = event.currentTarget;

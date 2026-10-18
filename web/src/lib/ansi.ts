@@ -341,6 +341,26 @@ function trimPadding(segments: Segment[]): Segment[] {
   return out;
 }
 
+/**
+ * A path in the output is made clickable, so a chart or a log an agent wrote can
+ * be opened from the line that names it. Only the text is touched: the style of
+ * the segment is carried over to each piece.
+ */
+function linkPaths(text: string): string {
+  const matches = findPaths(text);
+  if (matches.length === 0) {
+    return escapeHtml(text);
+  }
+  let html = "";
+  let cursor = 0;
+  for (const match of matches) {
+    html += escapeHtml(text.slice(cursor, match.start));
+    html += `<a class="path" data-path="${escapeHtml(match.path)}" href="#">${escapeHtml(match.path)}</a>`;
+    cursor = match.end;
+  }
+  return html + escapeHtml(text.slice(cursor));
+}
+
 function render(segments: Segment[], mode: CanvasMode): string {
   let html = "";
   for (const segment of segments) {
@@ -351,7 +371,7 @@ function render(segments: Segment[], mode: CanvasMode): string {
       continue;
     }
     const css = styleToCss(segment.style, mode);
-    const escaped = escapeHtml(safe);
+    const escaped = linkPaths(safe);
     html += css === "" ? escaped : `<span style="${css}">${escaped}</span>`;
   }
   return html;
@@ -424,6 +444,8 @@ export function ansiLineToHtml(line: string, mode: CanvasMode = "content"): stri
  * highlighted output.
  */
 export type CanvasTone = { colour: string | null; share: number };
+
+import { findPaths } from "./paths";
 
 export function canvasTone(lines: string[]): CanvasTone {
   const counts = new Map<string, number>();

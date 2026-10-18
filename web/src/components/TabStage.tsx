@@ -78,6 +78,8 @@ type Props = {
   onResize: (paneId: string, direction: "left" | "right" | "up" | "down") => void;
   /** Panes whose working directory is not on this host. */
   remote: Set<string>;
+  /** A path in a transcript was clicked. */
+  onOpenPath: (path: string) => void;
 };
 
 export function TabStage({
@@ -94,6 +96,7 @@ export function TabStage({
   onMenu,
   onResize,
   remote,
+  onOpenPath,
 }: Props) {
   const names = new Map(workspaces.map((workspace) => [workspace.id, workspace.name]));
 
@@ -172,6 +175,7 @@ export function TabStage({
                 theme={theme}
                 display={display}
                 onDisplay={onDisplay}
+                onOpenPath={onOpenPath}
               />
             ) : (
               // Only the active tile reads its pane: a split would otherwise

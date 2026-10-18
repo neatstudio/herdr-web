@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { PaneTabs } from "@/components/PaneTabs";
 import { PickerSheet } from "@/components/PickerSheet";
 import { Sidebar } from "@/components/Sidebar";
+import { FileViewer } from "@/components/FileViewer";
 import { TabStage } from "@/components/TabStage";
 import { Masthead } from "@/components/Masthead";
 import { TargetMenu, type MenuTarget } from "@/components/TargetMenu";
@@ -78,6 +79,8 @@ export function App() {
   const [menu, setMenu] = useState<MenuTarget | null>(null);
   const [picker, setPicker] = useState(false);
   const [layout, setLayout] = useState<PaneLayout | null>(null);
+  // The path whose preview is open, if any.
+  const [openPath, setOpenPath] = useState<string | null>(null);
   const [narrow, setNarrow] = useState(false);
   // Panes whose working directory is not on this host: herdr can drive panes on
   // another machine over SSH, and a preview there cannot work from here.
@@ -357,6 +360,7 @@ export function App() {
               }}
               remote={remotePanes}
               layout={layout}
+              onOpenPath={setOpenPath}
             />
           ) : (
             <div className="scope__idle">
@@ -393,6 +397,8 @@ export function App() {
         onPane={(pane) => openPaneId(pane.id)}
         onClose={() => setPicker(false)}
       />
+
+      <FileViewer path={openPath} onClose={() => setOpenPath(null)} />
 
       <TargetMenu
         target={menu}

@@ -1328,6 +1328,120 @@ body::before {
   color: var(--paper);
 }
 
+/* --------------------------------------------------------------- paths */
+
+/* A path in the output opens its preview, so it has to look clickable without
+   shouting: the transcript is mostly text. */
+.path {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+
+.path:hover,
+.path:focus-visible {
+  color: var(--accent);
+  text-decoration-style: solid;
+}
+
+/* -------------------------------------------------------------- viewer */
+
+/* A side panel rather than a modal: the transcript stays readable behind it,
+   and a chart is usually compared against the line that named it. */
+.viewer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  width: min(46rem, 82vw);
+  border-left: var(--rule-w) solid var(--rule-strong);
+  background: var(--paper);
+  box-shadow: -12px 0 32px rgb(0 0 0 / 24%);
+}
+
+.viewer__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border-bottom: var(--rule-w) solid var(--rule-strong);
+  background: var(--surface);
+}
+
+.viewer__name {
+  font-size: var(--step-name);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.viewer__size {
+  font-family: var(--font-label);
+  font-size: var(--step-micro);
+  color: var(--ink-faint);
+}
+
+.viewer__close {
+  margin-left: auto;
+  padding: 0 6px;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--ink-dim);
+}
+
+.viewer__close:hover {
+  color: var(--ink);
+}
+
+.viewer__path {
+  flex: 0 0 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 4px 10px;
+  border-bottom: var(--rule-w) solid var(--rule);
+  font-family: var(--font-mono);
+  font-size: var(--step-micro);
+  color: var(--ink-faint);
+}
+
+.viewer__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px;
+}
+
+.viewer__image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.viewer__text {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--step-name);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+}
+
+.viewer__note {
+  margin: 0;
+  font-size: var(--step-name);
+  color: var(--ink-dim);
+}
+
+.viewer__note--failed {
+  color: var(--blocked);
+}
+
 /* ---------------------------------------------------------------- sheet */
 
 /* The phone's pane picker: one tap opens it, one tap picks, no dragging. */
@@ -1590,6 +1704,11 @@ body::before {
 
   .prompt__hints {
     display: none;
+  }
+
+  .viewer {
+    width: 100%;
+    border-left: 0;
   }
 
   .cluster__socket,
