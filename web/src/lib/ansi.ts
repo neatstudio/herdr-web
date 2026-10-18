@@ -417,32 +417,22 @@ export function ansiLineToHtml(line: string, mode: CanvasMode = "content"): stri
 }
 
 /**
- * The canvas colour a full-screen application paints for itself, if it paints
- * one. Such an app assumes its own background spans the whole viewport; when
- * a line is shorter than the pane, the gap would otherwise show the page and
- * break the canvas into stripes.
- *
- * Returns null for ordinary output, so a plain shell keeps the page's own
- * background and the light theme stays light. The paper and carbon modes
- * always return null: there the page itself is the canvas, and painting the
- * content's own would put a second, contradictory block behind it.
+ * The most painted background in a pane, and how much of the pane it covers.
+ * The two callers need different bars: mirroring a dark canvas on paper is
+ * useful even when only half the lines carry it, while filling the whole pane
+ * with a colour needs it to be the pane's own background rather than a band of
+ * highlighted output.
  */
-export function dominantBackground(
-  lines: string[],
-  mode: CanvasMode = "content",
-): string | null {
-  if (mode !== "content") {
-    return null;
-  }
+export type CanvasTone = { colour: string | null; share: number };
+
+export function canvasTone(lines: string[]): CanvasTone {
   const counts = new Map<string, number>();
-  const linesWithBackground = new Set<string>();
   for (const line of lines) {
     for (const segment of parseLine(line)) {
       if (segment.style.bg === null) {
         continue;
       }
       counts.set(segment.style.bg, (counts.get(segment.style.bg) ?? 0) + segment.text.length);
-      linesWithBackground.add(segment.style.bg);
     }
   }
   let best: string | null = null;
@@ -453,14 +443,14 @@ export function dominantBackground(
       bestCount = count;
     }
   }
-  // A couple of highlighted words are not a canvas; a filled screen is.
-  if (best === null || bestCount < 120 || linesWithBackground.size === 0) {
-    return null;
+  // A single coloured word is not a background at all.
+  if (best === null || bestCount < 120 || lines.length === 0) {
+    return { colour: null, share: 0 };
   }
-  const coveringLines = lines.filter((line) =>
+  const covering = lines.filter((line) =>
     parseLine(line).some((segment) => segment.style.bg === best && segment.text.length > 0),
   ).length;
-  return coveringLines >= 2 ? best : null;
+  return { colour: best, share: covering / lines.length };
 }
 
 /** Strip every escape sequence, for accessible text and clipboard use. */

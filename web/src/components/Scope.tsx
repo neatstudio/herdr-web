@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ansiLineToHtml, canvasBackdrop, dominantBackground } from "@/lib/ansi";
+import { ansiLineToHtml, canvasBackdrop, canvasTone } from "@/lib/ansi";
 import { READ_LINES, readPane } from "@/lib/herdr";
 import { canvasModeFor, splitLines, type PageTheme } from "@/lib/fleet";
 import { DISPLAY_MODES, type DisplayMode } from "@/lib/theme";
@@ -15,6 +15,12 @@ const BASE_FONT_PX = 12.5;
  * would be a grey smear, so those panes scroll instead of pretending to fit.
  */
 const MIN_FIT_PX = 4;
+
+/** Past this share, a background is worth mirroring for the page theme. */
+const MIRROR_SHARE = 0.4;
+
+/** Past this share, it is the pane's own canvas and may be painted behind it. */
+const CANVAS_SHARE = 0.6;
 
 /**
  * The transcript scope for one pane. Polls pane.read, repaints only when the
@@ -113,11 +119,17 @@ export function Scope({ paneId, theme, display, onDisplay }: Props) {
   // A pane that paints a canvas is a full-screen app; plain output is not.
   // The raw canvas decides the layout, and the page theme decides whether the
   // content's colours need mirroring to match it.
-  const rawCanvas = dominantBackground(lines);
+  // Two bars for the same colour. Half a pane of dark background is enough to
+  // mirror on paper, but the pane is only painted with it when it is really the
+  // pane's own canvas; otherwise a band of highlighted output would become a
+  // wall of colour.
+  const tone = canvasTone(lines);
+  const rawCanvas = tone.share >= MIRROR_SHARE ? tone.colour : null;
+  const paintCanvas = tone.share >= CANVAS_SHARE ? tone.colour : null;
   const mode = canvasModeFor(rawCanvas, theme);
   // A wrapped transcript needs the canvas behind every row, so the backdrop is
   // the pane's own canvas, mirrored when the page theme disagrees with it.
-  const backdrop = canvasBackdrop(rawCanvas, mode);
+  const backdrop = canvasBackdrop(paintCanvas, mode);
   const columns = lines.reduce((widest, line) => Math.max(widest, stripLength(line)), 0);
   const fitScale = columns > 0 && width > 0 ? width / (columns * MONO_ADVANCE) : BASE_FONT_PX;
   const fontPx =

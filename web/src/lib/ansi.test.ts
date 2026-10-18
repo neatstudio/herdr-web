@@ -7,7 +7,7 @@ import {
   ANSI_CACHE_CAPACITY,
   clearAnsiCache,
   colour256,
-  dominantBackground,
+  canvasTone,
   inkOn,
   stripAnsi,
 } from "./ansi.ts";
@@ -162,17 +162,46 @@ test("inkOn measures absolute colours and knows the palette split", () => {
   assert.equal(inkOn("var(--ansi-15)"), "var(--ansi-ink-on-light)");
 });
 
-test("dominantBackground finds a painted canvas but not plain output", () => {
+test("canvasTone reports the painted colour and how much of the pane it covers", () => {
   const canvas = `${ESC}[48;2;20;20;20m${" ".repeat(120)}${ESC}[0m`;
   const text = `${ESC}[48;2;20;20;20m  some content  ${ESC}[0m`;
-  assert.equal(dominantBackground([canvas, canvas, text]), "rgb(20,20,20)");
+  const full = canvasTone([canvas, canvas, text]);
+  assert.equal(full.colour, "rgb(20,20,20)");
+  assert.equal(full.share, 1);
 
   // Ordinary shell output has no background at all.
-  assert.equal(dominantBackground(["prompt% ls", "file.txt"]), null);
-  assert.equal(dominantBackground([]), null);
+  assert.deepEqual(canvasTone(["prompt% ls", "file.txt"]), { colour: null, share: 0 });
+  assert.deepEqual(canvasTone([]), { colour: null, share: 0 });
 
-  // A single highlighted word is not a canvas.
-  assert.equal(dominantBackground([`${ESC}[48;2;60;0;0mFAIL${ESC}[0m`, "plain", "plain"]), null);
+  // A single highlighted word is not even a candidate.
+  assert.deepEqual(canvasTone([`${ESC}[48;2;60;0;0mFAIL${ESC}[0m`, "plain", "plain"]), {
+    colour: null,
+    share: 0,
+  });
+});
+
+test("a highlight band inside ordinary output is not a canvas", () => {
+  // The shape `grep --color` and `diff` produce: a long red background across a
+  // minority of lines, among plain output. Painting the pane in that colour
+  // would turn a highlight into a wall.
+  const plain = "drwxr-xr-x@ 37 admin staff 1.2K Oct 17 22:01 api";
+  const highlighted = `${ESC}[48;5;1m${"x".repeat(100)}${ESC}[0m`;
+  const lines = Array.from({ length: 200 }, (_, index) => (index % 7 === 0 ? highlighted : plain));
+  const tone = canvasTone(lines);
+  assert.equal(tone.colour, "var(--ansi-1)");
+  // Far too little coverage to be a canvas: it is a highlight band.
+  assert.ok(tone.share < 0.2, `share was ${tone.share}`);
+});
+
+test("a canvas still wins once it covers most of the pane", () => {
+  // The same colour, but painted on nearly every line, is a canvas again.
+  const canvas = `${ESC}[48;2;20;20;20m${" ".repeat(120)}${ESC}[0m`;
+  const lines = Array.from({ length: 10 }, (_, index) =>
+    index === 9 ? "a single plain line" : canvas,
+  );
+  const tone = canvasTone(lines);
+  assert.equal(tone.colour, "rgb(20,20,20)");
+  assert.equal(tone.share, 0.9);
 });
 
 test("paper mode mirrors a dark content canvas and its text", () => {
@@ -226,15 +255,13 @@ test("the default mode is content, byte for byte", () => {
   assert.ok(html.includes("font-weight:700"), html);
 });
 
-test("dominantBackground yields to the page's own canvas in themed modes", () => {
+test("the canvas colour survives every mode, because the caller adapts it", () => {
+  // The mode no longer decides whether there is a canvas: the caller mirrors
+  // the colour for the page theme (canvasBackdrop), so the tone itself is
+  // reported once and adapted afterwards.
   const canvas = `${ESC}[48;2;20;20;20m${" ".repeat(120)}${ESC}[0m`;
   const text = `${ESC}[48;2;20;20;20m  some content  ${ESC}[0m`;
-  const lines = [canvas, canvas, text];
-  // Content mode still needs the container to paint the app's canvas.
-  assert.equal(dominantBackground(lines), "rgb(20,20,20)");
-  // Paper and carbon are canvases already; a second one would contradict them.
-  assert.equal(dominantBackground(lines, "paper"), null);
-  assert.equal(dominantBackground(lines, "carbon"), null);
+  assert.equal(canvasTone([canvas, canvas, text]).colour, "rgb(20,20,20)");
 });
 
 test("a real full-screen TUI line renders readably on paper", () => {
@@ -314,11 +341,11 @@ test("clearAnsiCache resets size, hits and misses", () => {
   assert.deepEqual(ansiCacheStats(), { size: 0, hits: 0, misses: 0 });
 });
 
-test("dominantBackground is not memoised per line", () => {
+test("canvasTone is not memoised per line", () => {
   // It takes the whole array once per paint, not one line per call.
   clearAnsiCache();
   const canvas = `${ESC}[48;2;20;20;20m${" ".repeat(120)}${ESC}[0m`;
-  dominantBackground([canvas, canvas, `${ESC}[48;2;20;20;20m  text  ${ESC}[0m`]);
+  canvasTone([canvas, canvas, `${ESC}[48;2;20;20;20m  text  ${ESC}[0m`]);
   assert.deepEqual(ansiCacheStats(), { size: 0, hits: 0, misses: 0 });
 });
 
