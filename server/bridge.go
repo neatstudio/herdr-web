@@ -503,6 +503,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/herdr/status", s.handleStatus)
 	mux.HandleFunc("/api/v1/herdr/workspaces", s.handleWorkspaces)
 	mux.HandleFunc("/api/v1/herdr/panes", s.handlePanes)
+	mux.HandleFunc("/api/v1/herdr/uploads", s.handleUpload)
+
 	mux.HandleFunc("/api/v1/herdr/workspaces/", func(w http.ResponseWriter, r *http.Request) {
 		rest := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/herdr/workspaces/"), "/")
 		if strings.HasSuffix(rest, "/rename") {

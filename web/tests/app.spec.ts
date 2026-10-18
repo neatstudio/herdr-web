@@ -555,6 +555,111 @@ test("tab flushes the line without a newline then sends a real Tab", async ({ pa
   await expect(input).toHaveValue("git ch");
 });
 
+test("opening a pane puts the caret in the prompt", async ({ page }) => {
+  await installBridge(page);
+  await page.goto("/");
+  await expect(page.locator("#herdr-input")).toBeFocused();
+
+  // Switching pane takes the caret with it, without a click. The blocked
+  // workspace opens first, so move to the one with two panes.
+  await page.locator('.side--spaces [data-workspace-id="w1"]').click();
+  await expect(page.locator("#herdr-input")).toBeFocused();
+  await page.locator('.strip .tab[data-pane-id="w1:p2"]').click();
+  await expect(page.locator("#herdr-input")).toBeFocused();
+
+  // Clicking on the transcript moves focus away; Tab brings it back.
+  await page.locator("#herdr-feed-text").click({ position: { x: 10, y: 10 } });
+  await expect(page.locator("#herdr-input")).not.toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.locator("#herdr-input")).toBeFocused();
+
+  // And so does Enter.
+  await page.locator("#herdr-feed-text").click({ position: { x: 10, y: 10 } });
+  await expect(page.locator("#herdr-input")).not.toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#herdr-input")).toBeFocused();
+});
+
+test("Enter on a focused button still presses it, not the prompt", async ({ page }) => {
+  await installBridge(page);
+  await page.goto("/");
+  await page.locator("#herdr-display-exact").focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#herdr-display-exact")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#herdr-input")).not.toBeFocused();
+});
+
+test("an attached file is uploaded and its host path lands in the prompt", async ({ page }) => {
+  const uploaded: string[] = [];
+  await installBridge(page);
+  await page.route("**/api/v1/herdr/uploads", async (route) => {
+    uploaded.push(route.request().postData() ?? "");
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        path: "/Users/op/.local/share/herdr-web/uploads/20261018-shot.png",
+        name: "20261018-shot.png",
+        bytes: 12,
+      }),
+    });
+  });
+  await page.goto("/");
+
+  // herdr can only send text, so the agent is handed the file's path.
+  await page.locator("#herdr-attach").setInputFiles({
+    name: "shot.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("fake"),
+  });
+  await expect
+    .poll(async () => page.locator("#herdr-input").inputValue())
+    .toBe("/Users/op/.local/share/herdr-web/uploads/20261018-shot.png ");
+  expect(uploaded).toHaveLength(1);
+  await expect(page.locator("#herdr-input")).toBeFocused();
+});
+
+test("a dropped file is attached the same way", async ({ page }) => {
+  await installBridge(page);
+  await page.route("**/api/v1/herdr/uploads", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, path: "/tmp/dropped.png", name: "dropped.png", bytes: 3 }),
+    }),
+  );
+  await page.goto("/");
+
+  const dataTransfer = await page.evaluateHandle(() => {
+    const transfer = new DataTransfer();
+    transfer.items.add(new File(["abc"], "dropped.png", { type: "image/png" }));
+    return transfer;
+  });
+  await page.locator(".prompt").dispatchEvent("drop", { dataTransfer });
+  await expect.poll(async () => page.locator("#herdr-input").inputValue()).toBe("/tmp/dropped.png ");
+});
+
+test("a failed upload says so and leaves the prompt alone", async ({ page }) => {
+  await installBridge(page);
+  await page.route("**/api/v1/herdr/uploads", (route) =>
+    route.fulfill({
+      status: 502,
+      contentType: "application/json",
+      body: JSON.stringify({ error: { code: "upload_failed", message: "boom" } }),
+    }),
+  );
+  await page.goto("/");
+
+  await page.locator("#herdr-attach").setInputFiles({
+    name: "shot.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("fake"),
+  });
+  await expect(page.locator(".prompt__problem")).toContainText("could not attach shot.png");
+  await expect(page.locator("#herdr-input")).toHaveValue("");
+});
+
 test("the send button is disabled until there is something to send", async ({ page }) => {
   await installBridge(page);
   await page.goto("/");

@@ -261,6 +261,34 @@ export async function sendPaneText(
   return postJSON(`${panePath(paneId)}/input`, { text: body });
 }
 
+export type Uploaded = { path: string; name: string; bytes: number };
+
+/**
+ * Send one file to the herdr host and get its absolute path there.
+ *
+ * herdr can only send text, so a path is the only way to hand an agent an
+ * image: the agent reads the file from disk, exactly as it does when a file is
+ * dragged into a terminal.
+ */
+export async function uploadFile(file: File): Promise<Uploaded | null> {
+  const form = new FormData();
+  form.append("file", file, file.name);
+  try {
+    const response = await fetch("/api/v1/herdr/uploads", { method: "POST", body: form });
+    if (!response.ok) {
+      return null;
+    }
+    return (await response.json()) as Uploaded;
+  } catch {
+    return null;
+  }
+}
+
+/** How a path is written into a prompt: quoted only when it needs to be. */
+export function quotePath(path: string): string {
+  return /^[A-Za-z0-9_./@:+-]+$/.test(path) ? path : `"${path.replace(/"/g, '\\"')}"`;
+}
+
 /** Rename a pane; pass null to clear the name. */
 export async function renamePane(paneId: string, label: string | null): Promise<boolean> {
   return postJSON(`${panePath(paneId)}/rename`, { label });

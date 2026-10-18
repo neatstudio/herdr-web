@@ -960,7 +960,7 @@ body::before {
 
 .prompt {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   padding: 8px var(--pad);
@@ -987,6 +987,45 @@ body::before {
 
 .prompt__input::placeholder {
   color: var(--ink-faint);
+}
+
+/* Dropping a file anywhere on the prompt bar attaches it. */
+.prompt[data-drop="on"] {
+  outline: 2px dashed var(--accent);
+  outline-offset: -3px;
+}
+
+.prompt__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.prompt__attach {
+  padding: 0 8px;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--ink-dim);
+}
+
+.prompt__attach:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+/* The real picker is an input, but the button above is what is shown. */
+.prompt__file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.prompt__problem {
+  font-family: var(--font-label);
+  font-size: var(--step-micro);
+  color: var(--blocked);
 }
 
 .prompt__hints {
