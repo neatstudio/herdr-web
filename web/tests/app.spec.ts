@@ -111,12 +111,14 @@ test("spaces keep herdr's own order and carry no status", async ({ page }) => {
   await expect(page.locator(".side--spaces .group__label")).toHaveCount(0);
   await expect(page.locator(".side--spaces .signal")).toHaveCount(0);
 
-  // Agents are what is running, so they are ordered by what needs attention
-  // and the tone is carried by colour rather than by a mark.
-  await expect(page.locator(".side--agents .row")).toHaveCount(3);
+  // Agents only: w2:p1 is a plain shell, so the sidebar does not list it even
+  // though its workspace is the one that needs attention.
+  await expect(page.locator(".side--agents .row")).toHaveCount(2);
+  await expect(page.locator('.side--agents .row[data-pane-id="w2:p1"]')).toHaveCount(0);
   await expect(page.locator(".side--agents .group__label")).toHaveCount(0);
   await expect(page.locator(".side--agents .signal")).toHaveCount(0);
-  await expect(page.locator(".side--agents .row").first()).toHaveAttribute("data-tone", "blocked");
+  // Ordered by what needs attention, with the tone carried by colour.
+  await expect(page.locator(".side--agents .row").first()).toHaveAttribute("data-tone", "working");
 
   // The blocked workspace opens by default.
   await expect(page.locator(".stage__status")).toContainText("needs input");
@@ -211,16 +213,23 @@ test("panes are labelled with their herdr name, with the id kept as context", as
   await expect(tab.locator(".tab__id")).toHaveText("p1");
 });
 
-test("an unnamed pane falls back to its id and never shows it twice", async ({ page }) => {
+test("a plain shell stays out of the sidebar but reachable from the tabs", async ({ page }) => {
   await installBridge(page, {
     panes: [{ id: "w2:p1", workspaceId: "w2", tabId: "w2:t1", focused: true, agentStatus: "blocked" }],
   });
   await page.goto("/");
 
-  const row = page.locator('.side--agents .row[data-pane-id="w2:p1"]');
-  await expect(row.locator(".row__agent")).toHaveText("shell");
-  await expect(row.locator(".row__name")).toHaveText("w2:p1");
-  await expect(row.locator(".row__id")).toHaveCount(0);
+  // Not in the sidebar: the left side lists workspaces and agents only.
+  await expect(page.locator('.side--agents .row[data-pane-id="w2:p1"]')).toHaveCount(0);
+  await expect(page.locator(".side--agents .col__empty")).toContainText("No agents running");
+
+  // Still openable: the pane tabs cover every pane of the space.
+  const tab = page.locator('.tab[data-pane-id="w2:p1"]');
+  await expect(tab).toHaveCount(1);
+  await expect(tab).toContainText("w2:p1");
+  // The header names it too; the id is not repeated beside itself.
+  await expect(page.locator("h1")).toContainText("w2:p1");
+  await expect(page.locator("h1 .stage__pane-id")).toHaveCount(0);
 });
 
 test("an unnamed pane with an agent is identified by its directory, not a repeat", async ({ page }) => {
@@ -240,14 +249,14 @@ test("an unnamed pane with an agent is identified by its directory, not a repeat
 test("the agent filter narrows the whole sidebar and clears again", async ({ page }) => {
   await installBridge(page);
   await page.goto("/");
-  await expect(page.locator(".side--agents .row")).toHaveCount(3);
+  await expect(page.locator(".side--agents .row")).toHaveCount(2);
 
   // The filter searches every space at once, so a pane in another space is
   // findable without switching to it first.
   const filter = page.locator("#herdr-agent-filter");
   await filter.fill("grok");
   await expect(page.locator(".side--agents .row")).toHaveCount(1);
-  await expect(page.locator(".side--agents .col__head")).toContainText("1/3");
+  await expect(page.locator(".side--agents .col__head")).toContainText("1/2");
 
   await expect(page.locator(".side--agents .row")).toContainText("grok");
 
@@ -257,8 +266,8 @@ test("the agent filter narrows the whole sidebar and clears again", async ({ pag
   await expect(page.locator(".side--agents .col__empty")).toContainText("No pane matches");
 
   await page.locator("#herdr-agent-clear").click();
-  await expect(page.locator(".side--agents .row")).toHaveCount(3);
-  await expect(page.locator(".side--agents .col__head")).toContainText("2/3");
+  await expect(page.locator(".side--agents .row")).toHaveCount(2);
+  await expect(page.locator(".side--agents .col__head")).toContainText("2");
 });
 
 test("a workspace with no panes says so and leaves the stage idle", async ({ page }) => {
@@ -591,7 +600,7 @@ test("a phone hides both sidebar halves and offers one switcher instead", async 
   await expect(sheet).toBeVisible();
   // Two views, switched rather than stacked: agents first, spaces one tap away.
   await expect(page.locator("#herdr-sheet-view-agents")).toHaveAttribute("aria-selected", "true");
-  await expect(sheet.locator(".srow[data-pane-id]")).toHaveCount(3);
+  await expect(sheet.locator(".srow[data-pane-id]")).toHaveCount(2);
   await expect(sheet.locator("[data-workspace-id]")).toHaveCount(0);
 
   await page.locator("#herdr-sheet-view-spaces").click();

@@ -41,7 +41,9 @@ export function PickerSheet({
   const names = new Map(workspaces.map((workspace) => [workspace.id, workspace.name]));
   const current = names.get(selectedWorkspaceId ?? "") ?? "none";
   const terms = query.trim().toLowerCase().split(/\s+/).filter((term) => term !== "");
-  const agents = orderByTone(panes, (pane) => toneOf(pane.agentStatus)).filter((pane) => {
+  // Only panes with an agent: a plain shell is not something to watch here.
+  const running = panes.filter((pane) => paneAgent(pane) !== "");
+  const agents = orderByTone(running, (pane) => toneOf(pane.agentStatus)).filter((pane) => {
     if (terms.length === 0) {
       return true;
     }
@@ -76,7 +78,7 @@ export function PickerSheet({
           >
             {item}
             <span className="sheet__view-count">
-              {item === "agents" ? panes.length : workspaces.length}
+              {item === "agents" ? running.length : workspaces.length}
             </span>
           </button>
         ))}

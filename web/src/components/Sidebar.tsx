@@ -86,7 +86,10 @@ function Agents({ panes, workspaces, selectedPaneId, onPane, onPaneMenu }: Props
   const [query, setQuery] = useState("");
   const names = new Map(workspaces.map((workspace) => [workspace.id, workspace.name]));
   const terms = query.trim().toLowerCase().split(/\s+/).filter((term) => term !== "");
-  const matched = orderByTone(panes, (pane) => toneOf(pane.agentStatus)).filter((pane) => {
+  // Only panes herdr recognised an agent in. A plain shell is not something to
+  // watch here; the pane tabs above the transcript still reach it.
+  const running = panes.filter((pane) => paneAgent(pane) !== "");
+  const matched = orderByTone(running, (pane) => toneOf(pane.agentStatus)).filter((pane) => {
     if (terms.length === 0) {
       return true;
     }
@@ -102,14 +105,12 @@ function Agents({ panes, workspaces, selectedPaneId, onPane, onPaneMenu }: Props
       .toLowerCase();
     return terms.every((term) => haystack.includes(term));
   });
-  const agents = panes.filter((pane) => paneAgent(pane) !== "").length;
-
   return (
     <section className="side side--agents" aria-label="Agents">
       <div className="col__head">
         <span>agents</span>
         <span>
-          {terms.length === 0 ? `${agents}/${panes.length}` : `${matched.length}/${panes.length}`}
+          {terms.length === 0 ? running.length : `${matched.length}/${running.length}`}
         </span>
       </div>
       <div className="col__filter">
@@ -138,6 +139,8 @@ function Agents({ panes, workspaces, selectedPaneId, onPane, onPaneMenu }: Props
       </div>
       {panes.length === 0 ? (
         <p className="col__empty">No panes reported.</p>
+      ) : running.length === 0 ? (
+        <p className="col__empty">No agents running.</p>
       ) : matched.length === 0 ? (
         <p className="col__empty">No pane matches “{query}”.</p>
       ) : (
