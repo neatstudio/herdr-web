@@ -6,17 +6,18 @@ import { PaneStrip } from "@/components/PaneStrip";
 import { PromptBar } from "@/components/PromptBar";
 import { Scope } from "@/components/Scope";
 import {
+  fetchAllPanes,
   fetchStatus,
-  fetchWorkspaceDetail,
   fetchWorkspaces,
   type HerdrPane,
   type HerdrStatus,
   type HerdrWorkspace,
 } from "@/lib/herdr";
-import { TONE_LABEL, paneHasName, paneName, toneOf } from "@/lib/fleet";
+import { TONE_LABEL, paneHasName, paneName, toneOf, type PageTheme } from "@/lib/fleet";
 import { applyTheme, readStoredChoice, storeChoice, type ThemeChoice } from "@/lib/theme";
 
-const FLEET_POLL_MS = 4000;
+/** One poll drives the whole fleet: status, workspaces and every pane. */
+const FLEET_POLL_MS = 3000;
 
 /** localStorage can throw in private mode; the theme then just is not kept. */
 function safeStorage(): Storage | null {
@@ -29,9 +30,10 @@ function safeStorage(): Storage | null {
 
 export function App() {
   const [choice, setChoice] = useState<ThemeChoice>(() => readStoredChoice(safeStorage()));
+  // The resolved theme, so panes can mirror their colours to match it.
+  const [theme, setTheme] = useState<PageTheme>("dark");
   const [status, setStatus] = useState<HerdrStatus | null>(null);
   const [workspaces, setWorkspaces] = useState<HerdrWorkspace[]>([]);
-  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [panes, setPanes] = useState<HerdrPane[]>([]);
   const [paneId, setPaneId] = useState<string | null>(null);
   const [menu, setMenu] = useState<MenuTarget | null>(null);
@@ -39,9 +41,9 @@ export function App() {
   // Keep <html data-theme> in step with the choice and the OS preference.
   useEffect(() => {
     const query = window.matchMedia("(prefers-color-scheme: light)");
-    applyTheme(choice, query.matches);
+    setTheme(applyTheme(choice, query.matches));
     const onChange = (): void => {
-      applyTheme(choice, query.matches);
+      setTheme(applyTheme(choice, query.matches));
     };
     query.addEventListener("change", onChange);
     return () => query.removeEventListener("change", onChange);
@@ -52,28 +54,32 @@ export function App() {
     storeChoice(safeStorage(), next);
   }, []);
 
-  // Fleet poll: daemon status plus the workspace list.
   useEffect(() => {
     let cancelled = false;
     async function load(): Promise<void> {
-      const [nextStatus, nextWorkspaces] = await Promise.all([
+      const [nextStatus, nextWorkspaces, nextPanes] = await Promise.all([
         fetchStatus(),
         fetchWorkspaces().catch(() => [] as HerdrWorkspace[]),
+        fetchAllPanes().catch(() => [] as HerdrPane[]),
       ]);
       if (cancelled) {
         return;
       }
       setStatus(nextStatus);
       setWorkspaces(nextWorkspaces);
-      setWorkspaceId((current) => {
-        if (current !== null && nextWorkspaces.some((workspace) => workspace.id === current)) {
+      setPanes(nextPanes);
+      setPaneId((current) => {
+        if (current !== null && nextPanes.some((pane) => pane.id === current)) {
           return current;
         }
-        // Open on whatever most likely needs a human.
-        const blocked = nextWorkspaces.find(
-          (workspace) => toneOf(workspace.agentStatus) === "blocked",
-        );
-        return blocked?.id ?? nextWorkspaces[0]?.id ?? null;
+        // Open on whatever most likely needs a human: blocked first, then
+        // whatever herdr reports as focused.
+        const blocked = nextPanes.find((pane) => toneOf(pane.agentStatus) === "blocked");
+        if (blocked) {
+          return blocked.id;
+        }
+        const focused = nextPanes.find((pane) => pane.focused);
+        return focused?.id ?? nextPanes[0]?.id ?? null;
       });
     }
     void load();
@@ -84,49 +90,22 @@ export function App() {
     };
   }, []);
 
-  // The pane list follows the selected workspace.
-  useEffect(() => {
-    if (workspaceId === null) {
-      setPanes([]);
-      setPaneId(null);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
-      try {
-        const detail = await fetchWorkspaceDetail(workspaceId);
-        if (cancelled) {
-          return;
-        }
-        setPanes(detail.panes);
-        setPaneId((current) => {
-          if (current !== null && detail.panes.some((pane) => pane.id === current)) {
-            return current;
-          }
-          return detail.panes.find((pane) => pane.focused)?.id ?? detail.panes[0]?.id ?? null;
-        });
-      } catch {
-        if (!cancelled) {
-          setPanes([]);
-          setPaneId(null);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [workspaceId]);
-
   const activePane = useMemo(
     () => panes.find((pane) => pane.id === paneId) ?? null,
     [panes, paneId],
   );
   const activeWorkspace = useMemo(
-    () => workspaces.find((workspace) => workspace.id === workspaceId) ?? null,
-    [workspaces, workspaceId],
+    () => workspaces.find((workspace) => workspace.id === activePane?.workspaceId) ?? null,
+    [workspaces, activePane],
+  );
+  // The strip stays scoped to the open pane's workspace so moving around one
+  // workspace does not mean going back to the fleet list.
+  const stripPanes = useMemo(
+    () => (activePane === null ? [] : panes.filter((pane) => pane.workspaceId === activePane.workspaceId)),
+    [panes, activePane],
   );
 
-  const openPane = useCallback((id: string) => {
+  const openPaneId = useCallback((id: string) => {
     setPaneId(id);
     setMenu(null);
   }, []);
@@ -139,18 +118,10 @@ export function App() {
 
       <div className="body">
         <Ledger
+          panes={panes}
           workspaces={workspaces}
-          selectedId={workspaceId}
-          onSelect={(id) => {
-            // Re-selecting the open workspace must not clear its pane: the
-            // pane-loading effect keys on workspaceId, so it would not run
-            // again and the stage would sit empty.
-            if (id === workspaceId) {
-              return;
-            }
-            setWorkspaceId(id);
-            setPaneId(null);
-          }}
+          selectedPaneId={paneId}
+          onSelect={(pane) => openPaneId(pane.id)}
         />
 
         <main className="stage">
@@ -196,22 +167,18 @@ export function App() {
           </div>
 
           <PaneStrip
-            panes={panes}
+            panes={stripPanes}
             activeId={paneId}
-            onSelect={openPane}
+            onSelect={openPaneId}
             onMenu={(id, x, y) => setMenu({ paneId: id, x, y })}
           />
 
           {activePane !== null ? (
-            <Scope key={activePane.id} paneId={activePane.id} />
+            <Scope key={activePane.id} paneId={activePane.id} theme={theme} />
           ) : (
             <div className="scope__idle">
-              <strong>{workspaceId === null ? "no workspace selected" : "no panes here"}</strong>
-              <span>
-                {workspaceId === null
-                  ? "Pick a workspace from the ledger to open its panes."
-                  : "This workspace reports no panes."}
-              </span>
+              <strong>no pane selected</strong>
+              <span>Pick an agent or shell from the fleet list to open its output.</span>
             </div>
           )}
 
@@ -236,7 +203,7 @@ export function App() {
       <PaneMenu
         target={menu}
         activePaneId={paneId}
-        onSelect={openPane}
+        onSelect={openPaneId}
         onClose={() => setMenu(null)}
       />
     </div>

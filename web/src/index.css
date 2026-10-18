@@ -383,16 +383,51 @@ body::before {
 .row {
   position: relative;
   display: grid;
-  grid-template-columns: 14px minmax(0, 1fr) auto;
+  grid-template-columns: 10px minmax(4.5rem, auto) minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 8px var(--pad) 8px calc(var(--pad) - 6px);
+  padding: 7px var(--pad) 7px calc(var(--pad) - 6px);
   text-align: left;
   border-bottom: var(--rule-w) solid var(--rule);
   color: var(--ink-dim);
   animation: rise 0.36s cubic-bezier(0.2, 0.7, 0.3, 1) both;
   animation-delay: calc(var(--i) * 18ms);
+}
+
+/* Who is working: the agent herdr detected, or a plain shell. */
+.row__agent {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-label);
+  font-size: var(--step-micro);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+}
+
+.row__agent[data-plain] {
+  color: var(--ink-faint);
+  font-weight: 400;
+}
+
+/* Where it lives: context, not identity. */
+.row__workspace {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 9ch;
+  font-family: var(--font-label);
+  font-size: var(--step-micro);
+  color: var(--ink-faint);
+  text-align: right;
+}
+
+.group__count {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-faint);
 }
 
 .row::before {
@@ -425,6 +460,13 @@ body::before {
   white-space: nowrap;
   font-size: var(--step-name);
   font-weight: 500;
+}
+
+.row__id {
+  margin-left: 6px;
+  font-family: var(--font-label);
+  font-size: var(--step-micro);
+  color: var(--ink-faint);
 }
 
 .row__meta {
@@ -659,16 +701,52 @@ body::before {
   animation: settle 0.22s ease-out both;
 }
 
-/* A terminal reads horizontally and its rows are drawn with spaces, so
-   wrapping destroys alignment and shreds painted backgrounds into stripes.
-   Keep one row per terminal line and scroll sideways instead. */
-.scope__line {
+/* A full-screen app reads horizontally and draws with spaces, so wrapping it
+   destroys the alignment and shreds its painted background into stripes. */
+.scope__scroll[data-wrap="off"] .scope__line {
   position: relative;
   z-index: 1;
   white-space: pre;
   width: max-content;
   min-width: 100%;
   min-height: 1.55em;
+}
+
+/* Ordinary output is just text: let it reflow to the viewport, which is what
+   makes a phone readable without sideways scrolling. */
+.scope__scroll[data-wrap="on"] .scope__line {
+  position: relative;
+  z-index: 1;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  min-height: 1.55em;
+}
+
+/* Shown only when a fixed-width pane cannot fit the viewport. */
+.scope__fit {
+  position: absolute;
+  right: var(--pad);
+  bottom: 8px;
+  z-index: 3;
+  padding: 3px 8px 2px;
+  border: var(--rule-w) solid var(--rule-strong);
+  background: var(--raised);
+  font-family: var(--font-label);
+  font-size: var(--step-micro);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.scope__fit:hover,
+.scope__fit[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+
+.scope {
+  position: relative;
 }
 
 .scope__idle {
@@ -949,12 +1027,41 @@ body::before {
     display: inline;
   }
 
+  /* A four-column row cannot fit a phone-width cell, so each cell stacks:
+     the agent on top, the pane name under it. The workspace is context the
+     pane id already implies, and it is in the cell's tooltip. */
   .row {
-    grid-template-columns: 12px auto;
+    grid-template-columns: 10px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    row-gap: 1px;
+    align-items: center;
     width: auto;
-    padding: 9px 11px;
+    min-width: 11rem;
+    max-width: 13rem;
+    padding: 7px 11px;
     border-bottom: 0;
     border-right: var(--rule-w) solid var(--rule);
+  }
+
+  .row .signal {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .row__agent {
+    grid-column: 2;
+    grid-row: 1;
+    font-size: 8.5px;
+  }
+
+  .row__name {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .row__id,
+  .row__workspace {
+    display: none;
   }
 
   .row::before {

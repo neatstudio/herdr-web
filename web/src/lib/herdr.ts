@@ -219,6 +219,13 @@ export async function fetchWorkspaces(): Promise<HerdrWorkspace[]> {
   return parseHerdrWorkspaces(await getJSON("/api/v1/herdr/workspaces"));
 }
 
+/** Every pane across every workspace, in one call. */
+export async function fetchAllPanes(): Promise<HerdrPane[]> {
+  const payload = await getJSON("/api/v1/herdr/panes");
+  const record = asRecord(payload);
+  return parseHerdrPanes(record?.panes ?? payload);
+}
+
 export async function fetchWorkspaceDetail(workspaceId: string): Promise<{
   workspace: HerdrWorkspace | null;
   panes: HerdrPane[];

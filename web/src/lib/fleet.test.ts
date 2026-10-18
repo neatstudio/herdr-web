@@ -90,6 +90,14 @@ test("paneName ignores blank names and ends at the pane id", () => {
   assert.equal(fleet.paneName({ id: "w9:p9" }), "w9:p9");
 });
 
+test("paneOwnName never falls back to the agent", () => {
+  // The fleet list has its own agent column, so the name column must not
+  // repeat it: an unnamed pane is identified by its id instead.
+  assert.equal(fleet.paneOwnName({ id: "w1:p1", agent: "agy" }), "w1:p1");
+  assert.equal(fleet.paneOwnName({ id: "w1:p1", terminalTitle: "osc", agent: "agy" }), "osc");
+  assert.equal(fleet.paneOwnName({ id: "w1:p1", label: "Deploy", agent: "agy" }), "Deploy");
+});
+
 test("paneHasName distinguishes a named pane from a bare id", () => {
   assert.equal(fleet.paneHasName({ id: "w1:p1", label: "web" }), true);
   assert.equal(fleet.paneHasName({ id: "w1:p1", agent: "claude" }), true);

@@ -1,26 +1,46 @@
+import type { AgentPane, FleetPane } from "@/lib/fleet";
+import {
+  TONE_CODE,
+  TONE_LABEL,
+  groupFleet,
+  paneAgent,
+  paneHasName,
+  paneOwnName,
+  shortPaneId,
+} from "@/lib/fleet";
 import type { HerdrWorkspace } from "@/lib/herdr";
-import { TONE_CODE, TONE_LABEL, groupByTone } from "@/lib/fleet";
 
 type Props = {
+  panes: AgentPane[];
   workspaces: HerdrWorkspace[];
-  selectedId: string | null;
-  onSelect: (id: string) => void;
+  selectedPaneId: string | null;
+  onSelect: (pane: AgentPane) => void;
 };
 
-/** Workspaces grouped by what they need from a human, blocked first. */
-export function Ledger({ workspaces, selectedId, onSelect }: Props) {
-  const groups = groupByTone(workspaces, (workspace) => workspace.agentStatus);
+/**
+ * The fleet: one row per pane, grouped by what that pane needs from a human.
+ *
+ * herdr draws a real distinction here. A workspace is a directory plus a set
+ * of tabs — closer to an SSH host than to a unit of work. The thing actually
+ * working is the agent detected inside a pane, so the agent leads each row and
+ * the workspace follows it as context.
+ */
+export function Ledger({ panes, workspaces, selectedPaneId, onSelect }: Props) {
+  const groups = groupFleet(panes, workspaces);
+  const agents = panes.filter((pane) => paneAgent(pane) !== "").length;
 
   return (
-    <nav className="ledger" aria-label="Workspaces">
+    <nav className="ledger" aria-label="Agents">
       <div className="ledger__head">
-        <span>workspaces</span>
-        <span>{workspaces.length}</span>
+        <span>fleet</span>
+        <span>
+          {agents}/{panes.length} agents
+        </span>
       </div>
 
-      {workspaces.length === 0 ? (
+      {panes.length === 0 ? (
         <p className="ledger__empty">
-          No workspaces reported. Start a herdr session and this list fills in.
+          No panes reported. Start a herdr session and this list fills in.
         </p>
       ) : (
         <div className="ledger__list">
@@ -36,35 +56,61 @@ export function Ledger({ workspaces, selectedId, onSelect }: Props) {
                 <span className="group__code" aria-hidden>
                   {TONE_CODE[group.tone]}
                 </span>
+                <span className="group__count">{group.items.length}</span>
               </div>
-              {group.items.map((workspace, index) => {
-                const active = workspace.id === selectedId;
-                return (
-                  <button
-                    key={workspace.id}
-                    type="button"
-                    className="row"
-                    data-workspace-id={workspace.id}
-                    data-tone={group.tone}
-                    aria-current={active ? "true" : undefined}
-                    style={{ ["--i" as string]: index, ["--signal" as string]: `var(--${group.tone})` }}
-                    onClick={() => onSelect(workspace.id)}
-                  >
-                    <span className="signal" data-tone={group.tone} aria-hidden />
-                    <span className="row__name" title={workspace.name}>
-                      {workspace.name}
-                    </span>
-                    <span className="row__meta">
-                      <span title={`${workspace.paneCount} panes`}>{workspace.paneCount}p</span>
-                      <span title={`${workspace.windows} tabs`}>{workspace.windows}t</span>
-                    </span>
-                  </button>
-                );
-              })}
+              {group.items.map((row, index) => (
+                <Row
+                  key={row.pane.id}
+                  row={row}
+                  index={index}
+                  tone={group.tone}
+                  active={row.pane.id === selectedPaneId}
+                  onSelect={onSelect}
+                />
+              ))}
             </div>
           ))}
         </div>
       )}
     </nav>
+  );
+}
+
+type RowProps = {
+  row: FleetPane;
+  index: number;
+  tone: string;
+  active: boolean;
+  onSelect: (pane: AgentPane) => void;
+};
+
+function Row({ row, index, tone, active, onSelect }: RowProps) {
+  const agent = paneAgent(row.pane);
+  const name = paneOwnName(row.pane);
+  return (
+    <button
+      type="button"
+      className="row"
+      data-pane-id={row.pane.id}
+      data-tone={tone}
+      aria-current={active ? "true" : undefined}
+      title={`${name} — ${row.pane.id} (${row.workspaceName})`}
+      style={{ ["--i" as string]: index, ["--signal" as string]: `var(--${tone})` }}
+      onClick={() => onSelect(row.pane)}
+    >
+      <span className="signal" data-tone={tone} aria-hidden />
+      {/* Which agent, then what it is called, then where it lives. */}
+      <span className="row__agent" data-plain={agent === "" ? "true" : undefined}>
+        {agent === "" ? "shell" : agent}
+      </span>
+      <span className="row__name">
+        {name}
+        {/* The short id only helps when the name is something else. */}
+        {paneHasName(row.pane) && <span className="row__id">{shortPaneId(row.pane.id)}</span>}
+      </span>
+      <span className="row__workspace" title={row.workspaceName}>
+        {row.workspaceName}
+      </span>
+    </button>
   );
 }

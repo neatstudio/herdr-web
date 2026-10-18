@@ -165,3 +165,80 @@ test("dominantBackground finds a painted canvas but not plain output", () => {
   // A single highlighted word is not a canvas.
   assert.equal(dominantBackground([`${ESC}[48;2;60;0;0mFAIL${ESC}[0m`, "plain", "plain"]), null);
 });
+
+test("paper mode mirrors a dark content canvas and its text", () => {
+  // A full-screen app's near-black canvas is a dark block on the light page;
+  // it becomes a light canvas, and its default ink flips with it.
+  assert.equal(
+    ansiLineToHtml(`${ESC}[48;2;20;20;20m   canvas   ${ESC}[0m`, "paper"),
+    '<span style="color:var(--ansi-ink-on-light);background-color:rgb(235,235,235)">' +
+      "   canvas   </span>",
+  );
+  // Light grey body text darkens instead of vanishing into the light canvas.
+  assert.equal(
+    ansiLineToHtml(`${ESC}[38;2;200;200;200mtext${ESC}[0m`, "paper"),
+    '<span style="color:rgb(55,55,55)">text</span>',
+  );
+});
+
+test("carbon mode mirrors a light background the other way", () => {
+  assert.equal(
+    ansiLineToHtml(`${ESC}[48;2;235;235;235m light bg ${ESC}[0m`, "carbon"),
+    '<span style="color:var(--ansi-ink-on-dark);background-color:rgb(20,20,20)">' +
+      " light bg </span>",
+  );
+  // Mid-tone colours read on either canvas, so inverting lightness is a no-op
+  // within rounding.
+  assert.equal(
+    ansiLineToHtml(`${ESC}[38;2;128;128;128mtext${ESC}[0m`, "carbon"),
+    '<span style="color:rgb(127,127,127)">text</span>',
+  );
+});
+
+test("palette references are untouched in paper mode", () => {
+  // Each theme already tunes the 16 base colours for its own paper; inverting
+  // them would fight the theme.
+  assert.equal(
+    ansiLineToHtml(`${ESC}[38;5;2mok${ESC}[0m`, "paper"),
+    '<span style="color:var(--ansi-2)">ok</span>',
+  );
+  assert.equal(
+    ansiLineToHtml(`${ESC}[44mbar${ESC}[49m`, "paper"),
+    '<span style="color:var(--ansi-ink-on-dark);background-color:var(--ansi-4)">bar</span>',
+  );
+});
+
+test("the default mode is content, byte for byte", () => {
+  const line = `${ESC}[1;48;2;20;20;20m${ESC}[38;2;200;200;200mhi ${" ".repeat(12)}${ESC}[0m plain`;
+  const html = ansiLineToHtml(line);
+  assert.equal(html, ansiLineToHtml(line, "content"));
+  assert.ok(html.includes("color:rgb(200,200,200)"), html);
+  assert.ok(html.includes("background-color:rgb(20,20,20)"), html);
+  assert.ok(html.includes("font-weight:700"), html);
+});
+
+test("dominantBackground yields to the page's own canvas in themed modes", () => {
+  const canvas = `${ESC}[48;2;20;20;20m${" ".repeat(120)}${ESC}[0m`;
+  const text = `${ESC}[48;2;20;20;20m  some content  ${ESC}[0m`;
+  const lines = [canvas, canvas, text];
+  // Content mode still needs the container to paint the app's canvas.
+  assert.equal(dominantBackground(lines), "rgb(20,20,20)");
+  // Paper and carbon are canvases already; a second one would contradict them.
+  assert.equal(dominantBackground(lines, "paper"), null);
+  assert.equal(dominantBackground(lines, "carbon"), null);
+});
+
+test("a real full-screen TUI line renders readably on paper", () => {
+  // The shape a coding agent emits: reset, canvas, chrome, light grey body
+  // text, then padding that carries the canvas to the row edge.
+  const line =
+    `${ESC}[0m${ESC}[48;2;20;20;20m  ${ESC}[38;2;200;200;200mBuild finished in 1.2s` +
+    `${" ".repeat(40)}${ESC}[0m`;
+  const html = ansiLineToHtml(line, "paper");
+  assert.ok(!html.includes(ESC), html);
+  assert.ok(html.includes("background-color:rgb(235,235,235)"), html);
+  assert.ok(html.includes("color:rgb(55,55,55)"), html);
+  assert.ok(!html.includes("rgb(20,20,20)"), html);
+  assert.ok(!html.includes("rgb(200,200,200)"), html);
+  assert.ok(html.includes("Build finished in 1.2s"), html);
+});

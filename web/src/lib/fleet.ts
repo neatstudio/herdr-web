@@ -107,6 +107,15 @@ export function paneName(pane: NameablePane): string {
   );
 }
 
+/**
+ * The pane's own name, without falling back to the agent. The fleet list has a
+ * separate column for the agent, so repeating it there would say nothing; an
+ * unnamed pane is better identified by its id.
+ */
+export function paneOwnName(pane: NameablePane): string {
+  return clean(pane.label) || clean(pane.title) || clean(pane.terminalTitle) || pane.id;
+}
+
 /** True when the pane still shows nothing but its id. */
 export function paneHasName(pane: NameablePane): boolean {
   return paneName(pane) !== pane.id;
@@ -115,4 +124,80 @@ export function paneHasName(pane: NameablePane): boolean {
 /** The part after the colon: short enough for a tab strip. */
 export function shortPaneId(paneId: string): string {
   return paneId.split(":").pop() ?? paneId;
+}
+
+export type AgentPane = NameablePane & {
+  agent?: string;
+  displayAgent?: string;
+  workspaceId: string;
+  agentStatus?: string;
+};
+
+/**
+ * The agent working in a pane, or "" for a plain shell. herdr detects the
+ * agent itself; a workspace is only the directory and tab a pane lives in,
+ * which is why the fleet is grouped and labelled by pane, not by workspace.
+ */
+export function paneAgent(pane: AgentPane): string {
+  return clean(pane.displayAgent) || clean(pane.agent);
+}
+
+/** A pane with its workspace's name attached, for a flat fleet listing. */
+export type FleetPane = {
+  pane: AgentPane;
+  workspaceName: string;
+};
+
+/**
+ * Group every pane in the daemon by what it needs from a human, with the
+ * workspace kept as context on each row rather than as the grouping key: a
+ * seven-pane workspace has one workspace status but seven panes that are
+ * doing different things.
+ */
+export function groupFleet(
+  panes: AgentPane[],
+  workspaces: { id: string; name: string }[],
+): Grouped<FleetPane>[] {
+  const names = new Map(workspaces.map((workspace) => [workspace.id, workspace.name]));
+  const rows: FleetPane[] = panes.map((pane) => ({
+    pane,
+    workspaceName: names.get(pane.workspaceId) ?? pane.workspaceId,
+  }));
+  return groupByTone(rows, (row) => row.pane.agentStatus);
+}
+
+export type PageTheme = "light" | "dark";
+
+/** True when an absolute colour is a dark one. Palette refs are assumed dark,
+ *  which is what nearly every full-screen app paints. */
+export function isDarkColour(colour: string): boolean {
+  const match = /^rgb\((\d+),(\d+),(\d+)\)$/.exec(colour);
+  if (match === null) {
+    return true;
+  }
+  const luma =
+    (0.299 * Number(match[1]) + 0.587 * Number(match[2]) + 0.114 * Number(match[3])) / 255;
+  return luma <= 0.5;
+}
+
+/**
+ * Which canvas mode a pane's content needs for the current page theme.
+ *
+ * Adapting unconditionally would be wrong in half the cases: a dark-canvas app
+ * on the dark page is already correct, and inverting it would produce the very
+ * mismatch this exists to remove. So the content is inverted only when its
+ * canvas disagrees with the page.
+ */
+export function canvasModeFor(
+  canvas: string | null,
+  theme: PageTheme,
+): "content" | "paper" | "carbon" {
+  if (canvas === null) {
+    // Plain output: the palette already follows the theme.
+    return "content";
+  }
+  if (isDarkColour(canvas)) {
+    return theme === "light" ? "paper" : "content";
+  }
+  return theme === "dark" ? "carbon" : "content";
 }

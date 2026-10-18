@@ -272,6 +272,29 @@ func (s *Server) handleWorkspaceGet(w http.ResponseWriter, r *http.Request, work
 	writeJSON(w, http.StatusOK, map[string]any{"workspace": found, "panes": out})
 }
 
+// handlePanes lists every pane across every workspace in one call. The UI
+// groups panes by status, so it needs the whole fleet, not one workspace at a
+// time; herdr's pane.list already supports that.
+func (s *Server) handlePanes(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, "GET")
+		return
+	}
+	var list struct {
+		Type  string         `json:"type"`
+		Panes []herdrPaneRow `json:"panes"`
+	}
+	if err := s.client().Call(r.Context(), "pane.list", nil, &list); err != nil {
+		writeBadGateway(w, "herdr_unavailable", err)
+		return
+	}
+	out := make([]publicPane, 0, len(list.Panes))
+	for _, pane := range list.Panes {
+		out = append(out, publicHerdrPane(pane))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"panes": out})
+}
+
 func (s *Server) handlePaneRead(w http.ResponseWriter, r *http.Request, paneID string) {
 	if r.Method != http.MethodGet {
 		writeMethodNotAllowed(w, "GET")
@@ -407,6 +430,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/v1/herdr/status", s.handleStatus)
 	mux.HandleFunc("/api/v1/herdr/workspaces", s.handleWorkspaces)
+	mux.HandleFunc("/api/v1/herdr/panes", s.handlePanes)
 	mux.HandleFunc("/api/v1/herdr/workspaces/", func(w http.ResponseWriter, r *http.Request) {
 		id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/herdr/workspaces/"), "/")
 		s.handleWorkspaceGet(w, r, id)

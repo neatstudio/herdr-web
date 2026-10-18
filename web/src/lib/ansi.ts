@@ -11,6 +11,9 @@
  * through to the DOM.
  */
 
+/** The canvas the transcript is drawn onto; paper and carbon are the page's. */
+export type CanvasMode = "content" | "paper" | "carbon";
+
 type Style = {
   fg: string | null;
   bg: string | null;
@@ -67,6 +70,35 @@ const clampByte = (value: number): number => Math.max(0, Math.min(255, Math.roun
 
 function trueColor(r: number, g: number, b: number): string {
   return `rgb(${clampByte(r)},${clampByte(g)},${clampByte(b)})`;
+}
+
+/**
+ * Mirror an absolute colour onto the page's canvas by inverting its HSL
+ * lightness and keeping hue and saturation. A full-screen app bakes its own
+ * dark canvas into truecolor output; drawn literally on a light page that is a
+ * dark block with light text inside it. Flipping lightness keeps the relative
+ * structure (raised panels, dimmed text) instead of flattening it.
+ *
+ * Holding H and S fixed leaves the chroma span untouched, so inverting L is
+ * exactly a shift of every channel by 1 - 2L; the clamp only absorbs float
+ * drift. Palette references are left alone: each theme already tunes those 16
+ * entries for its own paper, so inverting them would fight the theme.
+ */
+function adaptColour(colour: string, mode: CanvasMode): string {
+  if (mode === "content") {
+    return colour;
+  }
+  const rgb = /^rgb\((\d+),(\d+),(\d+)\)$/.exec(colour);
+  if (rgb === null) {
+    return colour;
+  }
+  const r = Number(rgb[1]) / 255;
+  const g = Number(rgb[2]) / 255;
+  const b = Number(rgb[3]) / 255;
+  const shift = 1 - (Math.max(r, g, b) + Math.min(r, g, b));
+  return `rgb(${clampByte((r + shift) * 255)},${clampByte((g + shift) * 255)},${clampByte(
+    (b + shift) * 255,
+  )})`;
 }
 
 /**
@@ -168,7 +200,7 @@ export function applySgr(style: Style, params: number[], start: number): number 
   return 0;
 }
 
-function styleToCss(style: Style): string {
+function styleToCss(style: Style, mode: CanvasMode): string {
   const declarations: string[] = [];
   let fg = style.fg;
   let bg = style.bg;
@@ -178,6 +210,8 @@ function styleToCss(style: Style): string {
     fg = swappedFg;
     bg = swappedBg;
   }
+  fg = fg === null ? null : adaptColour(fg, mode);
+  bg = bg === null ? null : adaptColour(bg, mode);
   if (fg !== null) {
     declarations.push(`color:${fg}`);
   } else if (bg !== null) {
@@ -185,6 +219,8 @@ function styleToCss(style: Style): string {
     // their canvas this way and rely on the terminal's own default text
     // colour. Inheriting the page's ink would print dark-on-dark in the
     // light theme, so pick an ink that contrasts with this background.
+    // Measuring the adapted background is what makes that hold in paper and
+    // carbon mode too.
     declarations.push(`color:${inkOn(bg)}`);
   }
   if (bg !== null) {
@@ -305,7 +341,7 @@ function trimPadding(segments: Segment[]): Segment[] {
   return out;
 }
 
-function render(segments: Segment[]): string {
+function render(segments: Segment[], mode: CanvasMode): string {
   let html = "";
   for (const segment of segments) {
     // Belt and braces: no escape byte may reach the DOM, even from a sequence
@@ -314,7 +350,7 @@ function render(segments: Segment[]): string {
     if (safe === "") {
       continue;
     }
-    const css = styleToCss(segment.style);
+    const css = styleToCss(segment.style, mode);
     const escaped = escapeHtml(safe);
     html += css === "" ? escaped : `<span style="${css}">${escaped}</span>`;
   }
@@ -322,8 +358,8 @@ function render(segments: Segment[]): string {
 }
 
 /** One line of pane text to HTML. */
-export function ansiLineToHtml(line: string): string {
-  return render(trimPadding(parseLine(line)));
+export function ansiLineToHtml(line: string, mode: CanvasMode = "content"): string {
+  return render(trimPadding(parseLine(line)), mode);
 }
 
 /**
@@ -333,9 +369,17 @@ export function ansiLineToHtml(line: string): string {
  * break the canvas into stripes.
  *
  * Returns null for ordinary output, so a plain shell keeps the page's own
- * background and the light theme stays light.
+ * background and the light theme stays light. The paper and carbon modes
+ * always return null: there the page itself is the canvas, and painting the
+ * content's own would put a second, contradictory block behind it.
  */
-export function dominantBackground(lines: string[]): string | null {
+export function dominantBackground(
+  lines: string[],
+  mode: CanvasMode = "content",
+): string | null {
+  if (mode !== "content") {
+    return null;
+  }
   const counts = new Map<string, number>();
   const linesWithBackground = new Set<string>();
   for (const line of lines) {
