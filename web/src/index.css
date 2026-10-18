@@ -329,6 +329,51 @@ body::before {
   color: var(--ink-faint);
 }
 
+.ledger__filter {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 7px var(--pad);
+  border-bottom: var(--rule-w) solid var(--rule);
+}
+
+.ledger__input {
+  width: 100%;
+  min-width: 0;
+  padding: 5px 20px 5px 7px;
+  border: var(--rule-w) solid var(--rule);
+  background: var(--paper);
+  outline: none;
+  font-family: var(--font-mono);
+  font-size: var(--step-name);
+}
+
+.ledger__input::placeholder {
+  color: var(--ink-faint);
+}
+
+.ledger__input:focus {
+  border-color: var(--rule-strong);
+}
+
+/* The browser's own clear affordance is a different size in every engine. */
+.ledger__input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.ledger__clear {
+  position: absolute;
+  right: calc(var(--pad) + 4px);
+  padding: 0 4px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--ink-faint);
+}
+
+.ledger__clear:hover {
+  color: var(--ink);
+}
+
 .ledger__list {
   min-height: 0;
   overflow-y: auto;
@@ -554,6 +599,10 @@ body::before {
 
 /* A pane can carry a long terminal title; it must not push the cwd readout
    off the header. */
+.stage__workspace {
+  cursor: context-menu;
+}
+
 .stage__pane {
   min-width: 0;
   max-width: 48ch;
@@ -1166,5 +1215,9 @@ body::before {
   .statusline {
     gap: 8px;
     overflow: hidden;
+  }
+
+  .ledger__filter {
+    padding: 6px 10px;
   }
 }

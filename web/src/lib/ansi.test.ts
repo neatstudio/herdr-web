@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ansiLineToHtml, colour256, dominantBackground, inkOn, stripAnsi } from "./ansi.ts";
+import {
+  ansiCacheStats,
+  ansiLineToHtml,
+  ANSI_CACHE_CAPACITY,
+  clearAnsiCache,
+  colour256,
+  dominantBackground,
+  inkOn,
+  stripAnsi,
+} from "./ansi.ts";
 
 const ESC = "\u001b";
 
@@ -241,4 +250,92 @@ test("a real full-screen TUI line renders readably on paper", () => {
   assert.ok(!html.includes("rgb(20,20,20)"), html);
   assert.ok(!html.includes("rgb(200,200,200)"), html);
   assert.ok(html.includes("Build finished in 1.2s"), html);
+});
+
+test("rendering the same line twice in one mode is a hit", () => {
+  clearAnsiCache();
+  const line = `${ESC}[1;48;2;20;20;20m  build${ESC}[0m ok`;
+  const first = ansiLineToHtml(line, "content");
+  assert.deepEqual(ansiCacheStats(), { size: 1, hits: 0, misses: 1 });
+  const second = ansiLineToHtml(line, "content");
+  assert.equal(second, first);
+  // A hit reuses the entry instead of adding a second one for the same line.
+  assert.deepEqual(ansiCacheStats(), { size: 1, hits: 1, misses: 1 });
+  assert.ok(first.includes("background-color:rgb(20,20,20)"), first);
+});
+
+test("the cache key includes the canvas mode", () => {
+  clearAnsiCache();
+  const line = `${ESC}[48;2;20;20;20m   canvas   ${ESC}[0m`;
+  const content = ansiLineToHtml(line, "content");
+  const paper = ansiLineToHtml(line, "paper");
+  // Each mode alone still decides the markup: no cross-mode collision.
+  assert.equal(
+    content,
+    '<span style="color:var(--ansi-ink-on-dark);background-color:rgb(20,20,20)">' +
+      "   canvas   </span>",
+  );
+  assert.equal(
+    paper,
+    '<span style="color:var(--ansi-ink-on-light);background-color:rgb(235,235,235)">' +
+      "   canvas   </span>",
+  );
+  // Two cold calls, two entries: the mode is part of the key.
+  assert.deepEqual(ansiCacheStats(), { size: 2, hits: 0, misses: 2 });
+});
+
+test("the cache is bounded and evicts the oldest line first", () => {
+  clearAnsiCache();
+  const lineFor = (index: number): string => `distinct line ${index}`;
+  const pushed = ANSI_CACHE_CAPACITY + 5;
+  for (let index = 0; index < pushed; index += 1) {
+    ansiLineToHtml(lineFor(index));
+  }
+  const filled = ansiCacheStats();
+  assert.ok(filled.size <= ANSI_CACHE_CAPACITY, `size ${filled.size} exceeds the cap`);
+  assert.equal(filled.size, ANSI_CACHE_CAPACITY);
+  assert.equal(filled.misses, pushed);
+  assert.equal(filled.hits, 0);
+
+  // The first line is gone; asking for it re-renders instead of going stale.
+  assert.equal(ansiLineToHtml(lineFor(0)), "distinct line 0");
+  const afterEvicted = ansiCacheStats();
+  assert.equal(afterEvicted.misses, pushed + 1);
+  assert.equal(afterEvicted.size, ANSI_CACHE_CAPACITY);
+});
+
+test("clearAnsiCache resets size, hits and misses", () => {
+  clearAnsiCache();
+  ansiLineToHtml("one");
+  ansiLineToHtml("two");
+  ansiLineToHtml("one");
+  assert.deepEqual(ansiCacheStats(), { size: 2, hits: 1, misses: 2 });
+  clearAnsiCache();
+  assert.deepEqual(ansiCacheStats(), { size: 0, hits: 0, misses: 0 });
+});
+
+test("dominantBackground is not memoised per line", () => {
+  // It takes the whole array once per paint, not one line per call.
+  clearAnsiCache();
+  const canvas = `${ESC}[48;2;20;20;20m${" ".repeat(120)}${ESC}[0m`;
+  dominantBackground([canvas, canvas, `${ESC}[48;2;20;20;20m  text  ${ESC}[0m`]);
+  assert.deepEqual(ansiCacheStats(), { size: 0, hits: 0, misses: 0 });
+});
+
+test("a realistic TUI line renders identically before and after caching", () => {
+  // The shape a full-screen app emits: reset, its own canvas, light grey text,
+  // then spaces that carry the canvas to the row edge.
+  clearAnsiCache();
+  const line =
+    `${ESC}[0m${ESC}[48;2;20;20;20m${ESC}[38;2;200;200;200m  Build finished in 1.2s` +
+    `${" ".repeat(120)}${ESC}[0m`;
+  const cold = ansiLineToHtml(line, "content");
+  const warm = ansiLineToHtml(line, "content");
+  assert.equal(warm, cold);
+  assert.deepEqual(ansiCacheStats(), { size: 1, hits: 1, misses: 1 });
+  assert.ok(cold.includes("background-color:rgb(20,20,20)"), cold);
+  assert.ok(cold.includes("color:rgb(200,200,200)"), cold);
+  assert.ok(cold.includes("Build finished in 1.2s"), cold);
+  assert.ok(cold.includes(" ".repeat(120)), cold);
+  assert.ok(!cold.includes(ESC), cold);
 });

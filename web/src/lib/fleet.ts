@@ -244,3 +244,34 @@ export function canvasModeFor(
   }
   return theme === "dark" ? "carbon" : "content";
 }
+
+/**
+ * Does a pane match every whitespace-separated term? Terms are matched against
+ * everything visible in the row plus the ids, so "/server" or "agy wE" both
+ * work, and a term that matches nothing narrows the list to nothing.
+ */
+export function matchesFilter(query: string, row: { pane: AgentPane; workspaceName: string }): boolean {
+  const terms = query.trim().toLowerCase().split(/\s+/).filter((term) => term !== "");
+  if (terms.length === 0) {
+    return true;
+  }
+  const haystack = [
+    row.workspaceName,
+    row.pane.id,
+    paneAgent(row.pane),
+    paneListName(row.pane, row.workspaceName),
+    paneOwnName(row.pane),
+    clean(row.pane.cwd),
+  ]
+    .join(" ")
+    .toLowerCase();
+  return terms.every((term) => haystack.includes(term));
+}
+
+/** Filter a fleet listing, keeping it in the order groupFleet produced. */
+export function filterFleet<Row extends { pane: AgentPane; workspaceName: string }>(
+  rows: Row[],
+  query: string,
+): Row[] {
+  return query.trim() === "" ? rows : rows.filter((row) => matchesFilter(query, row));
+}

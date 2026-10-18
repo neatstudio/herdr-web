@@ -350,6 +350,56 @@ func TestPaneRenameRejectsBadRequests(t *testing.T) {
 	}
 }
 
+func TestWorkspaceRenameSetsTheLabel(t *testing.T) {
+	socket, state, closeFn := startFakeHerdr(t)
+	defer closeFn()
+	handler := newTestHandler(t, socket)
+
+	ok := do(t, handler, http.MethodPost, "/api/v1/herdr/workspaces/w1/rename", `{"label":"  prod hosts  "}`)
+	if ok.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", ok.Code, ok.Body.String())
+	}
+	state.waitForCalls(t, 1)
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if len(state.renamedWorkspace) != 1 || state.renamedWorkspace[0] != "w1=prod hosts" {
+		t.Fatalf("renamedWorkspace=%q", state.renamedWorkspace)
+	}
+}
+
+func TestWorkspaceRenameRejectsAnEmptyLabel(t *testing.T) {
+	// A workspace has no unnamed state, so an empty label is a bad request
+	// rather than a clear.
+	socket, _, closeFn := startFakeHerdr(t)
+	defer closeFn()
+	handler := newTestHandler(t, socket)
+
+	for _, body := range []string{`{"label":""}`, `{"label":"   "}`, `{}`} {
+		got := do(t, handler, http.MethodPost, "/api/v1/herdr/workspaces/w1/rename", body)
+		if got.Code != http.StatusBadRequest {
+			t.Fatalf("body=%s status=%d", body, got.Code)
+		}
+	}
+	if got := do(t, handler, http.MethodGet, "/api/v1/herdr/workspaces/w1/rename", ""); got.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("GET status=%d", got.Code)
+	}
+}
+
+func TestWorkspaceDetailStillRoutesAfterRenameWasAdded(t *testing.T) {
+	socket, _, closeFn := startFakeHerdr(t)
+	defer closeFn()
+	handler := newTestHandler(t, socket)
+
+	got := do(t, handler, http.MethodGet, "/api/v1/herdr/workspaces/w1", "")
+	if got.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", got.Code, got.Body.String())
+	}
+	body := decodeMap(t, got)
+	if _, present := body["workspace"]; !present {
+		t.Fatalf("detail route lost: %s", got.Body.String())
+	}
+}
+
 func TestDaemonErrorBecomesBadGateway(t *testing.T) {
 	socket, state, closeFn := startFakeHerdr(t)
 	defer closeFn()

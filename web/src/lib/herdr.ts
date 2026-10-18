@@ -219,6 +219,11 @@ export async function fetchWorkspaces(): Promise<HerdrWorkspace[]> {
   return parseHerdrWorkspaces(await getJSON("/api/v1/herdr/workspaces"));
 }
 
+/** Rename a workspace. herdr requires a non-empty label. */
+export async function renameWorkspace(workspaceId: string, label: string): Promise<boolean> {
+  return postJSON(`/api/v1/herdr/workspaces/${encodeURIComponent(workspaceId)}/rename`, { label });
+}
+
 /** Every pane across every workspace, in one call. */
 export async function fetchAllPanes(): Promise<HerdrPane[]> {
   const payload = await getJSON("/api/v1/herdr/panes");

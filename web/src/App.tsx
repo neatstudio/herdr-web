@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Ledger } from "@/components/Ledger";
 import { Masthead } from "@/components/Masthead";
-import { PaneMenu, type MenuTarget } from "@/components/PaneMenu";
+import { TargetMenu, type MenuTarget } from "@/components/TargetMenu";
 import { PaneStrip } from "@/components/PaneStrip";
 import { PromptBar } from "@/components/PromptBar";
 import { Scope } from "@/components/Scope";
@@ -27,6 +27,20 @@ import {
 
 /** One poll drives the whole fleet: status, workspaces and every pane. */
 const FLEET_POLL_MS = 3000;
+
+function paneTarget(pane: HerdrPane, x: number, y: number): MenuTarget {
+  return {
+    kind: "pane",
+    id: pane.id,
+    x,
+    y,
+    name: paneHasName(pane) ? paneName(pane) : "",
+  };
+}
+
+function workspaceTarget(workspace: HerdrWorkspace, x: number, y: number): MenuTarget {
+  return { kind: "workspace", id: workspace.id, x, y, name: workspace.name };
+}
 
 /** localStorage can throw in private mode; the theme then just is not kept. */
 function safeStorage(): Storage | null {
@@ -69,17 +83,13 @@ export function App() {
     storeChoice(safeStorage(), next);
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load(): Promise<void> {
+  const loadFleet = useCallback(async (): Promise<void> => {
+    {
       const [nextStatus, nextWorkspaces, nextPanes] = await Promise.all([
         fetchStatus(),
         fetchWorkspaces().catch(() => [] as HerdrWorkspace[]),
         fetchAllPanes().catch(() => [] as HerdrPane[]),
       ]);
-      if (cancelled) {
-        return;
-      }
       setStatus(nextStatus);
       setWorkspaces(nextWorkspaces);
       setPanes(nextPanes);
@@ -97,13 +107,13 @@ export function App() {
         return focused?.id ?? nextPanes[0]?.id ?? null;
       });
     }
-    void load();
-    const timer = setInterval(() => void load(), FLEET_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
   }, []);
+
+  useEffect(() => {
+    void loadFleet();
+    const timer = setInterval(() => void loadFleet(), FLEET_POLL_MS);
+    return () => clearInterval(timer);
+  }, [loadFleet]);
 
   const activePane = useMemo(
     () => panes.find((pane) => pane.id === paneId) ?? null,
@@ -142,7 +152,24 @@ export function App() {
         <main className="stage">
           <div className="stage__head">
             <h1 className="stage__title">
-              <span className="dim">{activeWorkspace?.name ?? "no workspace"}</span>
+              {activeWorkspace !== null ? (
+                <span
+                  className="stage__workspace"
+                  data-workspace-id={activeWorkspace.id}
+                  title={`${activeWorkspace.name} — ${activeWorkspace.id}`}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    setMenu(workspaceTarget(activeWorkspace, event.clientX, event.clientY));
+                  }}
+                  {...longPressHandlers({
+                    onLongPress: (x, y) => setMenu(workspaceTarget(activeWorkspace, x, y)),
+                  })}
+                >
+                  {activeWorkspace.name}
+                </span>
+              ) : (
+                <span className="dim">no workspace</span>
+              )}
               {activePane !== null && (
                 <>
                   <span className="dim">/</span>
@@ -156,21 +183,10 @@ export function App() {
                     }
                     onContextMenu={(event) => {
                       event.preventDefault();
-                      setMenu({
-                        paneId: activePane.id,
-                        x: event.clientX,
-                        y: event.clientY,
-                        name: paneHasName(activePane) ? paneName(activePane) : "",
-                      });
+                      setMenu(paneTarget(activePane, event.clientX, event.clientY));
                     }}
                     {...longPressHandlers({
-                      onLongPress: (x, y) =>
-                        setMenu({
-                          paneId: activePane.id,
-                          x,
-                          y,
-                          name: paneHasName(activePane) ? paneName(activePane) : "",
-                        }),
+                      onLongPress: (x, y) => setMenu(paneTarget(activePane, x, y)),
                     })}
                   >
                     {paneName(activePane)}
@@ -201,12 +217,9 @@ export function App() {
             onSelect={openPaneId}
             onMenu={(id, x, y) => {
               const pane = panes.find((candidate) => candidate.id === id);
-              setMenu({
-                paneId: id,
-                x,
-                y,
-                name: pane !== undefined && paneHasName(pane) ? paneName(pane) : "",
-              });
+              if (pane !== undefined) {
+                setMenu(paneTarget(pane, x, y));
+              }
             }}
           />
 
@@ -237,11 +250,12 @@ export function App() {
         </span>
       </footer>
 
-      <PaneMenu
+      <TargetMenu
         target={menu}
         activePaneId={paneId}
         onSelect={openPaneId}
         onClose={() => setMenu(null)}
+        onRenamed={() => void loadFleet()}
       />
     </div>
   );

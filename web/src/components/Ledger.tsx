@@ -1,7 +1,9 @@
+import { useState } from "react";
 import type { AgentPane, FleetPane } from "@/lib/fleet";
 import {
   TONE_CODE,
   TONE_LABEL,
+  filterFleet,
   groupFleet,
   paneAgent,
   paneListName,
@@ -26,22 +28,56 @@ type Props = {
  * the workspace follows it as context.
  */
 export function Ledger({ panes, workspaces, selectedPaneId, onSelect }: Props) {
-  const groups = groupFleet(panes, workspaces);
+  const [query, setQuery] = useState("");
+  const groups = groupFleet(panes, workspaces).map((group) => ({
+    tone: group.tone,
+    items: filterFleet(group.items, query),
+  })).filter((group) => group.items.length > 0);
   const agents = panes.filter((pane) => paneAgent(pane) !== "").length;
+  const shown = groups.reduce((total, group) => total + group.items.length, 0);
 
   return (
     <nav className="ledger" aria-label="Agents">
       <div className="ledger__head">
         <span>fleet</span>
         <span>
-          {agents}/{panes.length} agents
+          {query.trim() === ""
+            ? `${agents}/${panes.length} agents`
+            : `${shown}/${panes.length} match`}
         </span>
+      </div>
+
+      <div className="ledger__filter">
+        <input
+          id="herdr-fleet-filter"
+          className="ledger__input"
+          type="search"
+          autoComplete="off"
+          spellCheck={false}
+          placeholder="filter agents, panes, workspaces…"
+          aria-label="Filter the fleet"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        {query !== "" && (
+          <button
+            type="button"
+            id="herdr-fleet-clear"
+            className="ledger__clear"
+            aria-label="Clear the filter"
+            onClick={() => setQuery("")}
+          >
+            ×
+          </button>
+        )}
       </div>
 
       {panes.length === 0 ? (
         <p className="ledger__empty">
           No panes reported. Start a herdr session and this list fills in.
         </p>
+      ) : groups.length === 0 ? (
+        <p className="ledger__empty">No pane matches “{query}”.</p>
       ) : (
         <div className="ledger__list">
           {groups.map((group) => (

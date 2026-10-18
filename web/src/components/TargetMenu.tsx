@@ -1,14 +1,26 @@
 import { useEffect, useRef, useState } from "react";
-import { renamePane } from "@/lib/herdr";
+import { renamePane, renameWorkspace } from "@/lib/herdr";
 
-export type MenuTarget = { paneId: string; x: number; y: number; name?: string };
+/**
+ * What a menu acts on. Panes and workspaces share one menu because they share
+ * the same two actions — rename and copy the id — and herdr draws the same
+ * distinction for both.
+ */
+export type MenuTarget = {
+  kind: "pane" | "workspace";
+  id: string;
+  x: number;
+  y: number;
+  /** The current name, so Rename starts from it; "" when there is none. */
+  name?: string;
+};
 
 type Props = {
   target: MenuTarget | null;
   activePaneId: string | null;
   onSelect: (paneId: string) => void;
   onClose: () => void;
-  /** Called after a successful rename so the caller can refresh. */
+  /** Called after a successful rename so the caller can refresh at once. */
   onRenamed?: () => void;
 };
 
@@ -25,12 +37,7 @@ async function copyText(text: string): Promise<void> {
   }
 }
 
-/**
- * Pane actions. herdr can rename a pane, so the menu offers it; a right-click
- * is not available on a touch screen, which is why the title elements also
- * open this on a long press.
- */
-export function PaneMenu({ target, activePaneId, onSelect, onClose, onRenamed }: Props) {
+export function TargetMenu({ target, activePaneId, onSelect, onClose, onRenamed }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [renaming, setRenaming] = useState(false);
@@ -55,8 +62,6 @@ export function PaneMenu({ target, activePaneId, onSelect, onClose, onRenamed }:
     if (!target) {
       return;
     }
-    // Dismiss on the next interaction anywhere outside the menu. Bubble phase,
-    // so a click on an item is handled first.
     function dismiss(event: MouseEvent): void {
       if (ref.current?.contains(event.target as Node)) {
         return;
@@ -81,15 +86,22 @@ export function PaneMenu({ target, activePaneId, onSelect, onClose, onRenamed }:
     };
   }, [target, onClose]);
 
-  const paneId = target?.paneId ?? null;
+  const kind = target?.kind ?? "pane";
+  const id = target?.id ?? null;
 
   async function commit(label: string | null): Promise<void> {
-    if (busy || paneId === null) {
+    if (busy || id === null) {
       return;
     }
     setBusy(true);
     try {
-      if (await renamePane(paneId, label)) {
+      // A workspace has no unnamed state, so clearing is only offered for
+      // panes and an empty workspace name is rejected before it is sent.
+      const done =
+        kind === "pane"
+          ? await renamePane(id, label)
+          : label !== null && (await renameWorkspace(id, label));
+      if (done) {
         onRenamed?.();
         onClose();
       }
@@ -103,27 +115,27 @@ export function PaneMenu({ target, activePaneId, onSelect, onClose, onRenamed }:
   }
 
   const items: { label: string; hint: string; run: () => void }[] = [];
-  if (target.paneId !== activePaneId) {
-    items.push({ label: "Open pane", hint: "view", run: () => onSelect(target.paneId) });
+  if (kind === "pane" && target.id !== activePaneId) {
+    items.push({ label: "Open pane", hint: "view", run: () => onSelect(target.id) });
   }
   items.push({
-    label: "Rename…",
+    label: kind === "pane" ? "Rename…" : "Rename workspace…",
     hint: target.name ?? "",
     run: () => {
       setDraft(target.name ?? "");
       setRenaming(true);
     },
   });
-  if (target.name !== undefined && target.name !== "") {
+  if (kind === "pane" && target.name !== undefined && target.name !== "") {
     items.push({ label: "Clear name", hint: "pane id", run: () => void commit(null) });
   }
   items.push({
-    label: "Copy pane id",
-    hint: target.paneId,
-    run: () => void copyText(target.paneId),
+    label: kind === "pane" ? "Copy pane id" : "Copy workspace id",
+    hint: target.id,
+    run: () => void copyText(target.id),
   });
 
-  const width = renaming ? 280 : 230;
+  const width = renaming ? 300 : 240;
   const itemHeight = 34;
   const height = renaming ? 62 : items.length * itemHeight + 8;
   const left = Math.max(4, Math.min(target.x, window.innerWidth - width - 4));
@@ -134,7 +146,7 @@ export function PaneMenu({ target, activePaneId, onSelect, onClose, onRenamed }:
       ref={ref}
       className="menu"
       role="menu"
-      aria-label={`Pane ${target.paneId}`}
+      aria-label={`${kind} ${target.id}`}
       style={{ left, top, minWidth: width }}
       onContextMenu={(event) => event.preventDefault()}
       // A click inside the menu must not reach the document listener that
@@ -157,8 +169,8 @@ export function PaneMenu({ target, activePaneId, onSelect, onClose, onRenamed }:
             type="text"
             autoComplete="off"
             spellCheck={false}
-            placeholder="name this pane"
-            aria-label="Pane name"
+            placeholder={kind === "pane" ? "name this pane" : "name this workspace"}
+            aria-label={kind === "pane" ? "Pane name" : "Workspace name"}
             value={draft}
             disabled={busy}
             onChange={(event) => setDraft(event.target.value)}
@@ -169,7 +181,11 @@ export function PaneMenu({ target, activePaneId, onSelect, onClose, onRenamed }:
               }
             }}
           />
-          <button type="submit" className="menu__save" disabled={busy}>
+          <button
+            type="submit"
+            className="menu__save"
+            disabled={busy || (kind === "workspace" && draft.trim() === "")}
+          >
             save
           </button>
         </form>
@@ -180,9 +196,7 @@ export function PaneMenu({ target, activePaneId, onSelect, onClose, onRenamed }:
             type="button"
             role="menuitem"
             className="menu__item"
-            onClick={() => {
-              item.run();
-            }}
+            onClick={() => item.run()}
           >
             <span>{item.label}</span>
             <span>{item.hint}</span>

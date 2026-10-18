@@ -215,6 +215,37 @@ func (s *Server) handleWorkspaces(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// handleWorkspaceRename renames a workspace. herdr requires a non-empty
+// label here (unlike a pane, a workspace has no "unnamed" state).
+func (s *Server) handleWorkspaceRename(w http.ResponseWriter, r *http.Request, workspaceID string) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, "POST")
+		return
+	}
+	workspaceID = strings.Trim(strings.TrimSpace(workspaceID), "/")
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "workspace id is required")
+		return
+	}
+	var request struct {
+		Label string `json:"label"`
+	}
+	if !decodeBody(w, r, &request) {
+		return
+	}
+	label := strings.TrimSpace(request.Label)
+	if label == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "label is required")
+		return
+	}
+	if err := s.client().Call(r.Context(), "workspace.rename",
+		map[string]any{"workspace_id": workspaceID, "label": label}, nil); err != nil {
+		writeBadGateway(w, "herdr_rename_failed", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "workspaceId": workspaceID})
+}
+
 func (s *Server) handleWorkspaceGet(w http.ResponseWriter, r *http.Request, workspaceID string) {
 	if r.Method != http.MethodGet {
 		writeMethodNotAllowed(w, "GET")
@@ -473,8 +504,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/herdr/workspaces", s.handleWorkspaces)
 	mux.HandleFunc("/api/v1/herdr/panes", s.handlePanes)
 	mux.HandleFunc("/api/v1/herdr/workspaces/", func(w http.ResponseWriter, r *http.Request) {
-		id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/herdr/workspaces/"), "/")
-		s.handleWorkspaceGet(w, r, id)
+		rest := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/herdr/workspaces/"), "/")
+		if strings.HasSuffix(rest, "/rename") {
+			s.handleWorkspaceRename(w, r, strings.TrimSuffix(rest, "/rename"))
+			return
+		}
+		s.handleWorkspaceGet(w, r, rest)
 	})
 	mux.HandleFunc("/api/v1/herdr/panes/", func(w http.ResponseWriter, r *http.Request) {
 		rest := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/herdr/panes/"), "/")

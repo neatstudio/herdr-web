@@ -366,9 +366,54 @@ export function canvasBackdrop(canvas: string | null, mode: CanvasMode): string 
   return canvas === null ? null : adaptColour(canvas, mode);
 }
 
+/**
+ * Lines to keep: one screen of ~200 unchanged lines always hits, plus headroom
+ * for a pane switch and the three modes. Bounded because a long-running console
+ * keeps emitting distinct lines, and nothing else would ever evict them.
+ */
+export const ANSI_CACHE_CAPACITY = 2048;
+
+/* Rendering is pure, so an entry keyed by line and mode can never go stale. */
+const ansiCache = new Map<string, string>();
+let ansiHits = 0;
+let ansiMisses = 0;
+
+/** Empty the cache and zero the counters, so a hit rate can be measured. */
+export function clearAnsiCache(): void {
+  ansiCache.clear();
+  ansiHits = 0;
+  ansiMisses = 0;
+}
+
+export function ansiCacheStats(): { size: number; hits: number; misses: number } {
+  return { size: ansiCache.size, hits: ansiHits, misses: ansiMisses };
+}
+
 /** One line of pane text to HTML. */
 export function ansiLineToHtml(line: string, mode: CanvasMode = "content"): string {
-  return render(trimPadding(parseLine(line)), mode);
+  // Mode is part of the key: paper and carbon mirror absolute colours, so the
+  // same bytes are different HTML on each canvas. NUL cannot appear in a mode.
+  const key = `${mode}\u0000${line}`;
+  const cached = ansiCache.get(key);
+  if (cached !== undefined) {
+    ansiHits += 1;
+    // Re-insert the hit so eviction drops the entry that has gone longest
+    // without use, not a line that repaints on every poll.
+    ansiCache.delete(key);
+    ansiCache.set(key, cached);
+    return cached;
+  }
+  const html = render(trimPadding(parseLine(line)), mode);
+  ansiMisses += 1;
+  if (ansiCache.size >= ANSI_CACHE_CAPACITY) {
+    // Map iterates in insertion order, so the first key is the oldest.
+    const oldest = ansiCache.keys().next();
+    if (oldest.done === false) {
+      ansiCache.delete(oldest.value);
+    }
+  }
+  ansiCache.set(key, html);
+  return html;
 }
 
 /**

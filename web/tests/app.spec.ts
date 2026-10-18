@@ -544,6 +544,67 @@ test("the fleet never shows a pane id twice", async ({ page }) => {
   await expect(row.locator(".row__id")).toHaveCount(0);
 });
 
+test("the fleet filter narrows the list and clears again", async ({ page }) => {
+  await installBridge(page);
+  await page.goto("/");
+  await expect(page.locator(".row")).toHaveCount(3);
+
+  const filter = page.locator("#herdr-fleet-filter");
+  await filter.fill("grok");
+  await expect(page.locator(".row")).toHaveCount(1);
+  await expect(page.locator(".ledger__head")).toContainText("1/3 match");
+  await expect(page.locator(".row")).toContainText("grok");
+
+  // A term that matches nothing says so instead of showing an empty list.
+  await filter.fill("nothing-here");
+  await expect(page.locator(".row")).toHaveCount(0);
+  await expect(page.locator(".ledger__empty")).toContainText("No pane matches");
+
+  await page.locator("#herdr-fleet-clear").click();
+  await expect(page.locator(".row")).toHaveCount(3);
+  await expect(page.locator(".ledger__head")).toContainText("2/3 agents");
+});
+
+test("a workspace can be renamed from its name in the header", async ({ page }) => {
+  const renames: string[] = [];
+  await installBridge(page);
+  await page.route("**/api/v1/herdr/workspaces/*/rename", async (route) => {
+    renames.push(route.request().postData() ?? "");
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+  });
+  await page.goto("/");
+
+  const name = page.locator("[data-workspace-id]");
+  await expect(name).toBeVisible();
+  await name.click({ button: "right" });
+  await expect(page.locator('[role="menu"]')).toContainText("Rename workspace");
+
+  await page.getByRole("menuitem", { name: /Rename workspace/ }).click();
+  const input = page.locator("#herdr-rename-input");
+  await expect(input).toHaveValue("api");
+  await input.fill("prod hosts");
+  await input.press("Enter");
+  await expect.poll(() => renames).toEqual([JSON.stringify({ label: "prod hosts" })]);
+});
+
+test("a workspace name cannot be cleared, only replaced", async ({ page }) => {
+  await installBridge(page);
+  await page.route("**/api/v1/herdr/workspaces/*/rename", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) }),
+  );
+  await page.goto("/");
+  await page.locator("[data-workspace-id]").click({ button: "right" });
+  await page.getByRole("menuitem", { name: /Rename workspace/ }).click();
+
+  // A workspace has no unnamed state, so an empty draft cannot be saved.
+  const input = page.locator("#herdr-rename-input");
+  await input.fill("   ");
+  await expect(page.locator(".menu__save")).toBeDisabled();
+  // Panes, which do have one, keep their clear action.
+  await page.keyboard.press("Escape");
+  await expect(page.locator('[role="menu"]')).toContainText("Copy workspace id");
+});
+
 test("a tainted workspace reports the no-panes state instead of a blank scope", async ({ page }) => {
   await installBridge(page, { panes: [] });
   await page.goto("/");

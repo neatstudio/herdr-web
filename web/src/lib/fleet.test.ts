@@ -144,6 +144,26 @@ test("groupFleet orders rows so a group does not reshuffle between polls", () =>
   );
 });
 
+test("filterFleet matches every term against what the row shows", () => {
+  const rows = [
+    { pane: { id: "wE:p4", workspaceId: "wE", agent: "omp", label: "pm-android_dev", cwd: "/srv/app" }, workspaceName: "android_dev" },
+    { pane: { id: "w7:p1", workspaceId: "w7", agent: "grok", cwd: "/srv/site" }, workspaceName: "server" },
+  ];
+  // Empty query keeps everything.
+  assert.equal(fleet.filterFleet(rows, "   ").length, 2);
+  assert.equal(fleet.filterFleet(rows, "grok").length, 1);
+  assert.equal(fleet.filterFleet(rows, "GROK")[0].pane.id, "w7:p1");
+  // The workspace name, the pane id and the directory are all searchable.
+  assert.equal(fleet.filterFleet(rows, "android").length, 1);
+  assert.equal(fleet.filterFleet(rows, "wE:p4").length, 1);
+  assert.equal(fleet.filterFleet(rows, "site").length, 1);
+  // Terms are ANDed.
+  assert.equal(fleet.filterFleet(rows, "omp android_dev").length, 1);
+  assert.equal(fleet.filterFleet(rows, "omp server").length, 0);
+  // A term that matches nothing narrows to nothing.
+  assert.equal(fleet.filterFleet(rows, "zzz").length, 0);
+});
+
 test("shortPaneId drops the workspace prefix", () => {
   assert.equal(fleet.shortPaneId("w7:p1"), "p1");
   assert.equal(fleet.shortPaneId("w7:pJ"), "pJ");

@@ -34,6 +34,8 @@ type fakeHerdr struct {
 	terminalTitle string
 	// renamedTo records every pane.rename label, "<clear>" for a null.
 	renamedTo []string
+	// renamedWorkspace records workspace.rename as "id=label".
+	renamedWorkspace []string
 }
 
 func startFakeHerdr(t *testing.T) (socket string, state *fakeHerdr, closeFn func()) {
@@ -132,6 +134,13 @@ func serveFake(conn net.Conn, state *fakeHerdr) {
 		if text, ok := req.Params["text"].(string); ok {
 			state.sentText = append(state.sentText, text)
 			state.readText += text
+		}
+		result = map[string]any{"type": "ok"}
+	case "workspace.rename":
+		if id, ok := req.Params["workspace_id"].(string); ok {
+			if label, ok := req.Params["label"].(string); ok {
+				state.renamedWorkspace = append(state.renamedWorkspace, id+"="+label)
+			}
 		}
 		result = map[string]any{"type": "ok"}
 	case "pane.rename":
