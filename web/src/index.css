@@ -931,6 +931,96 @@ body::before {
   color: var(--ink-faint);
 }
 
+/* ---------------------------------------------------------------- tiles */
+
+/* A tab's panes, placed where herdr splits them. */
+.tiles {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.tiles[data-arrange="stack"] {
+  display: flex;
+  flex-direction: column;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--paper);
+}
+
+.tiles[data-arrange="side"] .tile {
+  position: absolute;
+}
+
+/* A split needs a line between the panes, as a terminal draws one. */
+.tiles[data-arrange="side"][data-count="2"] .tile + .tile,
+.tiles[data-arrange="side"] .tile ~ .tile {
+  border-left: var(--rule-w) solid var(--rule-strong);
+}
+
+.tiles[data-arrange="stack"] .tile + .tile {
+  border-top: var(--rule-w) solid var(--rule-strong);
+}
+
+.tile[data-active="true"] {
+  background: var(--paper);
+}
+
+.tile__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border-bottom: var(--rule-w) solid var(--rule);
+  background: var(--surface);
+  font-size: var(--step-micro);
+  color: var(--ink-dim);
+}
+
+.tile[data-active="true"] .tile__head {
+  color: var(--ink);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.tile__agent {
+  padding: 1px 5px 0;
+  border: var(--rule-w) solid var(--rule-strong);
+  font-family: var(--font-label);
+  font-weight: 500;
+}
+
+.tile[data-tone="working"] .tile__agent {
+  color: var(--working);
+}
+
+.tile[data-tone="blocked"] .tile__agent {
+  color: var(--blocked);
+}
+
+.tile__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--step-name);
+}
+
+.tile__id,
+.tile__status {
+  font-family: var(--font-label);
+  color: var(--ink-faint);
+}
+
+.tile__spacer {
+  flex: 1 1 auto;
+}
+
 .scope {
   position: relative;
 }

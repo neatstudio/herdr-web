@@ -400,6 +400,36 @@ func TestWorkspaceDetailStillRoutesAfterRenameWasAdded(t *testing.T) {
 	}
 }
 
+func TestPaneLayoutReportsBoxesAndFocus(t *testing.T) {
+	socket, _, closeFn := startFakeHerdr(t)
+	defer closeFn()
+	handler := newTestHandler(t, socket)
+
+	got := do(t, handler, http.MethodGet, "/api/v1/herdr/panes/w1:p2/layout", "")
+	if got.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", got.Code, got.Body.String())
+	}
+	body := decodeMap(t, got)
+	if body["tabId"] != "w1:t1" {
+		t.Fatalf("tabId=%v", body["tabId"])
+	}
+	if body["focusedPaneId"] != "w1:p2" {
+		t.Fatalf("focusedPaneId=%v", body["focusedPaneId"])
+	}
+	panes, ok := body["panes"].([]any)
+	if !ok || len(panes) != 2 {
+		t.Fatalf("panes=%v", body["panes"])
+	}
+	second, _ := panes[1].(map[string]any)
+	rect, _ := second["rect"].(map[string]any)
+	if rect["x"] != float64(60) || rect["width"] != float64(60) {
+		t.Fatalf("second rect=%v", rect)
+	}
+	if method := do(t, handler, http.MethodPost, "/api/v1/herdr/panes/w1:p1/layout", ""); method.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST status=%d", method.Code)
+	}
+}
+
 func TestDaemonErrorBecomesBadGateway(t *testing.T) {
 	socket, state, closeFn := startFakeHerdr(t)
 	defer closeFn()

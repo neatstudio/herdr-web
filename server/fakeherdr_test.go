@@ -136,6 +136,22 @@ func serveFake(conn net.Conn, state *fakeHerdr) {
 			state.readText += text
 		}
 		result = map[string]any{"type": "ok"}
+	case "pane.layout":
+		paneID, _ := req.Params["pane_id"].(string)
+		result = map[string]any{
+			"type": "pane_layout",
+			"layout": map[string]any{
+				"workspace_id":    "w1",
+				"tab_id":          "w1:t1",
+				"zoomed":          false,
+				"area":            map[string]int{"x": 0, "y": 0, "width": 120, "height": 40},
+				"focused_pane_id": paneID,
+				"panes": []map[string]any{
+					{"pane_id": "w1:p1", "focused": true, "rect": map[string]int{"x": 0, "y": 0, "width": 60, "height": 40}},
+					{"pane_id": "w1:p2", "focused": false, "rect": map[string]int{"x": 60, "y": 0, "width": 60, "height": 40}},
+				},
+			},
+		}
 	case "workspace.rename":
 		if id, ok := req.Params["workspace_id"].(string); ok {
 			if label, ok := req.Params["label"].(string); ok {

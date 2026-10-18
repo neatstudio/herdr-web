@@ -2,18 +2,20 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { PaneTabs } from "@/components/PaneTabs";
 import { PickerSheet } from "@/components/PickerSheet";
 import { Sidebar } from "@/components/Sidebar";
+import { TabStage } from "@/components/TabStage";
 import { Masthead } from "@/components/Masthead";
 import { TargetMenu, type MenuTarget } from "@/components/TargetMenu";
 import { PromptBar } from "@/components/PromptBar";
-import { Scope } from "@/components/Scope";
 import {
   fetchAllPanes,
+  fetchLayout,
   fetchStatus,
   fetchWorkspaces,
   type HerdrPane,
   type HerdrStatus,
   type HerdrWorkspace,
 } from "@/lib/herdr";
+import { arrangeTiles, tabsOf, type PaneLayout } from "@/lib/layout";
 import {
   TONE_LABEL,
   mostUrgentPane,
@@ -73,6 +75,8 @@ export function App() {
   const [paneId, setPaneId] = useState<string | null>(null);
   const [menu, setMenu] = useState<MenuTarget | null>(null);
   const [picker, setPicker] = useState(false);
+  const [layout, setLayout] = useState<PaneLayout | null>(null);
+  const [narrow, setNarrow] = useState(false);
   // Selecting a pane in the rail also decides the workspace, so the pane list
   // has to know which workspace to show even before a pane is chosen.
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
@@ -132,6 +136,37 @@ export function App() {
     return () => clearInterval(timer);
   }, [loadFleet]);
 
+  // A split can change while the page is open, so the layout is polled with the
+  // fleet rather than fetched once per selection.
+  useEffect(() => {
+    if (paneId === null) {
+      setLayout(null);
+      return;
+    }
+    let cancelled = false;
+    async function loadLayout(): Promise<void> {
+      const next = await fetchLayout(paneId as string);
+      if (!cancelled && next !== null) {
+        setLayout(next);
+      }
+    }
+    void loadLayout();
+    const timer = setInterval(() => void loadLayout(), FLEET_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [paneId]);
+
+  // Side by side needs width; below this the panes stack instead.
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 720px)");
+    const apply = (): void => setNarrow(query.matches);
+    apply();
+    query.addEventListener("change", apply);
+    return () => query.removeEventListener("change", apply);
+  }, []);
+
   const activePane = useMemo(
     () => panes.find((pane) => pane.id === paneId) ?? null,
     [panes, paneId],
@@ -141,10 +176,20 @@ export function App() {
     () => workspaces.find((workspace) => workspace.id === shownWorkspaceId) ?? null,
     [workspaces, shownWorkspaceId],
   );
-  const workspacePanes = useMemo(
-    () => (shownWorkspaceId === null ? [] : panes.filter((pane) => pane.workspaceId === shownWorkspaceId)),
+  // Tabs, not panes: a tab can hold a split, and its panes become tiles.
+  const tabs = useMemo(
+    () => tabsOf(panes.filter((pane) => shownWorkspaceId === null || pane.workspaceId === shownWorkspaceId)),
     [panes, shownWorkspaceId],
   );
+  const tiles = useMemo(() => arrangeTiles(layout, narrow ? "stack" : "side"), [layout, narrow]);
+  const tilePanes = useMemo(() => {
+    if (layout === null) {
+      return activePane === null ? [] : [activePane];
+    }
+    return layout.panes
+      .map((entry) => panes.find((pane) => pane.id === entry.id))
+      .filter((pane) => pane !== undefined) as AgentPane[];
+  }, [layout, panes, activePane]);
 
   const openPaneId = useCallback((id: string) => {
     setPaneId(id);
@@ -251,7 +296,7 @@ export function App() {
           </div>
 
           <PaneTabs
-            panes={workspacePanes}
+            panes={tabs.map((tab) => tab.pane)}
             workspaceName={activeWorkspace?.name ?? ""}
             activeId={paneId}
             onSelect={openPaneId}
@@ -263,8 +308,19 @@ export function App() {
             }}
           />
 
-          {activePane !== null ? (
-            <Scope key={activePane.id} paneId={activePane.id} theme={theme} display={display} onDisplay={chooseDisplay} />
+          {activePane !== null && tiles.length > 0 ? (
+            <TabStage
+              tiles={tiles}
+              panes={tilePanes}
+              workspaces={workspaces}
+              activePaneId={paneId}
+              mode={narrow ? "stack" : "side"}
+              theme={theme}
+              display={display}
+              onDisplay={chooseDisplay}
+              onActivate={openPaneId}
+              onMenu={(pane, x, y) => setMenu(paneTarget(pane, x, y))}
+            />
           ) : (
             <div className="scope__idle">
               <strong>no pane selected</strong>

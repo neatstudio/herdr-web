@@ -261,6 +261,8 @@ export async function sendPaneText(
   return postJSON(`${panePath(paneId)}/input`, { text: body });
 }
 
+import type { PaneLayout } from "./layout";
+
 export type Uploaded = { path: string; name: string; bytes: number };
 
 /**
@@ -287,6 +289,32 @@ export async function uploadFile(file: File): Promise<Uploaded | null> {
 /** How a path is written into a prompt: quoted only when it needs to be. */
 export function quotePath(path: string): string {
   return /^[A-Za-z0-9_./@:+-]+$/.test(path) ? path : `"${path.replace(/"/g, '\\"')}"`;
+}
+
+/** Parses the layout, refusing anything that is not the shape we asked for. */
+export function parsePaneLayout(raw: unknown): PaneLayout | null {
+  if (typeof raw !== "object" || raw === null) {
+    return null;
+  }
+  const value = raw as Partial<PaneLayout>;
+  if (!Array.isArray(value.panes) || typeof value.tabId !== "string") {
+    return null;
+  }
+  return {
+    tabId: value.tabId,
+    workspaceId: value.workspaceId ?? "",
+    zoomed: value.zoomed === true,
+    area: value.area ?? { x: 0, y: 0, width: 0, height: 0 },
+    focusedPaneId: value.focusedPaneId ?? "",
+    panes: value.panes.filter(
+      (pane) => typeof pane === "object" && pane !== null && typeof pane.id === "string",
+    ),
+  };
+}
+
+/** How the panes of one tab are split. */
+export async function fetchLayout(paneId: string): Promise<PaneLayout | null> {
+  return parsePaneLayout(await getJSON(`${panePath(paneId)}/layout`));
 }
 
 /** Rename a pane; pass null to clear the name. */

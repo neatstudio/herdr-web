@@ -21,7 +21,7 @@ const PANES = [
   },
   // No label: falls through to the terminal title the program set.
   {
-    id: "w1:p2", workspaceId: "w1", tabId: "w1:t1", focused: false, cwd: "/tmp/web",
+    id: "w1:p2", workspaceId: "w1", tabId: "w1:t2", focused: false, cwd: "/tmp/web",
     agentStatus: "working", terminalTitle: "vnstat 区间流量合计脚本 - grok", agent: "grok",
   },
   // Nothing named it at all: the pane id is all there is.
@@ -31,6 +31,8 @@ const PANES = [
 type FixtureOptions = {
   workspaces?: unknown;
   panes?: unknown;
+  /** Extra panes to report for the open tab, to exercise a split. */
+  splitWith?: string[];
   readText?: string;
   revision?: number;
   truncated?: boolean;
@@ -71,6 +73,30 @@ async function installBridge(page: Page, options: FixtureOptions = {}): Promise<
       body: JSON.stringify({
         workspace,
         panes: (panes as { workspaceId: string }[]).filter((pane) => pane.workspaceId === id),
+      }),
+    });
+  });
+  // How the open tab is split. By default one pane fills the area.
+  await page.route("**/api/v1/herdr/panes/*/layout", (route) => {
+    const url = new URL(route.request().url());
+    const paneId = decodeURIComponent(url.pathname.split("/").at(-2) ?? "");
+    const pane = (panes as { id: string; tabId: string }[]).find((item) => item.id === paneId);
+    const ids = [paneId, ...(options.splitWith ?? []).filter((id) => id !== paneId)];
+    const each = Math.floor(120 / ids.length);
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        tabId: pane?.tabId ?? "w1:t1",
+        workspaceId: pane === undefined ? "" : paneId.split(":")[0],
+        zoomed: false,
+        area: { x: 0, y: 0, width: 120, height: 40 },
+        focusedPaneId: paneId,
+        panes: ids.map((id, index) => ({
+          id,
+          focused: index === 0,
+          rect: { x: index * each, y: 0, width: index === ids.length - 1 ? 120 - index * each : each, height: 40 },
+        })),
       }),
     });
   });
@@ -459,6 +485,53 @@ test("plain output keeps the page background", async ({ page }) => {
   await expect(page.locator(".scope__line").first()).toHaveText("prompt% ls");
 });
 
+test("a tab with a split shows one tile per pane, and the click chooses the prompt", async ({ page }) => {
+  await installBridge(page, { splitWith: ["w1:p2"] });
+  await page.goto("/");
+  await page.locator('.side--spaces [data-workspace-id="w1"]').click();
+
+  const tiles = page.locator(".tile");
+  await expect(tiles).toHaveCount(2);
+  // Side by side on a wide window, as herdr splits them.
+  await expect(page.locator(".tiles")).toHaveAttribute("data-arrange", "side");
+  const boxes = await tiles.evaluateAll((nodes) =>
+    nodes.map((node) => Math.round(node.getBoundingClientRect().left)),
+  );
+  expect(boxes[1]).toBeGreaterThan(boxes[0]);
+
+  // Only the active tile reads its pane, so a split costs one read per poll.
+  await expect(page.locator('.tile[data-active="true"]')).toHaveAttribute("data-pane-id", "w1:p1");
+  await expect(page.locator("#herdr-input")).toHaveAttribute("placeholder", "send to w1:p1");
+
+  // Clicking the other tile sends the prompt there, with the caret already in it.
+  await page.locator('.tile[data-pane-id="w1:p2"] .tile__head').click();
+  await expect(page.locator('.tile[data-active="true"]')).toHaveAttribute("data-pane-id", "w1:p2");
+  await expect(page.locator("#herdr-input")).toHaveAttribute("placeholder", "send to w1:p2");
+  await expect(page.locator("#herdr-input")).toBeFocused();
+  await expect(page.locator("#herdr-feed-text")).toHaveCount(1);
+});
+
+test("a split stacks on a phone instead of squeezing side by side", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 780 });
+  await installBridge(page, { splitWith: ["w1:p2"] });
+  await page.goto("/");
+
+  const tiles = page.locator(".tile");
+  await expect(tiles).toHaveCount(2);
+  await expect(page.locator(".tiles")).toHaveAttribute("data-arrange", "stack");
+  const boxes = await tiles.evaluateAll((nodes) =>
+    nodes.map((node) => {
+      const rect = node.getBoundingClientRect();
+      return { top: Math.round(rect.top), width: Math.round(rect.width) };
+    }),
+  );
+  // One above the other, both full width.
+  expect(boxes[1].top).toBeGreaterThan(boxes[0].top);
+  for (const box of boxes) {
+    expect(box.width).toBe(390);
+  }
+});
+
 test("the transcript layout switches between wrap, exact and fit", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 780 });
   const wide = `${ESC}[48;2;20;20;20m${"x".repeat(120)}${ESC}[0m`;
@@ -567,14 +640,14 @@ test("opening a pane puts the caret in the prompt", async ({ page }) => {
   await page.locator('.strip .tab[data-pane-id="w1:p2"]').click();
   await expect(page.locator("#herdr-input")).toBeFocused();
 
-  // Clicking on the transcript moves focus away; Tab brings it back.
-  await page.locator("#herdr-feed-text").click({ position: { x: 10, y: 10 } });
+  // Clicking plain page chrome moves focus away; Tab brings it back.
+  await page.locator("h1").click();
   await expect(page.locator("#herdr-input")).not.toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.locator("#herdr-input")).toBeFocused();
 
   // And so does Enter.
-  await page.locator("#herdr-feed-text").click({ position: { x: 10, y: 10 } });
+  await page.locator("h1").click();
   await expect(page.locator("#herdr-input")).not.toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page.locator("#herdr-input")).toBeFocused();

@@ -427,6 +427,67 @@ func (s *Server) handlePaneInput(w http.ResponseWriter, r *http.Request, paneID 
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "paneId": paneID})
 }
 
+// herdrRect is a pane's box in terminal cells, relative to its tab's area.
+type herdrRect struct {
+	X      int `json:"x"`
+	Y      int `json:"y"`
+	Width  int `json:"width"`
+	Height int `json:"height"`
+}
+
+type herdrLayoutPane struct {
+	PaneID  string    `json:"pane_id"`
+	Focused bool      `json:"focused"`
+	Rect    herdrRect `json:"rect"`
+}
+
+type herdrLayout struct {
+	WorkspaceID   string            `json:"workspace_id"`
+	TabID         string            `json:"tab_id"`
+	Zoomed        bool              `json:"zoomed"`
+	Area          herdrRect         `json:"area"`
+	FocusedPaneID string            `json:"focused_pane_id"`
+	Panes         []herdrLayoutPane `json:"panes"`
+}
+
+// handlePaneLayout reports how the panes of one tab are split. herdr gives each
+// pane a box in terminal cells, which is all the client needs: proportions come
+// from the boxes, so a nested split needs no tree walking.
+func (s *Server) handlePaneLayout(w http.ResponseWriter, r *http.Request, paneID string) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, "GET")
+		return
+	}
+	paneID = strings.Trim(strings.TrimSpace(paneID), "/")
+	if paneID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "pane id is required")
+		return
+	}
+	var result struct {
+		Layout herdrLayout `json:"layout"`
+	}
+	if err := s.client().Call(r.Context(), "pane.layout", map[string]any{"pane_id": paneID}, &result); err != nil {
+		writeBadGateway(w, "herdr_layout_failed", err)
+		return
+	}
+	panes := make([]map[string]any, 0, len(result.Layout.Panes))
+	for _, pane := range result.Layout.Panes {
+		panes = append(panes, map[string]any{
+			"id":      pane.PaneID,
+			"focused": pane.Focused,
+			"rect":    pane.Rect,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"tabId":         result.Layout.TabID,
+		"workspaceId":   result.Layout.WorkspaceID,
+		"zoomed":        result.Layout.Zoomed,
+		"area":          result.Layout.Area,
+		"focusedPaneId": result.Layout.FocusedPaneID,
+		"panes":         panes,
+	})
+}
+
 // handlePaneRename sets or clears a pane's own label. herdr treats a null
 // label as "clear", which is how its own rename --clear works.
 func (s *Server) handlePaneRename(w http.ResponseWriter, r *http.Request, paneID string) {
@@ -505,6 +566,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/herdr/panes", s.handlePanes)
 	mux.HandleFunc("/api/v1/herdr/uploads", s.handleUpload)
 
+	// Read-only file preview: an agent writes a chart or a log, prints its path,
+	// and clicking that path shows it. Reads only, regular files only.
+	mux.HandleFunc("/api/v1/herdr/file", handleFileRead)
+	mux.HandleFunc("/api/v1/herdr/file/raw", handleFileRaw)
+
 	mux.HandleFunc("/api/v1/herdr/workspaces/", func(w http.ResponseWriter, r *http.Request) {
 		rest := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/herdr/workspaces/"), "/")
 		if strings.HasSuffix(rest, "/rename") {
@@ -522,6 +588,8 @@ func (s *Server) Handler() http.Handler {
 			s.handlePaneInput(w, r, strings.TrimSuffix(rest, "/input"))
 		case strings.HasSuffix(rest, "/keys"):
 			s.handlePaneKeys(w, r, strings.TrimSuffix(rest, "/keys"))
+		case strings.HasSuffix(rest, "/layout"):
+			s.handlePaneLayout(w, r, strings.TrimSuffix(rest, "/layout"))
 		case strings.HasSuffix(rest, "/rename"):
 			s.handlePaneRename(w, r, strings.TrimSuffix(rest, "/rename"))
 		default:
