@@ -14,7 +14,16 @@ import {
   type HerdrWorkspace,
 } from "@/lib/herdr";
 import { TONE_LABEL, paneHasName, paneName, toneOf, type PageTheme } from "@/lib/fleet";
-import { applyTheme, readStoredChoice, storeChoice, type ThemeChoice } from "@/lib/theme";
+import { longPressHandlers } from "@/lib/press";
+import {
+  applyTheme,
+  readStoredChoice,
+  readStoredDisplay,
+  storeChoice,
+  storeDisplay,
+  type DisplayMode,
+  type ThemeChoice,
+} from "@/lib/theme";
 
 /** One poll drives the whole fleet: status, workspaces and every pane. */
 const FLEET_POLL_MS = 3000;
@@ -32,6 +41,7 @@ export function App() {
   const [choice, setChoice] = useState<ThemeChoice>(() => readStoredChoice(safeStorage()));
   // The resolved theme, so panes can mirror their colours to match it.
   const [theme, setTheme] = useState<PageTheme>("dark");
+  const [display, setDisplay] = useState<DisplayMode>(() => readStoredDisplay(safeStorage()));
   const [status, setStatus] = useState<HerdrStatus | null>(null);
   const [workspaces, setWorkspaces] = useState<HerdrWorkspace[]>([]);
   const [panes, setPanes] = useState<HerdrPane[]>([]);
@@ -48,6 +58,11 @@ export function App() {
     query.addEventListener("change", onChange);
     return () => query.removeEventListener("change", onChange);
   }, [choice]);
+
+  const chooseDisplay = useCallback((next: DisplayMode) => {
+    setDisplay(next);
+    storeDisplay(safeStorage(), next);
+  }, []);
 
   const chooseTheme = useCallback((next: ThemeChoice) => {
     setChoice(next);
@@ -141,8 +156,22 @@ export function App() {
                     }
                     onContextMenu={(event) => {
                       event.preventDefault();
-                      setMenu({ paneId: activePane.id, x: event.clientX, y: event.clientY });
+                      setMenu({
+                        paneId: activePane.id,
+                        x: event.clientX,
+                        y: event.clientY,
+                        name: paneHasName(activePane) ? paneName(activePane) : "",
+                      });
                     }}
+                    {...longPressHandlers({
+                      onLongPress: (x, y) =>
+                        setMenu({
+                          paneId: activePane.id,
+                          x,
+                          y,
+                          name: paneHasName(activePane) ? paneName(activePane) : "",
+                        }),
+                    })}
                   >
                     {paneName(activePane)}
                   </span>
@@ -170,11 +199,19 @@ export function App() {
             panes={stripPanes}
             activeId={paneId}
             onSelect={openPaneId}
-            onMenu={(id, x, y) => setMenu({ paneId: id, x, y })}
+            onMenu={(id, x, y) => {
+              const pane = panes.find((candidate) => candidate.id === id);
+              setMenu({
+                paneId: id,
+                x,
+                y,
+                name: pane !== undefined && paneHasName(pane) ? paneName(pane) : "",
+              });
+            }}
           />
 
           {activePane !== null ? (
-            <Scope key={activePane.id} paneId={activePane.id} theme={theme} />
+            <Scope key={activePane.id} paneId={activePane.id} theme={theme} display={display} onDisplay={chooseDisplay} />
           ) : (
             <div className="scope__idle">
               <strong>no pane selected</strong>

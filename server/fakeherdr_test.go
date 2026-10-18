@@ -32,6 +32,8 @@ type fakeHerdr struct {
 	barePaneNames bool
 	// terminalTitle is the padded OSC title, used to check the fallback.
 	terminalTitle string
+	// renamedTo records every pane.rename label, "<clear>" for a null.
+	renamedTo []string
 }
 
 func startFakeHerdr(t *testing.T) (socket string, state *fakeHerdr, closeFn func()) {
@@ -130,6 +132,16 @@ func serveFake(conn net.Conn, state *fakeHerdr) {
 		if text, ok := req.Params["text"].(string); ok {
 			state.sentText = append(state.sentText, text)
 			state.readText += text
+		}
+		result = map[string]any{"type": "ok"}
+	case "pane.rename":
+		// label is explicitly null to clear; record what arrived either way.
+		if raw, present := req.Params["label"]; present {
+			if raw == nil {
+				state.renamedTo = append(state.renamedTo, "<clear>")
+			} else if text, ok := raw.(string); ok {
+				state.renamedTo = append(state.renamedTo, text)
+			}
 		}
 		result = map[string]any{"type": "ok"}
 	case "pane.send_keys":

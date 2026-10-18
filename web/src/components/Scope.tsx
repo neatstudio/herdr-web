@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ansiLineToHtml, dominantBackground } from "@/lib/ansi";
+import { ansiLineToHtml, canvasBackdrop, dominantBackground } from "@/lib/ansi";
 import { READ_LINES, readPane } from "@/lib/herdr";
 import { canvasModeFor, splitLines, type PageTheme } from "@/lib/fleet";
+import { DISPLAY_MODES, type DisplayMode } from "@/lib/theme";
 
 const POLL_MS = 1500;
 const TAIL_SLOP_PX = 48;
@@ -29,11 +30,17 @@ const MIN_FIT_PX = 4;
  *  - Ordinary output is just text, so it rewraps to the viewport and reads
  *    naturally on a phone.
  */
-export function Scope({ paneId, theme }: { paneId: string; theme: PageTheme }) {
+type Props = {
+  paneId: string;
+  theme: PageTheme;
+  display: DisplayMode;
+  onDisplay: (mode: DisplayMode) => void;
+};
+
+export function Scope({ paneId, theme, display, onDisplay }: Props) {
   const [lines, setLines] = useState<string[]>([]);
   const [truncated, setTruncated] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [fit, setFit] = useState(false);
   const [width, setWidth] = useState(0);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const followRef = useRef(true);
@@ -46,7 +53,6 @@ export function Scope({ paneId, theme }: { paneId: string; theme: PageTheme }) {
     setLines([]);
     setTruncated(false);
     setFailed(false);
-    setFit(false);
 
     async function poll(): Promise<void> {
       const read = await readPane(paneId, READ_LINES).catch(() => null);
@@ -102,22 +108,23 @@ export function Scope({ paneId, theme }: { paneId: string; theme: PageTheme }) {
     if (element && followRef.current) {
       element.scrollTop = element.scrollHeight;
     }
-  }, [lines, width, fit]);
+  }, [lines, width, display]);
 
   // A pane that paints a canvas is a full-screen app; plain output is not.
   // The raw canvas decides the layout, and the page theme decides whether the
   // content's colours need mirroring to match it.
   const rawCanvas = dominantBackground(lines);
   const mode = canvasModeFor(rawCanvas, theme);
-  const canvas = mode === "content" ? rawCanvas : null;
+  // A wrapped transcript needs the canvas behind every row, so the backdrop is
+  // the pane's own canvas, mirrored when the page theme disagrees with it.
+  const backdrop = canvasBackdrop(rawCanvas, mode);
   const columns = lines.reduce((widest, line) => Math.max(widest, stripLength(line)), 0);
-  const fitsAtReadableSize =
-    width > 0 && columns > 0 && width / (columns * MONO_ADVANCE) >= MIN_FIT_PX;
-  const needsFit =
-    rawCanvas !== null && columns > 0 && width / (columns * MONO_ADVANCE) < BASE_FONT_PX;
   const fitScale = columns > 0 && width > 0 ? width / (columns * MONO_ADVANCE) : BASE_FONT_PX;
-  const fontPx = fit ? Math.max(MIN_FIT_PX, Math.min(BASE_FONT_PX, fitScale)) : BASE_FONT_PX;
-  const canOfferFit = needsFit && fitsAtReadableSize;
+  const fontPx =
+    display === "fit"
+      ? Math.max(MIN_FIT_PX, Math.min(BASE_FONT_PX, fitScale))
+      : BASE_FONT_PX;
+  const overflows = columns * MONO_ADVANCE * fontPx > width + 1;
 
   return (
     <section className="scope" aria-label="Pane output">
@@ -140,13 +147,13 @@ export function Scope({ paneId, theme }: { paneId: string; theme: PageTheme }) {
         role="log"
         aria-live="polite"
         aria-relevant="text"
-        data-canvas={canvas !== null ? "content" : undefined}
-        data-wrap={rawCanvas !== null ? "off" : "on"}
+        data-canvas={backdrop !== null ? "content" : undefined}
+        data-wrap={display === "wrap" ? "on" : "off"}
+        data-display={display}
         data-adapt={mode !== "content" ? mode : undefined}
-        data-fit={fit ? "on" : undefined}
         style={{
-          ...(canvas !== null ? { background: canvas } : {}),
-          ...(fit ? { fontSize: `${fontPx.toFixed(2)}px` } : {}),
+          ...(backdrop !== null ? { background: backdrop } : {}),
+          ...(display === "fit" ? { fontSize: `${fontPx.toFixed(2)}px` } : {}),
         }}
         onScroll={(event) => {
           const element = event.currentTarget;
@@ -164,20 +171,36 @@ export function Scope({ paneId, theme }: { paneId: string; theme: PageTheme }) {
           />
         ))}
       </div>
-      {/* Offered only when the pane genuinely cannot fit, so the control is
-          absent on every desktop-sized reading. */}
-      {canOfferFit && (
-        <button
-          type="button"
-          id="herdr-fit-toggle"
-          className="scope__fit"
-          aria-pressed={fit}
-          title={`${columns} columns in ${Math.round(width)}px`}
-          onClick={() => setFit((current) => !current)}
-        >
-          {fit ? "1:1" : `fit ${columns}c`}
-        </button>
-      )}
+      {/* How the transcript follows the screen. herdr owns the pane width and
+          pane.read takes no width argument, so the browser cannot ask for
+          narrower output: wrapping is the only way text follows the screen,
+          and scaling is the only way a fixed-width pane shows its whole row. */}
+      <div className="scope__display" role="group" aria-label="Transcript layout">
+        {DISPLAY_MODES.map((item) => (
+          <button
+            key={item}
+            type="button"
+            id={`herdr-display-${item}`}
+            className="scope__display-button"
+            aria-pressed={display === item}
+            title={
+              item === "wrap"
+                ? "reflow to the screen width"
+                : item === "exact"
+                  ? "one row per terminal line, scroll sideways"
+                  : `scale so all ${columns} columns fit`
+            }
+            onClick={() => onDisplay(item)}
+          >
+            {item}
+          </button>
+        ))}
+        {overflows && display !== "fit" && (
+          <span className="scope__display-hint" aria-hidden>
+            {columns}c
+          </span>
+        )}
+      </div>
     </section>
   );
 }

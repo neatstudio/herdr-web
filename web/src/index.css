@@ -383,7 +383,7 @@ body::before {
 .row {
   position: relative;
   display: grid;
-  grid-template-columns: 10px minmax(4.5rem, auto) minmax(0, 1fr) auto;
+  grid-template-columns: 10px 6.5rem minmax(0, 1fr) 8.5rem;
   align-items: center;
   gap: 8px;
   width: 100%;
@@ -400,6 +400,7 @@ body::before {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
   font-family: var(--font-label);
   font-size: var(--step-micro);
   font-weight: 500;
@@ -417,11 +418,9 @@ body::before {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 9ch;
   font-family: var(--font-label);
   font-size: var(--step-micro);
   color: var(--ink-faint);
-  text-align: right;
 }
 
 .group__count {
@@ -722,27 +721,56 @@ body::before {
   min-height: 1.55em;
 }
 
-/* Shown only when a fixed-width pane cannot fit the viewport. */
-.scope__fit {
+/* Transcript layout switch: wrap the text, keep terminal rows exact, or
+   scale them to fit. Sits where the eye already looks for pane state. */
+.scope__display {
   position: absolute;
   right: var(--pad);
-  bottom: 8px;
+  top: 6px;
   z-index: 3;
-  padding: 3px 8px 2px;
+  display: flex;
+  align-items: center;
+  opacity: 0.35;
+  transition: opacity 0.15s ease-out;
+}
+
+.scope:hover .scope__display,
+.scope__display:focus-within {
+  opacity: 1;
+}
+
+.scope__display-button {
+  padding: 2px 7px 1px;
   border: var(--rule-w) solid var(--rule-strong);
+  border-left: 0;
   background: var(--raised);
   font-family: var(--font-label);
   font-size: var(--step-micro);
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-dim);
 }
 
-.scope__fit:hover,
-.scope__fit[aria-pressed="true"] {
+.scope__display-button:first-child {
+  border-left: var(--rule-w) solid var(--rule-strong);
+}
+
+.scope__display-button:hover {
+  color: var(--ink);
+  background: var(--rule);
+}
+
+.scope__display-button[aria-pressed="true"] {
   background: var(--ink);
   color: var(--paper);
   border-color: var(--ink);
+}
+
+.scope__display-hint {
+  padding-left: 7px;
+  font-family: var(--font-label);
+  font-size: var(--step-micro);
+  color: var(--ink-faint);
 }
 
 .scope {
@@ -912,6 +940,42 @@ body::before {
 }
 
 .menu__item:hover span:last-child {
+  color: var(--paper);
+}
+
+.menu__rename {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+}
+
+.menu__input {
+  min-width: 0;
+  flex: 1;
+  padding: 6px 8px;
+  border: var(--rule-w) solid var(--rule-strong);
+  background: var(--paper);
+  outline: none;
+  font-family: var(--font-mono);
+  font-size: var(--step-name);
+}
+
+.menu__input:focus {
+  border-color: var(--accent);
+}
+
+.menu__save {
+  padding: 6px 10px 5px;
+  border: var(--rule-w) solid var(--rule-strong);
+  font-family: var(--font-label);
+  font-size: var(--step-micro);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.menu__save:hover:not(:disabled) {
+  background: var(--ink);
   color: var(--paper);
 }
 

@@ -396,6 +396,47 @@ func (s *Server) handlePaneInput(w http.ResponseWriter, r *http.Request, paneID 
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "paneId": paneID})
 }
 
+// handlePaneRename sets or clears a pane's own label. herdr treats a null
+// label as "clear", which is how its own rename --clear works.
+func (s *Server) handlePaneRename(w http.ResponseWriter, r *http.Request, paneID string) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, "POST")
+		return
+	}
+	paneID = strings.Trim(strings.TrimSpace(paneID), "/")
+	if paneID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "pane id is required")
+		return
+	}
+	var request struct {
+		Label *string `json:"label"`
+	}
+	if !decodeBody(w, r, &request) {
+		return
+	}
+	// A blank label is a clear, not a label made of spaces.
+	label := request.Label
+	if label != nil {
+		trimmed := strings.TrimSpace(*label)
+		if trimmed == "" {
+			label = nil
+		} else {
+			label = &trimmed
+		}
+	}
+	params := map[string]any{"pane_id": paneID}
+	if label == nil {
+		params["label"] = nil
+	} else {
+		params["label"] = *label
+	}
+	if err := s.client().Call(r.Context(), "pane.rename", params, nil); err != nil {
+		writeBadGateway(w, "herdr_rename_failed", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "paneId": paneID})
+}
+
 func (s *Server) handlePaneKeys(w http.ResponseWriter, r *http.Request, paneID string) {
 	if r.Method != http.MethodPost {
 		writeMethodNotAllowed(w, "POST")
@@ -444,6 +485,8 @@ func (s *Server) Handler() http.Handler {
 			s.handlePaneInput(w, r, strings.TrimSuffix(rest, "/input"))
 		case strings.HasSuffix(rest, "/keys"):
 			s.handlePaneKeys(w, r, strings.TrimSuffix(rest, "/keys"))
+		case strings.HasSuffix(rest, "/rename"):
+			s.handlePaneRename(w, r, strings.TrimSuffix(rest, "/rename"))
 		default:
 			writeNotFound(w)
 		}

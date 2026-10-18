@@ -104,6 +104,46 @@ test("paneHasName distinguishes a named pane from a bare id", () => {
   assert.equal(fleet.paneHasName({ id: "w1:p1" }), false);
 });
 
+test("paneListName prefers a real name, then the directory, then the id", () => {
+  assert.equal(
+    fleet.paneListName({ id: "w1:p1", label: "Deploy", cwd: "/srv/app" }, "web"),
+    "Deploy",
+  );
+  // The agent is shown in its own column, so the name column uses the cwd.
+  assert.equal(fleet.paneListName({ id: "w1:p1", agent: "agy", cwd: "/srv/app" }, "web"), "app");
+  // A directory that merely repeats the workspace name adds nothing.
+  assert.equal(fleet.paneListName({ id: "w1:p1", cwd: "/srv/web" }, "web"), "w1:p1");
+  assert.equal(fleet.paneListName({ id: "w1:p1" }, "web"), "w1:p1");
+});
+
+test("paneOwnHasName ignores the agent and the id", () => {
+  assert.equal(fleet.paneOwnHasName({ id: "w1:p1", agent: "agy" }), false);
+  assert.equal(fleet.paneOwnHasName({ id: "w1:p1", label: "Deploy" }), true);
+  assert.equal(fleet.paneOwnHasName({ id: "w1:p1", terminalTitle: "osc" }), true);
+});
+
+test("groupFleet orders rows so a group does not reshuffle between polls", () => {
+  const groups = fleet.groupFleet(
+    [
+      { id: "w1:p2", workspaceId: "w1", agentStatus: "idle", agent: "grok", cwd: "/srv/b" },
+      { id: "w1:p1", workspaceId: "w1", agentStatus: "idle", agent: "agy", cwd: "/srv/a" },
+      { id: "w2:p1", workspaceId: "w2", agentStatus: "idle", agent: "agy", cwd: "/srv/c" },
+    ],
+    [
+      { id: "w1", name: "alpha" },
+      { id: "w2", name: "beta" },
+    ],
+  );
+  assert.deepEqual(
+    groups[0].items.map((row) => row.pane.id),
+    ["w1:p1", "w1:p2", "w2:p1"],
+  );
+  assert.deepEqual(
+    groups[0].items.map((row) => row.workspaceName),
+    ["alpha", "alpha", "beta"],
+  );
+});
+
 test("shortPaneId drops the workspace prefix", () => {
   assert.equal(fleet.shortPaneId("w7:p1"), "p1");
   assert.equal(fleet.shortPaneId("w7:pJ"), "pJ");

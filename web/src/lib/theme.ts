@@ -47,3 +47,40 @@ export function applyTheme(choice: ThemeChoice, prefersLight: boolean): Resolved
   }
   return resolved;
 }
+
+/* ---------------------------------------------------------------- display */
+
+export type DisplayMode = "wrap" | "exact" | "fit";
+
+export const DISPLAY_KEY = "herdr-web-display";
+
+export const DISPLAY_MODES: DisplayMode[] = ["wrap", "exact", "fit"];
+
+export function isDisplayMode(value: unknown): value is DisplayMode {
+  return value === "wrap" || value === "exact" || value === "fit";
+}
+
+/**
+ * How the transcript is laid out. Defaults to wrap: the browser cannot ask
+ * herdr for narrower output, so reflowing is the only way ordinary output
+ * follows the screen width.
+ */
+export function readStoredDisplay(storage: Pick<Storage, "getItem"> | null): DisplayMode {
+  try {
+    const value = storage?.getItem(DISPLAY_KEY);
+    return isDisplayMode(value) ? value : "wrap";
+  } catch {
+    return "wrap";
+  }
+}
+
+export function storeDisplay(
+  storage: Pick<Storage, "setItem"> | null,
+  mode: DisplayMode,
+): void {
+  try {
+    storage?.setItem(DISPLAY_KEY, mode);
+  } catch {
+    /* private mode: the choice just will not persist */
+  }
+}

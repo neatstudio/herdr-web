@@ -55,3 +55,25 @@ test("isThemeChoice rejects everything but the three states", () => {
   assert.equal(theme.isThemeChoice("system"), false);
   assert.equal(theme.isThemeChoice(undefined), false);
 });
+
+test("display mode defaults to wrap and survives junk", () => {
+  const store = (value: string | null) => ({ getItem: () => value });
+  assert.equal(theme.readStoredDisplay(store("exact")), "exact");
+  assert.equal(theme.readStoredDisplay(store("fit")), "fit");
+  assert.equal(theme.readStoredDisplay(store("wrap")), "wrap");
+  assert.equal(theme.readStoredDisplay(store("sideways")), "wrap");
+  assert.equal(theme.readStoredDisplay(null), "wrap");
+});
+
+test("display preference writes the key the reader expects", () => {
+  let written: [string, string] | null = null;
+  theme.storeDisplay(
+    {
+      setItem: (key, value) => {
+        written = [key, value];
+      },
+    },
+    "exact",
+  );
+  assert.deepEqual(written, [theme.DISPLAY_KEY, "exact"]);
+});

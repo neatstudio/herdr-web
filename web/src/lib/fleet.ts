@@ -131,6 +131,7 @@ export type AgentPane = NameablePane & {
   displayAgent?: string;
   workspaceId: string;
   agentStatus?: string;
+  cwd?: string;
 };
 
 /**
@@ -140,6 +141,33 @@ export type AgentPane = NameablePane & {
  */
 export function paneAgent(pane: AgentPane): string {
   return clean(pane.displayAgent) || clean(pane.agent);
+}
+
+/** True when the pane carries a name of its own, rather than only its id. */
+export function paneOwnHasName(pane: NameablePane): boolean {
+  return (
+    clean(pane.label) !== "" || clean(pane.title) !== "" || clean(pane.terminalTitle) !== ""
+  );
+}
+
+/**
+ * What to call a pane in the fleet list. The agent has its own column there, so
+ * this never falls back to it; instead the working directory identifies the
+ * pane, and the pane id is the last resort. A directory that merely repeats the
+ * workspace name adds nothing and is skipped.
+ */
+export function paneListName(
+  pane: NameablePane & { cwd?: string },
+  workspaceName: string,
+): string {
+  if (paneOwnHasName(pane)) {
+    return clean(pane.label) || clean(pane.title) || clean(pane.terminalTitle);
+  }
+  const directory = tailPath(clean(pane.cwd));
+  if (directory !== "" && directory !== workspaceName) {
+    return directory;
+  }
+  return pane.id;
 }
 
 /** A pane with its workspace's name attached, for a flat fleet listing. */
@@ -163,6 +191,21 @@ export function groupFleet(
     pane,
     workspaceName: names.get(pane.workspaceId) ?? pane.workspaceId,
   }));
+  // Stable, scannable order: a group that reshuffles between polls is what
+  // makes a list feel messy even when nothing changed.
+  rows.sort((left, right) => {
+    const byWorkspace = left.workspaceName.localeCompare(right.workspaceName);
+    if (byWorkspace !== 0) {
+      return byWorkspace;
+    }
+    const byAgent = paneAgent(left.pane).localeCompare(paneAgent(right.pane));
+    if (byAgent !== 0) {
+      return byAgent;
+    }
+    return paneListName(left.pane, left.workspaceName).localeCompare(
+      paneListName(right.pane, right.workspaceName),
+    );
+  });
   return groupByTone(rows, (row) => row.pane.agentStatus);
 }
 

@@ -4,8 +4,8 @@ import {
   TONE_LABEL,
   groupFleet,
   paneAgent,
-  paneHasName,
-  paneOwnName,
+  paneListName,
+  paneOwnHasName,
   shortPaneId,
 } from "@/lib/fleet";
 import type { HerdrWorkspace } from "@/lib/herdr";
@@ -86,7 +86,7 @@ type RowProps = {
 
 function Row({ row, index, tone, active, onSelect }: RowProps) {
   const agent = paneAgent(row.pane);
-  const name = paneOwnName(row.pane);
+  const name = paneListName(row.pane, row.workspaceName);
   return (
     <button
       type="button"
@@ -105,8 +105,9 @@ function Row({ row, index, tone, active, onSelect }: RowProps) {
       </span>
       <span className="row__name">
         {name}
-        {/* The short id only helps when the name is something else. */}
-        {paneHasName(row.pane) && <span className="row__id">{shortPaneId(row.pane.id)}</span>}
+        {/* The short id only helps when the name is something else; when the
+            name already is the id, repeating it just looks like noise. */}
+        {paneOwnHasName(row.pane) && <span className="row__id">{shortPaneId(row.pane.id)}</span>}
       </span>
       <span className="row__workspace" title={row.workspaceName}>
         {row.workspaceName}

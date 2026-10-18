@@ -256,6 +256,11 @@ export async function sendPaneText(
   return postJSON(`${panePath(paneId)}/input`, { text: body });
 }
 
+/** Rename a pane; pass null to clear the name. */
+export async function renamePane(paneId: string, label: string | null): Promise<boolean> {
+  return postJSON(`${panePath(paneId)}/rename`, { label });
+}
+
 /** Send raw keys, e.g. ["Tab"] for shell completion. */
 export async function sendPaneKeys(paneId: string, keys: string[]): Promise<boolean> {
   return postJSON(`${panePath(paneId)}/keys`, { keys });

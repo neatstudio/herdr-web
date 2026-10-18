@@ -1,5 +1,6 @@
 import type { HerdrPane } from "@/lib/herdr";
 import { paneHasName, paneName, shortPaneId, toneOf } from "@/lib/fleet";
+import { longPressHandlers } from "@/lib/press";
 
 type Props = {
   panes: HerdrPane[];
@@ -40,6 +41,7 @@ export function PaneStrip({ panes, activeId, onSelect, onMenu }: Props) {
               event.preventDefault();
               onMenu(pane.id, event.clientX, event.clientY);
             }}
+            {...longPressHandlers({ onLongPress: (x, y) => onMenu(pane.id, x, y) })}
           >
             <span className="tab__index">{String(index + 1).padStart(2, "0")}</span>
             <span data-pane-title={pane.id} className="tab__name">

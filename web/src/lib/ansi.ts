@@ -357,6 +357,15 @@ function render(segments: Segment[], mode: CanvasMode): string {
   return html;
 }
 
+/**
+ * The colour to paint behind a whole pane, adapted for the page theme. A
+ * wrapped transcript needs this: without it every visual row would show the
+ * page through the gaps and the canvas would break into stripes.
+ */
+export function canvasBackdrop(canvas: string | null, mode: CanvasMode): string | null {
+  return canvas === null ? null : adaptColour(canvas, mode);
+}
+
 /** One line of pane text to HTML. */
 export function ansiLineToHtml(line: string, mode: CanvasMode = "content"): string {
   return render(trimPadding(parseLine(line)), mode);

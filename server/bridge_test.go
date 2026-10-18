@@ -305,6 +305,51 @@ func TestPaneKeysRejectsEmptyList(t *testing.T) {
 	}
 }
 
+func TestPaneRenameSetsAndClearsTheLabel(t *testing.T) {
+	socket, state, closeFn := startFakeHerdr(t)
+	defer closeFn()
+	handler := newTestHandler(t, socket)
+
+	named := do(t, handler, http.MethodPost, "/api/v1/herdr/panes/w1:p1/rename", `{"label":"Deploy Watch"}`)
+	if named.Code != http.StatusOK {
+		t.Fatalf("rename status=%d body=%s", named.Code, named.Body.String())
+	}
+	// A blank label is a clear, not a label made of spaces.
+	blank := do(t, handler, http.MethodPost, "/api/v1/herdr/panes/w1:p1/rename", `{"label":"   "}`)
+	if blank.Code != http.StatusOK {
+		t.Fatalf("blank status=%d body=%s", blank.Code, blank.Body.String())
+	}
+	cleared := do(t, handler, http.MethodPost, "/api/v1/herdr/panes/w1:p1/rename", `{"label":null}`)
+	if cleared.Code != http.StatusOK {
+		t.Fatalf("clear status=%d body=%s", cleared.Code, cleared.Body.String())
+	}
+	state.waitForCalls(t, 3)
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	want := []string{"Deploy Watch", "<clear>", "<clear>"}
+	if len(state.renamedTo) != len(want) {
+		t.Fatalf("renamedTo=%q", state.renamedTo)
+	}
+	for index, label := range want {
+		if state.renamedTo[index] != label {
+			t.Fatalf("rename[%d]=%q want %q", index, state.renamedTo[index], label)
+		}
+	}
+}
+
+func TestPaneRenameRejectsBadRequests(t *testing.T) {
+	socket, _, closeFn := startFakeHerdr(t)
+	defer closeFn()
+	handler := newTestHandler(t, socket)
+
+	if got := do(t, handler, http.MethodGet, "/api/v1/herdr/panes/w1:p1/rename", ""); got.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("GET status=%d", got.Code)
+	}
+	if got := do(t, handler, http.MethodPost, "/api/v1/herdr/panes/w1:p1/rename", "not json"); got.Code != http.StatusBadRequest {
+		t.Fatalf("bad body status=%d", got.Code)
+	}
+}
+
 func TestDaemonErrorBecomesBadGateway(t *testing.T) {
 	socket, state, closeFn := startFakeHerdr(t)
 	defer closeFn()

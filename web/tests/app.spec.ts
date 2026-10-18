@@ -339,6 +339,9 @@ test.describe("a pane that paints its own canvas", () => {
     await expect(feed).toHaveAttribute("data-canvas", "content");
     await expect(feed).toHaveCSS("background-color", "rgb(20, 20, 20)");
     await expect(feed).not.toHaveAttribute("data-adapt", /.+/);
+    // Wrap is the default, so the canvas is painted behind every row and the
+    // page can never show through.
+    await expect(feed).toHaveAttribute("data-display", "wrap");
   });
 
   test("mirrors it onto a light page instead of punching a dark hole", async ({ page }) => {
@@ -349,8 +352,10 @@ test.describe("a pane that paints its own canvas", () => {
     const feed = page.locator("#herdr-feed-text");
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
     // The page provides the canvas, so the container must not paint one.
-    await expect(feed).not.toHaveAttribute("data-canvas", /.+/);
     await expect(feed).toHaveAttribute("data-adapt", "paper");
+    // The backdrop is the *mirrored* canvas, so a wrapped row still sits on
+    // the app's own surface rather than on bare paper.
+    await expect(feed).toHaveCSS("background-color", "rgb(235, 235, 235)");
     // The app's dark canvas becomes a light one, and its light text dark.
     await expect(feed.locator("span").first()).toHaveCSS("background-color", "rgb(235, 235, 235)");
     await expect(feed.locator("span").first()).toHaveCSS("color", "rgb(23, 22, 15)");
@@ -368,12 +373,13 @@ test("plain output keeps the page background and does not paint stripes", async 
   await expect(page.locator(".scope__line").first()).toHaveText("prompt% ls");
 });
 
-test("one terminal row stays one row", async ({ page }) => {
-  // A 180-column TUI line must not wrap: wrapping destroys the alignment the
-  // app draws with and shreds its painted background.
+test("exact mode keeps one terminal row per line", async ({ page }) => {
+  // A 180-column TUI line must not wrap in exact mode: wrapping destroys the
+  // alignment the app draws with and shreds its painted background.
   const wide = `${ESC}[48;2;20;20;20m${"x".repeat(180)}${ESC}[0m`;
   await installBridge(page, { readText: `${wide}\n${wide}\n` });
   await page.goto("/");
+  await page.locator("#herdr-display-exact").click();
   await expect(page.locator(".scope__line").first()).toContainText("xxx");
 
   const heights = await page.locator(".scope__line").evaluateAll((nodes) =>
@@ -401,34 +407,23 @@ test("plain output rewraps to a phone-sized viewport", async ({ page }) => {
   expect(overflow, "plain output must not overflow sideways on a phone").toBe(false);
 });
 
-test("a fixed-width pane offers fit-to-width instead of only scrolling", async ({ page }) => {
+test("a fixed-width pane can be scaled to fit instead of only scrolling", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 780 });
   const wide = `${ESC}[48;2;20;20;20m${"x".repeat(120)}${ESC}[0m`;
   await installBridge(page, { readText: `${wide}\n${wide}\n` });
   await page.goto("/");
 
   const feed = page.locator("#herdr-feed-text");
-  await expect(feed).toHaveAttribute("data-wrap", "off");
+  // Exact keeps terminal rows intact, so it does not fit and scrolls.
+  await page.locator("#herdr-display-exact").click();
+  await expect
+    .poll(async () => feed.evaluate((node) => node.scrollWidth > node.clientWidth + 1))
+    .toBe(true);
 
-  // 120 columns do not fit 390px at the reading size, so the control appears.
-  const toggle = page.locator("#herdr-fit-toggle");
-  await expect(toggle).toBeVisible();
-  await expect(toggle).toContainText("fit 120c");
-
-  const before = await feed.evaluate((node) => node.scrollWidth > node.clientWidth + 1);
-  expect(before).toBe(true);
-
-  await toggle.click();
-  await expect(toggle).toHaveAttribute("aria-pressed", "true");
-  await expect(feed).toHaveAttribute("data-fit", "on");
-  // The rendered content now fits the phone width.
+  await page.locator("#herdr-display-fit").click();
   await expect
     .poll(async () => feed.evaluate((node) => node.scrollWidth <= node.clientWidth + 1))
     .toBe(true);
-
-  // Back to 1:1 so the text stays readable.
-  await toggle.click();
-  await expect(toggle).toContainText("fit 120c");
 });
 
 test("the fleet lists agents, not workspaces, and keeps the workspace as context", async ({ page }) => {
@@ -451,6 +446,102 @@ test("clicking an agent row opens that pane directly", async ({ page }) => {
   await page.locator('.row[data-pane-id="w1:p2"]').click();
   await expect(page.locator('.tab[aria-selected="true"]')).toHaveAttribute("data-pane-id", "w1:p2");
   await expect(page.locator("h1")).toContainText("vnstat 区间流量合计脚本");
+});
+
+test("the transcript layout switches between wrap, exact and fit", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 780 });
+  const wide = `${ESC}[48;2;20;20;20m${"x".repeat(120)}${ESC}[0m`;
+  await installBridge(page, { readText: `${wide}\n${wide}\n` });
+  await page.goto("/");
+
+  const feed = page.locator("#herdr-feed-text");
+  // Default: text follows the screen width.
+  await expect(feed).toHaveAttribute("data-display", "wrap");
+  await expect(feed).toHaveAttribute("data-wrap", "on");
+
+  // Exact: one row per terminal line, so it overflows and scrolls.
+  await page.locator("#herdr-display-exact").click();
+  await expect(feed).toHaveAttribute("data-display", "exact");
+  await expect(feed).toHaveAttribute("data-wrap", "off");
+  await expect
+    .poll(async () => feed.evaluate((node) => node.scrollWidth > node.clientWidth + 1))
+    .toBe(true);
+
+  // Fit: scaled so all 120 columns land inside the viewport.
+  await page.locator("#herdr-display-fit").click();
+  await expect(feed).toHaveAttribute("data-display", "fit");
+  await expect
+    .poll(async () => feed.evaluate((node) => node.scrollWidth <= node.clientWidth + 1))
+    .toBe(true);
+
+  // The choice is remembered across a reload.
+  await page.reload();
+  await expect(page.locator("#herdr-feed-text")).toHaveAttribute("data-display", "fit");
+});
+
+test("the pane menu renames a pane, and clearing it restores the id", async ({ page }) => {
+  const renames: string[] = [];
+  await installBridge(page);
+  await page.route("**/api/v1/herdr/panes/*/rename", async (route) => {
+    renames.push(route.request().postData() ?? "");
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+  });
+  await page.goto("/");
+  await page.locator('.row[data-pane-id="w1:p1"]').click();
+
+  await page.locator('h1 [data-pane-title="w1:p1"]').click({ button: "right" });
+  await expect(page.locator('[role="menu"]')).toContainText("Rename");
+  await page.getByRole("menuitem", { name: /Rename/ }).click();
+
+  // The menu turns into an input prefilled with the current name.
+  const input = page.locator("#herdr-rename-input");
+  await expect(input).toBeVisible();
+  await expect(input).toHaveValue("Deploy Watch");
+  await input.fill("Nightly deploy");
+  await input.press("Enter");
+  await expect.poll(() => renames).toEqual([JSON.stringify({ label: "Nightly deploy" })]);
+  await expect(page.locator('[role="menu"]')).toHaveCount(0);
+});
+
+test("a long press opens the pane menu, because touch has no right-click", async ({ page }) => {
+  await installBridge(page);
+  await page.goto("/");
+  await page.locator('.row[data-pane-id="w1:p1"]').click();
+
+  const tab = page.locator('[role="tab"] [data-pane-title="w1:p2"]');
+  const box = (await tab.boundingBox()) ?? { x: 0, y: 0, width: 10, height: 10 };
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+
+  // Playwright cannot hold a touch, so drive the same events the handlers see.
+  await tab.dispatchEvent("touchstart", { touches: [{ identifier: 1, clientX: x, clientY: y }] });
+  await expect(page.locator('[role="menu"]')).toBeVisible({ timeout: 3000 });
+  await expect(page.locator('[role="menu"]')).toContainText("Rename");
+
+  // A finger that moves is scrolling, and must not open a menu.
+  await page.keyboard.press("Escape");
+  await expect(page.locator('[role="menu"]')).toHaveCount(0);
+  await tab.dispatchEvent("touchstart", { touches: [{ identifier: 1, clientX: x, clientY: y }] });
+  await tab.dispatchEvent("touchmove", { touches: [{ identifier: 1, clientX: x, clientY: y + 40 }] });
+  await page.waitForTimeout(700);
+  await expect(page.locator('[role="menu"]')).toHaveCount(0);
+});
+
+test("the fleet never shows a pane id twice", async ({ page }) => {
+  // An unnamed pane whose agent herdr detected used to render as "w6:p1 p1".
+  await installBridge(page, {
+    panes: [
+      { id: "w6:p1", workspaceId: "w1", tabId: "w1:t1", focused: true, agentStatus: "idle", agent: "agy", cwd: "/srv/app" },
+    ],
+    workspaces: [{ id: "w1", name: "web", windows: 1, attached: true, paneCount: 1, agentStatus: "idle" }],
+  });
+  await page.goto("/");
+
+  const row = page.locator('.row[data-pane-id="w6:p1"]');
+  await expect(row.locator(".row__agent")).toHaveText("agy");
+  // The name column identifies the pane by its directory, not by a repeat.
+  await expect(row.locator(".row__name")).toHaveText("app");
+  await expect(row.locator(".row__id")).toHaveCount(0);
 });
 
 test("a tainted workspace reports the no-panes state instead of a blank scope", async ({ page }) => {
