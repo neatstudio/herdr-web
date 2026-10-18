@@ -290,3 +290,15 @@ export function mostUrgentPane(panes: AgentPane[]): AgentPane | undefined {
     panes[0]
   );
 }
+
+/**
+ * A flat list ordered by what a reader cares about, ignoring where each item
+ * came from. Status is then carried by colour alone, so no group headers are
+ * needed; the sort is stable, so items of equal tone keep herdr's own order.
+ */
+export function orderByTone<T>(items: T[], toneOfItem: (item: T) => Tone): T[] {
+  return items
+    .map((item, index) => ({ item, index, rank: TONE_ORDER.indexOf(toneOfItem(item)) }))
+    .sort((left, right) => left.rank - right.rank || left.index - right.index)
+    .map((entry) => entry.item);
+}

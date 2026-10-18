@@ -313,8 +313,8 @@ body::before {
 
 .sidebar {
   display: grid;
-  /* spaces on top, agents underneath, each scrolling on its own */
-  grid-template-rows: minmax(5rem, 0.4fr) minmax(0, 1fr);
+  /* Half each, as asked: neither half is guessed at, and both scroll. */
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
   min-height: 0;
   border-right: var(--rule-w) solid var(--rule-strong);
   background: var(--surface);
@@ -443,11 +443,11 @@ body::before {
 .row {
   position: relative;
   display: grid;
-  grid-template-columns: 9px 4.5rem minmax(0, 1fr) auto;
+  grid-template-columns: 4.5rem minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 3px 9px 3px 4px;
+  padding: 3px 9px 3px 8px;
   text-align: left;
   border-bottom: var(--rule-w) solid var(--rule);
   color: var(--ink-dim);
@@ -456,6 +456,34 @@ body::before {
 }
 
 /* Who is working: the agent herdr detected, or a plain shell. */
+/* Status shows as the colour of the agent's name, with no mark beside it. */
+.row[data-tone="working"] .row__agent,
+.srow[data-tone="working"] .srow__agent {
+  color: var(--working);
+}
+
+.row[data-tone="blocked"] .row__agent,
+.srow[data-tone="blocked"] .srow__agent {
+  color: var(--blocked);
+  font-weight: 600;
+}
+
+.row[data-tone="idle"] .row__agent,
+.srow[data-tone="idle"] .srow__agent {
+  color: var(--idle);
+}
+
+.row[data-tone="done"] .row__agent,
+.srow[data-tone="done"] .srow__agent {
+  color: var(--done);
+}
+
+/* A space row has no agent column, so it spans the full width. Two classes so
+   it wins over the .srow definition that comes later in this file. */
+.srow.srow--space {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .row__agent {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -516,11 +544,11 @@ body::before {
 .wrow {
   position: relative;
   display: grid;
-  grid-template-columns: 9px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 7px;
   width: 100%;
-  padding: 4px 9px 4px 4px;
+  padding: 4px 9px 4px 7px;
   text-align: left;
   border-bottom: var(--rule-w) solid var(--rule);
   color: var(--ink-dim);
@@ -1130,6 +1158,38 @@ body::before {
   background: var(--surface);
 }
 
+/* Switching between the two lists the sidebar shows side by side on a PC. */
+.sheet__views {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-bottom: var(--rule-w) solid var(--rule-strong);
+  background: var(--surface);
+}
+
+.sheet__view {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 8px 8px;
+  font-family: var(--font-label);
+  font-size: var(--step-micro);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  border-bottom: 2px solid transparent;
+}
+
+.sheet__view[aria-selected="true"] {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+
+.sheet__view-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-faint);
+}
+
 /* A level header: the first level toggles, the second is a plain label. */
 .sheet__level {
   display: flex;
@@ -1205,7 +1265,7 @@ body::before {
 /* Sheet rows carry the workspace, because every workspace is listed here. */
 .srow {
   display: grid;
-  grid-template-columns: 9px 4rem minmax(0, 1fr);
+  grid-template-columns: 4rem minmax(0, 1fr);
   align-items: center;
   gap: 7px;
   width: 100%;

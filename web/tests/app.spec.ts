@@ -101,21 +101,62 @@ async function installBridge(page: Page, options: FixtureOptions = {}): Promise<
 
 /* ------------------------------------------------------------- the two columns */
 
-test("the sidebar splits spaces from agents, and each half groups itself", async ({ page }) => {
+test("spaces keep herdr's own order and carry no status", async ({ page }) => {
   await installBridge(page);
   await page.goto("/");
 
-  // Spaces by their own status: blocked first.
-  await expect(page.locator(".side--spaces .group__label-text")).toHaveText(["needs input", "idle"]);
-  // Agents by pane status, across every space, which is what needs attention.
-  await expect(page.locator(".side--agents .group__label-text")).toHaveText([
-    "needs input",
-    "working",
-    "idle",
-  ]);
+  // Workspaces are a place to attach to: listed in the order herdr reports
+  // them, with no status grouping, no dots and no group headings.
+  await expect(page.locator(".side--spaces .wrow__name")).toHaveText(["web", "api"]);
+  await expect(page.locator(".side--spaces .group__label")).toHaveCount(0);
+  await expect(page.locator(".side--spaces .signal")).toHaveCount(0);
+
+  // Agents are what is running, so they are ordered by what needs attention
+  // and the tone is carried by colour rather than by a mark.
   await expect(page.locator(".side--agents .row")).toHaveCount(3);
+  await expect(page.locator(".side--agents .group__label")).toHaveCount(0);
+  await expect(page.locator(".side--agents .signal")).toHaveCount(0);
+  await expect(page.locator(".side--agents .row").first()).toHaveAttribute("data-tone", "blocked");
+
   // The blocked workspace opens by default.
   await expect(page.locator(".stage__status")).toContainText("needs input");
+});
+
+test("the sidebar halves are equal, and agent tones are colours not marks", async ({ page }) => {
+  await installBridge(page);
+  await page.goto("/");
+
+  const halves = await page.evaluate(() => ({
+    spaces: Math.round(document.querySelector(".side--spaces")?.getBoundingClientRect().height ?? 0),
+    agents: Math.round(document.querySelector(".side--agents")?.getBoundingClientRect().height ?? 0),
+  }));
+  expect(Math.abs(halves.spaces - halves.agents)).toBeLessThanOrEqual(1);
+
+  // Working and idle differ by colour, and each equals its theme token, so the
+  // assertion holds in both themes instead of pinning one palette.
+  const tones = await page.evaluate(() => {
+    const resolve = (token: string): string => {
+      const probe = document.createElement("span");
+      probe.style.color = `var(${token})`;
+      document.body.append(probe);
+      const colour = getComputedStyle(probe).color;
+      probe.remove();
+      return colour;
+    };
+    const colourAt = (selector: string): string => {
+      const node = document.querySelector(selector);
+      return node === null ? "" : getComputedStyle(node).color;
+    };
+    return {
+      workingToken: resolve("--working"),
+      idleToken: resolve("--idle"),
+      working: colourAt('.side--agents .row[data-pane-id="w1:p2"] .row__agent'),
+      idle: colourAt('.side--agents .row[data-pane-id="w1:p1"] .row__agent'),
+    };
+  });
+  expect(tones.working).toBe(tones.workingToken);
+  expect(tones.idle).toBe(tones.idleToken);
+  expect(tones.working).not.toBe(tones.idle);
 });
 
 test("the rail shows how much work each workspace holds", async ({ page }) => {
@@ -534,12 +575,12 @@ test("theme switch flips the palette and persists", async ({ page }) => {
 
 /* ------------------------------------------------------------------ phone */
 
-test("a phone hides the sidebar behind one picker, in two levels", async ({ page }) => {
+test("a phone hides both sidebar halves and offers one switcher instead", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 780 });
   await installBridge(page);
   await page.goto("/");
 
-  // The sidebar is off screen, and nothing scrolls sideways to reach it.
+  // Neither half is on screen, and nothing scrolls sideways to reach them.
   await expect(page.locator(".sidebar")).toBeHidden();
 
   const pick = page.locator("#herdr-picker-open");
@@ -548,35 +589,32 @@ test("a phone hides the sidebar behind one picker, in two levels", async ({ page
 
   const sheet = page.locator(".sheet");
   await expect(sheet).toBeVisible();
-  // Level one starts collapsed, naming only the space you are in.
-  const spaces = page.locator("#herdr-sheet-spaces");
-  await expect(spaces).toHaveAttribute("aria-expanded", "false");
-  await expect(spaces).toContainText("api");
+  // Two views, switched rather than stacked: agents first, spaces one tap away.
+  await expect(page.locator("#herdr-sheet-view-agents")).toHaveAttribute("aria-selected", "true");
+  await expect(sheet.locator(".srow[data-pane-id]")).toHaveCount(3);
   await expect(sheet.locator("[data-workspace-id]")).toHaveCount(0);
 
-  // Level two is open: this space's panes are one tap away.
-  await expect(sheet.locator(".srow[data-pane-id]")).toHaveCount(1);
-  await sheet.locator('.srow[data-pane-id="w2:p1"]').click();
+  await page.locator("#herdr-sheet-view-spaces").click();
+  await expect(page.locator("#herdr-sheet-view-spaces")).toHaveAttribute("aria-selected", "true");
+  await expect(sheet.locator("[data-workspace-id]")).toHaveCount(2);
+  await expect(sheet.locator(".srow[data-pane-id]")).toHaveCount(0);
 
-  await expect(sheet).toHaveCount(0);
-  await expect(page.locator("h1")).toContainText("w2:p1");
+  // Picking a space returns to the agents, now scoped by the new selection.
+  await sheet.locator('[data-workspace-id="w1"]').click();
+  await expect(page.locator("#herdr-sheet-view-agents")).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#herdr-sheet-title")).toHaveText("web");
+  await expect(sheet.locator(".srow[aria-current=\"true\"]")).toHaveCount(1);
 });
 
-test("the spaces level opens, switches space and folds itself back", async ({ page }) => {
+test("picking an agent closes the sheet and opens it in the transcript", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 780 });
   await installBridge(page);
   await page.goto("/");
   await page.locator("#herdr-picker-open").click();
 
-  await page.locator("#herdr-sheet-spaces").click();
-  await expect(page.locator("#herdr-sheet-spaces")).toHaveAttribute("aria-expanded", "true");
-  await expect(page.locator(".sheet [data-workspace-id]")).toHaveCount(2);
-
-  // Picking a space swaps level two to its panes and folds level one back.
-  await page.locator('.sheet [data-workspace-id="w1"]').click();
-  await expect(page.locator("#herdr-sheet-spaces")).toHaveAttribute("aria-expanded", "false");
-  await expect(page.locator(".sheet .srow[data-pane-id]")).toHaveCount(2);
-  await expect(page.locator("#herdr-sheet-title")).toHaveText("web");
+  await page.locator('.sheet .srow[data-pane-id="w1:p2"]').click();
+  await expect(page.locator(".sheet")).toHaveCount(0);
+  await expect(page.locator("h1")).toContainText("vnstat 区间流量合计脚本");
 });
 
 test("the picker searches every pane at once", async ({ page }) => {

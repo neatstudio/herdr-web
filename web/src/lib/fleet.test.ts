@@ -188,3 +188,16 @@ test("mostUrgentPane prefers blocked, then focused, then the first", () => {
   assert.equal(fleet.mostUrgentPane([{ id: "a", workspaceId: "w" }])?.id, "a");
   assert.equal(fleet.mostUrgentPane([]), undefined);
 });
+
+test("orderByTone sorts by status and keeps the original order within a tone", () => {
+  const items = [
+    { id: "a", status: "idle" },
+    { id: "b", status: "blocked" },
+    { id: "c", status: "working" },
+    { id: "d", status: "idle" },
+  ];
+  assert.deepEqual(
+    fleet.orderByTone(items, (item) => fleet.toneOf(item.status)).map((item) => item.id),
+    ["b", "c", "a", "d"],
+  );
+});
