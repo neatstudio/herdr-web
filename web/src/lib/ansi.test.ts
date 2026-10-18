@@ -115,9 +115,20 @@ test("a realistic zsh prompt line renders every segment", () => {
   const line = `${ESC}[0m${ESC}[38;5;6madmin${ESC}[0m ${ESC}[0m${ESC}[38;5;4m/tmp${ESC}[0m ${ESC}[0m${ESC}[38;5;2m%${ESC}[0m echo hi`;
   const html = ansiLineToHtml(line);
   assert.ok(html.includes(">admin</span>"), html);
-  assert.ok(html.includes(">/tmp</span>"), html);
+  // The directory in the prompt is a path, so it is a link now.
+  assert.ok(html.includes('<a class="path" data-path="/tmp" href="#">/tmp</a>'), html);
   assert.ok(html.includes(">%</span> echo hi"), html);
   assert.ok(!html.includes(ESC), "no escape bytes in the output");
+});
+
+test("only paths become links, and prose around them stays plain", () => {
+  const html = ansiLineToHtml("wrote /tmp/a.png and/or 2/3 see https://x/y");
+  assert.ok(html.includes('data-path="/tmp/a.png"'), html);
+  assert.equal(html.match(/data-path=/g)?.length, 1, html);
+  // Escaping still happens, inside the link too.
+  const quoted = ansiLineToHtml("cat /tmp/a&b.png");
+  assert.ok(quoted.includes("&amp;"), quoted);
+  assert.ok(!quoted.includes("<script"), quoted);
 });
 
 test("padding is dropped when nothing is painting it", () => {

@@ -445,7 +445,7 @@ export function ansiLineToHtml(line: string, mode: CanvasMode = "content"): stri
  */
 export type CanvasTone = { colour: string | null; share: number };
 
-import { findPaths } from "./paths";
+import { findPaths } from "./paths.ts";
 
 export function canvasTone(lines: string[]): CanvasTone {
   const counts = new Map<string, number>();

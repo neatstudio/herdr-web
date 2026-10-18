@@ -204,7 +204,27 @@ test("fetchFileMeta turns a non-200 into an error", async () => {
     () => fetchFileMeta("/tmp/boom.png"),
   );
   assert.deepEqual(meta, { kind: "error", path: "/tmp/boom.png", message: "HTTP 500" });
+});test("fetchFileMeta turns a non-200 into an error", async () => {
+  const meta = await withFetch(
+    async () => jsonResponse({}, 500),
+    () => fetchFileMeta("/tmp/boom.png"),
+  );
+  assert.deepEqual(meta, { kind: "error", path: "/tmp/boom.png", message: "HTTP 500" });
 });
+test("a refusal explains itself when the bridge said why", () => {
+  // A directory click is a 400 with a reason; showing "HTTP 400" would not
+  // tell the operator anything.
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ error: { code: "invalid_request", message: "path is not a regular file" } }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    })) as unknown as typeof fetch;
+  return fetchFileMeta("/tmp").then((meta) => {
+    assert.equal(meta.kind, "error");
+    assert.equal((meta as { message: string }).message, "path is not a regular file");
+  });
+});
+
 
 test("fetchFileMeta turns a network failure into an error", async () => {
   const meta = await withFetch(

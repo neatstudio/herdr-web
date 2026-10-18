@@ -229,7 +229,19 @@ export async function fetchFileMeta(path: string): Promise<FileMeta> {
     return { kind: "missing", path: full };
   }
   if (!response.ok) {
-    return { kind: "error", path: full, message: `HTTP ${response.status}` };
+    // The bridge explains refusals in its error body, and those messages are
+    // the useful ones: "path is not a regular file" beats "HTTP 400" when a
+    // directory was clicked.
+    let message = `HTTP ${response.status}`;
+    try {
+      const body = (await response.json()) as { error?: { message?: unknown } };
+      if (typeof body.error?.message === "string" && body.error.message !== "") {
+        message = body.error.message;
+      }
+    } catch {
+      /* no body to read: the status is all there is */
+    }
+    return { kind: "error", path: full, message };
   }
   let payload: unknown;
   try {

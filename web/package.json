@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "npm run typecheck && vite build",
     "typecheck": "tsc --noEmit",
-    "test:unit": "node --experimental-strip-types src/lib/herdr.test.ts && node --experimental-strip-types src/lib/fleet.test.ts && node --experimental-strip-types src/lib/theme.test.ts && node --experimental-strip-types src/lib/ansi.test.ts",
+    "test:unit": "node --experimental-strip-types --test src/lib/*.test.ts",
     "test:e2e:browser": "playwright test",
     "postbuild": "touch dist/.gitkeep"
   },
