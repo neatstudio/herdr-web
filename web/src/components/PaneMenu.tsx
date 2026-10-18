@@ -63,11 +63,6 @@ export function PaneMenu({ target, activePaneId, onSelect, onClose }: Props) {
     return null;
   }
 
-  const width = 220;
-  const height = 108;
-  const left = Math.max(4, Math.min(target.x, window.innerWidth - width - 4));
-  const top = Math.max(4, Math.min(target.y, window.innerHeight - height - 4));
-
   const items: { label: string; hint: string; run: () => void }[] = [];
   if (target.paneId !== activePaneId) {
     items.push({
@@ -76,14 +71,19 @@ export function PaneMenu({ target, activePaneId, onSelect, onClose }: Props) {
       run: () => onSelect(target.paneId),
     });
   }
-  items.push(
-    { label: "Copy pane id", hint: "clipboard", run: () => void copyText(target.paneId) },
-    {
-      label: "Copy short id",
-      hint: target.paneId.split(":").pop() ?? target.paneId,
-      run: () => void copyText(target.paneId.split(":").pop() ?? target.paneId),
-    },
-  );
+  // The id is the one thing the transcript cannot show you, so the menu
+  // offers exactly that and nothing it already displays.
+  items.push({
+    label: "Copy pane id",
+    hint: target.paneId,
+    run: () => void copyText(target.paneId),
+  });
+
+  const width = 220;
+  const itemHeight = 34;
+  const height = items.length * itemHeight + 8;
+  const left = Math.max(4, Math.min(target.x, window.innerWidth - width - 4));
+  const top = Math.max(4, Math.min(target.y, window.innerHeight - height - 4));
 
   return (
     <div

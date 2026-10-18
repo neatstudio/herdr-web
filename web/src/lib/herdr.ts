@@ -30,6 +30,15 @@ export type HerdrPane = {
   focused: boolean;
   cwd?: string;
   agentStatus?: string;
+  /** The operator's own rename, from `herdr pane rename`. */
+  label?: string;
+  /** herdr's own title for the pane, distinct from the label. */
+  title?: string;
+  /** The OSC title the program in the pane set. */
+  terminalTitle?: string;
+  /** The coding agent running in the pane. */
+  agent?: string;
+  displayAgent?: string;
 };
 
 export type HerdrPaneRead = {
@@ -137,6 +146,11 @@ function parseHerdrPane(value: unknown): HerdrPane | null {
     focused: record.focused === true,
     cwd: optionalString(record.cwd),
     agentStatus: optionalString(record.agentStatus),
+    label: optionalString(record.label),
+    title: optionalString(record.title),
+    terminalTitle: optionalString(record.terminalTitle),
+    agent: optionalString(record.agent),
+    displayAgent: optionalString(record.displayAgent),
   };
 }
 

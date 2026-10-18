@@ -1,5 +1,5 @@
 import type { HerdrPane } from "@/lib/herdr";
-import { toneOf } from "@/lib/fleet";
+import { paneHasName, paneName, shortPaneId, toneOf } from "@/lib/fleet";
 
 type Props = {
   panes: HerdrPane[];
@@ -9,8 +9,10 @@ type Props = {
 };
 
 /**
- * Numbered pane tabs. The tab label doubles as the right-click target, so the
- * menu opens only on the pane title and never on the surrounding chrome.
+ * Numbered pane tabs. Each tab shows the pane's own name (herdr label, then
+ * title, then terminal title, then agent) and falls back to the pane id. The
+ * tab label doubles as the right-click target, so the menu opens only on the
+ * pane title and never on the surrounding chrome.
  */
 export function PaneStrip({ panes, activeId, onSelect, onMenu }: Props) {
   if (panes.length === 0) {
@@ -21,6 +23,8 @@ export function PaneStrip({ panes, activeId, onSelect, onMenu }: Props) {
       {panes.map((pane, index) => {
         const active = pane.id === activeId;
         const tone = toneOf(pane.agentStatus);
+        const name = paneName(pane);
+        const named = paneHasName(pane);
         return (
           <button
             key={pane.id}
@@ -30,6 +34,7 @@ export function PaneStrip({ panes, activeId, onSelect, onMenu }: Props) {
             data-pane-id={pane.id}
             aria-selected={active}
             tabIndex={active ? 0 : -1}
+            title={named ? `${name} — ${pane.id}` : pane.id}
             onClick={() => onSelect(pane.id)}
             onContextMenu={(event) => {
               event.preventDefault();
@@ -37,7 +42,12 @@ export function PaneStrip({ panes, activeId, onSelect, onMenu }: Props) {
             }}
           >
             <span className="tab__index">{String(index + 1).padStart(2, "0")}</span>
-            <span data-pane-title={pane.id}>{pane.id}</span>
+            <span data-pane-title={pane.id} className="tab__name">
+              {name}
+            </span>
+            {/* Keep the id visible when it is not already the name, so a tab
+                can still be matched against `herdr pane` output. */}
+            {named && <span className="tab__id">{shortPaneId(pane.id)}</span>}
             <span className="signal" data-tone={tone} aria-hidden />
           </button>
         );

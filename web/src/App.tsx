@@ -13,7 +13,7 @@ import {
   type HerdrStatus,
   type HerdrWorkspace,
 } from "@/lib/herdr";
-import { TONE_LABEL, toneOf } from "@/lib/fleet";
+import { TONE_LABEL, paneHasName, paneName, toneOf } from "@/lib/fleet";
 import { applyTheme, readStoredChoice, storeChoice, type ThemeChoice } from "@/lib/theme";
 
 const FLEET_POLL_MS = 4000;
@@ -163,13 +163,21 @@ export function App() {
                   <span
                     className="stage__pane"
                     data-pane-title={activePane.id}
+                    title={
+                      paneHasName(activePane)
+                        ? `${paneName(activePane)} — ${activePane.id}`
+                        : activePane.id
+                    }
                     onContextMenu={(event) => {
                       event.preventDefault();
                       setMenu({ paneId: activePane.id, x: event.clientX, y: event.clientY });
                     }}
                   >
-                    {activePane.id}
+                    {paneName(activePane)}
                   </span>
+                  {paneHasName(activePane) && (
+                    <span className="dim stage__pane-id">{activePane.id}</span>
+                  )}
                 </>
               )}
             </h1>

@@ -14,8 +14,17 @@ const WORKSPACES = [
 ];
 
 const PANES = [
-  { id: "w1:p1", workspaceId: "w1", tabId: "w1:t1", focused: true, cwd: "/tmp/web", agentStatus: "idle" },
-  { id: "w1:p2", workspaceId: "w1", tabId: "w1:t1", focused: false, cwd: "/tmp/web", agentStatus: "working" },
+  // An operator rename: outranks every other name.
+  {
+    id: "w1:p1", workspaceId: "w1", tabId: "w1:t1", focused: true, cwd: "/tmp/web",
+    agentStatus: "idle", label: "Deploy Watch", terminalTitle: "osc title", agent: "claude",
+  },
+  // No label: falls through to the terminal title the program set.
+  {
+    id: "w1:p2", workspaceId: "w1", tabId: "w1:t1", focused: false, cwd: "/tmp/web",
+    agentStatus: "working", terminalTitle: "vnstat 区间流量合计脚本 - grok", agent: "grok",
+  },
+  // Nothing named it at all: the pane id is all there is.
   { id: "w2:p1", workspaceId: "w2", tabId: "w2:t1", focused: true, cwd: "/tmp/api", agentStatus: "blocked" },
 ];
 
@@ -104,7 +113,8 @@ test("selecting a workspace loads its panes and transcript", async ({ page }) =>
   await expect(page.locator("#herdr-feed-text")).toContainText("plain line");
   await page.locator('[data-workspace-id="w1"]').click();
   await expect(page.locator('[role="tab"]')).toHaveCount(2);
-  await expect(page.locator('.tab[aria-selected="true"]')).toContainText("w1:p1");
+  // The tab label is the pane's name, so identity is asserted on the id.
+  await expect(page.locator('.tab[aria-selected="true"]')).toHaveAttribute("data-pane-id", "w1:p1");
   await expect(page.locator("#herdr-feed-text")).toContainText("plain line");
 });
 
@@ -230,7 +240,7 @@ test("right-click opens the pane menu only on a pane title", async ({ page }) =>
   await expect(page.locator('[role="menu"]')).toContainText("Open pane");
 
   await page.getByRole("menuitem", { name: /Open pane/ }).click();
-  await expect(page.locator('.tab[aria-selected="true"]')).toContainText("w1:p2");
+  await expect(page.locator('.tab[aria-selected="true"]')).toHaveAttribute("data-pane-id", "w1:p2");
 
   // On the already-open pane the menu drops the redundant action.
   await page.locator('h1 [data-pane-title="w1:p2"]').click({ button: "right" });
@@ -270,6 +280,43 @@ test("re-selecting the open workspace keeps its pane visible", async ({ page }) 
   // workspace id, which did not change.
   await expect(page.locator("#herdr-feed-text")).toContainText("plain line");
   await expect(page.locator(".scope__idle")).toHaveCount(0);
+});
+
+test("panes are labelled with their herdr name, not the raw id", async ({ page }) => {
+  await installBridge(page);
+  await page.goto("/");
+  await page.locator('[data-workspace-id="w1"]').click();
+  await expect(page.locator('[role="tab"]')).toHaveCount(2);
+
+  const tabs = page.locator("[role=\"tab\"]");
+  await expect(tabs.nth(0)).toContainText("Deploy Watch");
+  await expect(tabs.nth(1)).toContainText("vnstat 区间流量合计脚本 - grok");
+  // The id stays visible next to a real name, and in the tooltip.
+  await expect(tabs.nth(0).locator(".tab__id")).toHaveText("p1");
+  await expect(tabs.nth(0)).toHaveAttribute("title", "Deploy Watch — w1:p1");
+
+  // The header names the pane too, keeping the id as secondary text.
+  await expect(page.locator("h1")).toContainText("Deploy Watch");
+  await expect(page.locator("h1 .stage__pane-id")).toHaveText("w1:p1");
+});
+
+test("a pane nothing has named falls back to its id", async ({ page }) => {
+  await installBridge(page);
+  await page.goto("/");   // the blocked workspace opens first, and it is unnamed
+  await expect(page.locator(".row[aria-current=\"true\"]")).toContainText("api");
+  await expect(page.locator('[role="tab"]')).toContainText("w2:p1");
+  // Nothing to disambiguate, so no secondary id is shown.
+  await expect(page.locator(".tab__id")).toHaveCount(0);
+  await expect(page.locator("h1 .stage__pane-id")).toHaveCount(0);
+});
+
+test("the pane menu still targets the id even when a label is shown", async ({ page }) => {
+  await installBridge(page);
+  await page.goto("/");
+  await page.locator('[data-workspace-id="w1"]').click();
+  await page.locator('[role="tab"] [data-pane-title="w1:p2"]').click({ button: "right" });
+  await expect(page.locator('[role="menu"]')).toBeVisible();
+  await expect(page.locator('[role="menu"]')).toContainText("Open pane");
 });
 
 test("a pane that paints its own canvas gets a matching backdrop", async ({ page }) => {

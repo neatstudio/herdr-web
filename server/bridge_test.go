@@ -89,6 +89,74 @@ func TestWorkspaceDetailIncludesPanes(t *testing.T) {
 	}
 }
 
+func TestWorkspaceDetailCarriesPaneNames(t *testing.T) {
+	socket, _, closeFn := startFakeHerdr(t)
+	defer closeFn()
+	handler := newTestHandler(t, socket)
+
+	response := do(t, handler, http.MethodGet, "/api/v1/herdr/workspaces/w1", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	body := decodeMap(t, response)
+	panes, _ := body["panes"].([]any)
+	if len(panes) == 0 {
+		t.Fatalf("no panes: %s", response.Body.String())
+	}
+	pane, _ := panes[0].(map[string]any)
+	// herdr keeps four independent names; the bridge must not drop any of
+	// them, because the UI prefers them over the raw pane id.
+	for key, want := range map[string]any{
+		"label":         "Deploy Watch",
+		"title":         "herdr title",
+		"terminalTitle": "stripped title",
+		"agent":         "claude",
+		"displayAgent":  "Claude",
+	} {
+		if pane[key] != want {
+			t.Fatalf("pane[%s]=%v want %v (body=%s)", key, pane[key], want, response.Body.String())
+		}
+	}
+}
+
+func TestPaneNamesAreOmittedWhenTheDaemonSendsNone(t *testing.T) {
+	socket, state, closeFn := startFakeHerdr(t)
+	defer closeFn()
+	state.mu.Lock()
+	state.barePaneNames = true
+	state.mu.Unlock()
+	handler := newTestHandler(t, socket)
+
+	response := do(t, handler, http.MethodGet, "/api/v1/herdr/workspaces/w1", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d", response.Code)
+	}
+	body := decodeMap(t, response)
+	panes, _ := body["panes"].([]any)
+	pane, _ := panes[0].(map[string]any)
+	for _, key := range []string{"label", "title", "terminalTitle", "agent", "displayAgent"} {
+		if _, present := pane[key]; present {
+			t.Fatalf("pane[%s] should be omitted, body=%s", key, response.Body.String())
+		}
+	}
+}
+
+func TestWorkspaceDetailFallsBackToThePaddedTerminalTitle(t *testing.T) {
+	socket, state, closeFn := startFakeHerdr(t)
+	defer closeFn()
+	state.mu.Lock()
+	state.terminalTitle = "   padded title   "
+	state.mu.Unlock()
+	handler := newTestHandler(t, socket)
+
+	body := decodeMap(t, do(t, handler, http.MethodGet, "/api/v1/herdr/workspaces/w1", ""))
+	panes, _ := body["panes"].([]any)
+	pane, _ := panes[0].(map[string]any)
+	if pane["terminalTitle"] != "padded title" {
+		t.Fatalf("terminalTitle=%v", pane["terminalTitle"])
+	}
+}
+
 func TestWorkspaceDetailUnknownIDIs404(t *testing.T) {
 	socket, _, closeFn := startFakeHerdr(t)
 	defer closeFn()

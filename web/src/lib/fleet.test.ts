@@ -57,3 +57,47 @@ test("tailPath keeps the last segments for compact readouts", () => {
   assert.equal(fleet.tailPath("herdr.sock"), "herdr.sock");
   assert.equal(fleet.tailPath("/", 2), "/");
 });
+
+test("paneName prefers the operator's rename over everything else", () => {
+  // herdr keeps four independent names; a deliberate rename wins.
+  assert.equal(
+    fleet.paneName({
+      id: "w1:p1",
+      label: "Deploy Watch",
+      title: "herdr title",
+      terminalTitle: "some program title",
+      agent: "claude",
+    }),
+    "Deploy Watch",
+  );
+});
+
+test("paneName falls back through title, terminal title and agent", () => {
+  assert.equal(
+    fleet.paneName({ id: "w6:p3", title: "herdr title", terminalTitle: "osc", agent: "grok" }),
+    "herdr title",
+  );
+  assert.equal(
+    fleet.paneName({ id: "w7:p1", terminalTitle: "vnstat 区间流量合计脚本 - grok", agent: "grok" }),
+    "vnstat 区间流量合计脚本 - grok",
+  );
+  assert.equal(fleet.paneName({ id: "w6:p1", agent: "agy" }), "agy");
+  assert.equal(fleet.paneName({ id: "w6:p1", displayAgent: "Claude", agent: "claude" }), "Claude");
+});
+
+test("paneName ignores blank names and ends at the pane id", () => {
+  assert.equal(fleet.paneName({ id: "w9:p9", label: "   ", title: "", agent: "  " }), "w9:p9");
+  assert.equal(fleet.paneName({ id: "w9:p9" }), "w9:p9");
+});
+
+test("paneHasName distinguishes a named pane from a bare id", () => {
+  assert.equal(fleet.paneHasName({ id: "w1:p1", label: "web" }), true);
+  assert.equal(fleet.paneHasName({ id: "w1:p1", agent: "claude" }), true);
+  assert.equal(fleet.paneHasName({ id: "w1:p1" }), false);
+});
+
+test("shortPaneId drops the workspace prefix", () => {
+  assert.equal(fleet.shortPaneId("w7:p1"), "p1");
+  assert.equal(fleet.shortPaneId("w7:pJ"), "pJ");
+  assert.equal(fleet.shortPaneId("plain"), "plain");
+});

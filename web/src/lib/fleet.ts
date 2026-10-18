@@ -77,3 +77,42 @@ export function tailPath(value: string, segments = 1): string {
   }
   return parts.slice(Math.max(0, parts.length - segments)).join("/");
 }
+
+type NameablePane = {
+  id: string;
+  label?: string;
+  title?: string;
+  terminalTitle?: string;
+  displayAgent?: string;
+  agent?: string;
+};
+
+const clean = (value: string | undefined): string => (value ?? "").trim();
+
+/**
+ * What to call a pane. herdr keeps four independent names, and the operator's
+ * own rename outranks everything: it is deliberate, while a terminal title is
+ * whatever the running program decided and an agent name is merely a guess at
+ * what the pane is for. The pane id is the last resort because it is always
+ * present and never ambiguous.
+ */
+export function paneName(pane: NameablePane): string {
+  return (
+    clean(pane.label) ||
+    clean(pane.title) ||
+    clean(pane.terminalTitle) ||
+    clean(pane.displayAgent) ||
+    clean(pane.agent) ||
+    pane.id
+  );
+}
+
+/** True when the pane still shows nothing but its id. */
+export function paneHasName(pane: NameablePane): boolean {
+  return paneName(pane) !== pane.id;
+}
+
+/** The part after the colon: short enough for a tab strip. */
+export function shortPaneId(paneId: string): string {
+  return paneId.split(":").pop() ?? paneId;
+}

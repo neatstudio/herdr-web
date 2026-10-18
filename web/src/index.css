@@ -498,6 +498,7 @@ body::before {
   align-items: baseline;
   gap: 8px;
   padding: 11px 0;
+  min-width: 0;
   font-family: var(--font-label);
   font-size: var(--step-label);
   font-weight: 600;
@@ -510,8 +511,20 @@ body::before {
   font-weight: 500;
 }
 
+/* A pane can carry a long terminal title; it must not push the cwd readout
+   off the header. */
 .stage__pane {
+  min-width: 0;
+  max-width: 48ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
   cursor: context-menu;
+}
+
+.stage__pane-id {
+  flex: none;
+  font-size: var(--step-micro);
+  letter-spacing: 0.06em;
 }
 
 .stage__spacer {
@@ -568,6 +581,26 @@ body::before {
   font-size: var(--step-name);
   color: var(--ink-dim);
   white-space: nowrap;
+  max-width: 22rem;
+}
+
+.tab__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The pane id stays visible next to a real name, but never competes with it. */
+.tab__id {
+  flex: none;
+  font-family: var(--font-label);
+  font-size: var(--step-micro);
+  color: var(--ink-faint);
+}
+
+.tab[aria-selected="true"] .tab__id {
+  color: var(--paper);
+  opacity: 0.62;
 }
 
 .tab__index {

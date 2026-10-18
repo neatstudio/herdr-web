@@ -27,6 +27,11 @@ type fakeHerdr struct {
 	// paramsByMethod keeps the most recent params per method, so an assertion
 	// cannot be clobbered by a later call (pane.get follows pane.read).
 	paramsByMethod map[string]map[string]any
+	// barePaneNames omits every pane name field, the way the daemon does for
+	// a pane nothing has named.
+	barePaneNames bool
+	// terminalTitle is the padded OSC title, used to check the fallback.
+	terminalTitle string
 }
 
 func startFakeHerdr(t *testing.T) (socket string, state *fakeHerdr, closeFn func()) {
@@ -93,12 +98,25 @@ func serveFake(conn net.Conn, state *fakeHerdr) {
 			},
 		}}
 	case "pane.list":
-		result = map[string]any{"type": "pane_list", "panes": []any{
-			map[string]any{
-				"pane_id": "w1:p1", "workspace_id": "w1", "tab_id": "w1:t1",
-				"focused": true, "cwd": "/tmp", "agent_status": "working", "revision": 7,
-			},
-		}}
+		pane := map[string]any{
+			"pane_id": "w1:p1", "workspace_id": "w1", "tab_id": "w1:t1",
+			"focused": true, "cwd": "/tmp", "agent_status": "working", "revision": 7,
+		}
+		if !state.barePaneNames {
+			pane["label"] = "Deploy Watch"
+			pane["title"] = "herdr title"
+			if state.terminalTitle != "" {
+				// A daemon that reports only the padded title, so the bridge's
+				// trimming fallback is exercised.
+				pane["terminal_title"] = state.terminalTitle
+			} else {
+				pane["terminal_title_stripped"] = "stripped title"
+				pane["terminal_title"] = "stripped title" + "          "
+			}
+			pane["agent"] = "claude"
+			pane["display_agent"] = "Claude"
+		}
+		result = map[string]any{"type": "pane_list", "panes": []any{pane}}
 	case "pane.get":
 		result = map[string]any{"type": "pane_info", "pane": map[string]any{
 			"pane_id": "w1:p1", "workspace_id": "w1", "agent_status": "blocked",

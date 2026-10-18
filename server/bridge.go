@@ -120,6 +120,9 @@ type publicWorkspace struct {
 	PaneCount   int    `json:"paneCount,omitempty"`
 }
 
+// publicPane is what the UI needs to render a pane. The name fields are
+// optional in the daemon's schema and omitted when unset, so they are listed
+// in the order the UI prefers them.
 type publicPane struct {
 	ID          string `json:"id"`
 	WorkspaceID string `json:"workspaceId"`
@@ -128,6 +131,55 @@ type publicPane struct {
 	Cwd         string `json:"cwd,omitempty"`
 	AgentStatus string `json:"agentStatus,omitempty"`
 	Revision    int    `json:"revision,omitempty"`
+	// Label is the operator's own rename (herdr pane rename).
+	Label string `json:"label,omitempty"`
+	// Title is herdr's own title for the pane, distinct from the label.
+	Title string `json:"title,omitempty"`
+	// TerminalTitle is the OSC title the program in the pane set.
+	TerminalTitle string `json:"terminalTitle,omitempty"`
+	// Agent identifies the coding agent running in the pane.
+	Agent        string `json:"agent,omitempty"`
+	DisplayAgent string `json:"displayAgent,omitempty"`
+}
+
+// herdrPaneRow mirrors the daemon's pane object. Only the fields this bridge
+// uses are declared; extras in the response are ignored.
+type herdrPaneRow struct {
+	PaneID                string `json:"pane_id"`
+	WorkspaceID           string `json:"workspace_id"`
+	TabID                 string `json:"tab_id"`
+	Focused               bool   `json:"focused"`
+	Cwd                   string `json:"cwd"`
+	AgentStatus           string `json:"agent_status"`
+	Revision              int    `json:"revision"`
+	Label                 string `json:"label"`
+	Title                 string `json:"title"`
+	TerminalTitle         string `json:"terminal_title"`
+	TerminalTitleStripped string `json:"terminal_title_stripped"`
+	Agent                 string `json:"agent"`
+	DisplayAgent          string `json:"display_agent"`
+}
+
+// terminalTitle prefers the daemon's stripped form, falling back to trimming
+// the padded one. Both are absent for panes whose program sets no title.
+func (p herdrPaneRow) terminalTitle() string {
+	if strings.TrimSpace(p.TerminalTitleStripped) != "" {
+		return strings.TrimSpace(p.TerminalTitleStripped)
+	}
+	return strings.TrimSpace(p.TerminalTitle)
+}
+
+func publicHerdrPane(p herdrPaneRow) publicPane {
+	return publicPane{
+		ID: p.PaneID, WorkspaceID: p.WorkspaceID, TabID: p.TabID,
+		Focused: p.Focused, Cwd: p.Cwd, AgentStatus: p.AgentStatus,
+		Revision:      p.Revision,
+		Label:         strings.TrimSpace(p.Label),
+		Title:         strings.TrimSpace(p.Title),
+		TerminalTitle: p.terminalTitle(),
+		Agent:         strings.TrimSpace(p.Agent),
+		DisplayAgent:  strings.TrimSpace(p.DisplayAgent),
+	}
 }
 
 func (s *Server) handleWorkspaces(w http.ResponseWriter, r *http.Request) {
@@ -206,16 +258,8 @@ func (s *Server) handleWorkspaceGet(w http.ResponseWriter, r *http.Request, work
 		return
 	}
 	var panes struct {
-		Type  string `json:"type"`
-		Panes []struct {
-			PaneID      string `json:"pane_id"`
-			WorkspaceID string `json:"workspace_id"`
-			TabID       string `json:"tab_id"`
-			Focused     bool   `json:"focused"`
-			Cwd         string `json:"cwd"`
-			AgentStatus string `json:"agent_status"`
-			Revision    int    `json:"revision"`
-		} `json:"panes"`
+		Type  string         `json:"type"`
+		Panes []herdrPaneRow `json:"panes"`
 	}
 	if err := s.client().Call(r.Context(), "pane.list", map[string]any{"workspace_id": workspaceID}, &panes); err != nil {
 		writeBadGateway(w, "herdr_unavailable", err)
@@ -223,11 +267,7 @@ func (s *Server) handleWorkspaceGet(w http.ResponseWriter, r *http.Request, work
 	}
 	out := make([]publicPane, 0, len(panes.Panes))
 	for _, p := range panes.Panes {
-		out = append(out, publicPane{
-			ID: p.PaneID, WorkspaceID: p.WorkspaceID, TabID: p.TabID,
-			Focused: p.Focused, Cwd: p.Cwd, AgentStatus: p.AgentStatus,
-			Revision: p.Revision,
-		})
+		out = append(out, publicHerdrPane(p))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"workspace": found, "panes": out})
 }
