@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 	"unicode"
 )
@@ -19,16 +20,49 @@ import (
 // are large, but a pane prompt is not a file server.
 const UploadLimit = 32 << 20
 
-// uploadRoot is where attachments are written: beside herdr-web's own state,
-// so a restart or an update never takes the operator's files with it.
+// uploadRoot is where attachments are written. It is under the system temp
+// directory on purpose: the file only has to live long enough for the agent to
+// read it, /tmp is what other tools use for the same job, and the operator's
+// home stays free of screenshots.
 func uploadRoot() string {
 	if dir := os.Getenv("HERDR_WEB_UPLOAD_DIR"); dir != "" {
 		return dir
 	}
-	if home, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(home, ".local", "share", "herdr-web", "uploads")
-	}
 	return filepath.Join(os.TempDir(), "herdr-web-uploads")
+}
+
+// ensureUploadRoot creates the upload directory and refuses to use it when it
+// is not a real directory owned by this user. /tmp is world-writable, so a
+// pre-created symlink there could otherwise redirect every attachment.
+func ensureUploadRoot() (string, error) {
+	root := uploadRoot()
+	info, err := os.Lstat(root)
+	switch {
+	case err == nil:
+		if info.Mode()&os.ModeSymlink != 0 {
+			return "", fmt.Errorf("upload directory %s is a symlink", root)
+		}
+		if !info.IsDir() {
+			return "", fmt.Errorf("upload directory %s is not a directory", root)
+		}
+		if owner, ok := info.Sys().(*syscall.Stat_t); ok && int(owner.Uid) != os.Getuid() {
+			return "", fmt.Errorf("upload directory %s belongs to another user", root)
+		}
+		if info.Mode().Perm()&0o077 != 0 {
+			// Someone else could read or replace what we store.
+			if err := os.Chmod(root, 0o700); err != nil {
+				return "", err
+			}
+		}
+		return root, nil
+	case errors.Is(err, os.ErrNotExist):
+		if err := os.MkdirAll(root, 0o700); err != nil {
+			return "", err
+		}
+		return root, nil
+	default:
+		return "", err
+	}
 }
 
 // safeName reduces a client-supplied filename to something that can only ever
@@ -123,8 +157,8 @@ var errTooLarge = errors.New("attachment too large")
 // storeUpload writes the stream to a fresh file, keeping the original
 // extension because that is how an agent decides how to read the file.
 func storeUpload(src multipart.File, original string) (int64, string, error) {
-	root := uploadRoot()
-	if err := os.MkdirAll(root, 0o700); err != nil {
+	root, err := ensureUploadRoot()
+	if err != nil {
 		return 0, "", err
 	}
 	tmp, err := os.CreateTemp(root, ".incoming-*")
