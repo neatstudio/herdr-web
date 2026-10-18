@@ -169,3 +169,22 @@ test("shortPaneId drops the workspace prefix", () => {
   assert.equal(fleet.shortPaneId("w7:pJ"), "pJ");
   assert.equal(fleet.shortPaneId("plain"), "plain");
 });
+
+test("mostUrgentPane prefers blocked, then focused, then the first", () => {
+  assert.equal(
+    fleet.mostUrgentPane([
+      { id: "a", workspaceId: "w", agentStatus: "idle" },
+      { id: "b", workspaceId: "w", agentStatus: "blocked" },
+    ])?.id,
+    "b",
+  );
+  assert.equal(
+    fleet.mostUrgentPane([
+      { id: "a", workspaceId: "w", agentStatus: "idle" },
+      { id: "b", workspaceId: "w", agentStatus: "working", focused: true },
+    ])?.id,
+    "b",
+  );
+  assert.equal(fleet.mostUrgentPane([{ id: "a", workspaceId: "w" }])?.id, "a");
+  assert.equal(fleet.mostUrgentPane([]), undefined);
+});

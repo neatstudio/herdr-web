@@ -132,6 +132,8 @@ export type AgentPane = NameablePane & {
   workspaceId: string;
   agentStatus?: string;
   cwd?: string;
+  /** herdr's own focus, which is the operator's last intent for the pane. */
+  focused?: boolean;
 };
 
 /**
@@ -274,4 +276,17 @@ export function filterFleet<Row extends { pane: AgentPane; workspaceName: string
   query: string,
 ): Row[] {
   return query.trim() === "" ? rows : rows.filter((row) => matchesFilter(query, row));
+}
+
+/**
+ * Which pane to open for a workspace. One rule, used both for the initial load
+ * and when a workspace is opened: whatever needs a human first, then whatever
+ * herdr itself reports as focused, then simply the first pane.
+ */
+export function mostUrgentPane(panes: AgentPane[]): AgentPane | undefined {
+  return (
+    panes.find((pane) => toneOf(pane.agentStatus) === "blocked") ??
+    panes.find((pane) => pane.focused === true) ??
+    panes[0]
+  );
 }

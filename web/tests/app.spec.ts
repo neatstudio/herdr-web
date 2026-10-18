@@ -99,55 +99,246 @@ async function installBridge(page: Page, options: FixtureOptions = {}): Promise<
   });
 }
 
-test("fleet groups by status with blocked workspaces first", async ({ page }) => {
+/* ------------------------------------------------------------- the two columns */
+
+test("the rail groups workspaces and the pane column groups their panes", async ({ page }) => {
   await installBridge(page);
   await page.goto("/");
 
-  const groups = page.locator(".group__label-text");
-  await expect(groups).toHaveText(["needs input", "working", "idle"]);
-
-  // The blocked workspace opens by default, because it needs a human.
+  // The rail lists workspaces by their own status: blocked first.
+  await expect(page.locator(".rail .group__label-text")).toHaveText(["needs input", "idle"]);
+  // The blocked workspace opens by default, so its panes fill the second column.
+  await expect(page.locator(".panes .row")).toHaveCount(1);
   await expect(page.locator(".stage__status")).toContainText("needs input");
 });
 
-test("selecting a workspace loads its panes and transcript", async ({ page }) => {
+test("the rail shows how much work each workspace holds", async ({ page }) => {
   await installBridge(page);
   await page.goto("/");
 
-  // The blocked workspace opens first; switch to the idle one.
-  await expect(page.locator("#herdr-feed-text")).toContainText("plain line");
-  await page.locator('[data-pane-id="w1:p1"]').click();
-  await expect(page.locator('[role="tab"]')).toHaveCount(2);
-  // The tab label is the pane's name, so identity is asserted on the id.
-  await expect(page.locator('.tab[aria-selected="true"]')).toHaveAttribute("data-pane-id", "w1:p1");
+  await expect(page.locator(".rail [data-workspace-id]")).toHaveCount(2);
+  await expect(page.locator('.rail [data-workspace-id="w1"]')).toContainText("web");
+  // Two panes, both of which herdr recognised as an agent.
+  await expect(page.locator('.rail [data-workspace-id="w1"] .wrow__count')).toHaveText("2p2a");
+  await expect(page.locator('.rail [data-workspace-id="w2"] .wrow__count')).toHaveText("1p");
+});
+
+test("opening a workspace fills the pane column and opens one of its panes", async ({ page }) => {
+  await installBridge(page);
+  await page.goto("/");
+
+  await page.locator('.rail [data-workspace-id="w1"]').click();
+  await expect(page.locator(".panes .row")).toHaveCount(2);
+  // One rule picks it: blocked, else the pane herdr reports as focused.
+  await expect(page.locator('.row[aria-current="true"]')).toHaveAttribute("data-pane-id", "w1:p1");
   await expect(page.locator("#herdr-feed-text")).toContainText("plain line");
 });
+
+test("clicking a pane row opens that pane in the third column", async ({ page }) => {
+  await installBridge(page);
+  await page.goto("/");
+  await page.locator('.rail [data-workspace-id="w1"]').click();
+
+  await page.locator('.panes .row[data-pane-id="w1:p1"]').click();
+  await expect(page.locator('.row[aria-current="true"]')).toHaveAttribute("data-pane-id", "w1:p1");
+  await expect(page.locator("h1")).toContainText("Deploy Watch");
+  await expect(page.locator("h1 .stage__pane-id")).toHaveText("w1:p1");
+});
+
+test("panes are labelled with their herdr name, with the id kept as context", async ({ page }) => {
+  await installBridge(page);
+  await page.goto("/");
+  await page.locator('.rail [data-workspace-id="w1"]').click();
+
+  // Rows are grouped by status, so assert on identity rather than position.
+  const named = page.locator('.panes .row[data-pane-id="w1:p1"]');
+  const title = page.locator('.panes .row[data-pane-id="w1:p2"]');
+  await expect(named).toContainText("Deploy Watch");
+  await expect(title).toContainText("vnstat 区间流量合计脚本 - grok");
+  await expect(named.locator(".row__id")).toHaveText("p1");
+  await expect(named).toHaveAttribute("title", "Deploy Watch — w1:p1 (web)");
+});
+
+test("an unnamed pane falls back to its id and never shows it twice", async ({ page }) => {
+  await installBridge(page, {
+    panes: [{ id: "w2:p1", workspaceId: "w2", tabId: "w2:t1", focused: true, agentStatus: "blocked" }],
+  });
+  await page.goto("/");
+
+  const row = page.locator('.panes .row[data-pane-id="w2:p1"]');
+  await expect(row.locator(".row__agent")).toHaveText("shell");
+  await expect(row.locator(".row__name")).toHaveText("w2:p1");
+  await expect(row.locator(".row__id")).toHaveCount(0);
+});
+
+test("an unnamed pane with an agent is identified by its directory, not a repeat", async ({ page }) => {
+  await installBridge(page, {
+    panes: [
+      { id: "w2:p1", workspaceId: "w2", tabId: "w2:t1", focused: true, agentStatus: "blocked", agent: "agy", cwd: "/srv/app" },
+    ],
+  });
+  await page.goto("/");
+
+  const row = page.locator('.panes .row[data-pane-id="w2:p1"]');
+  await expect(row.locator(".row__agent")).toHaveText("agy");
+  await expect(row.locator(".row__name")).toHaveText("app");
+  await expect(row.locator(".row__id")).toHaveCount(0);
+});
+
+test("the pane filter narrows the open workspace and clears again", async ({ page }) => {
+  await installBridge(page);
+  await page.goto("/");
+  await page.locator('.rail [data-workspace-id="w1"]').click();
+  await expect(page.locator(".panes .row")).toHaveCount(2);
+
+  const filter = page.locator("#herdr-fleet-filter");
+  await filter.fill("grok");
+  await expect(page.locator(".panes .row")).toHaveCount(1);
+  await expect(page.locator(".panes .col__head")).toContainText("1/2");
+
+  await expect(page.locator(".panes .row")).toContainText("grok");
+
+  // A term that matches nothing says so instead of showing an empty list.
+  await filter.fill("nothing-here");
+  await expect(page.locator(".panes .row")).toHaveCount(0);
+  await expect(page.locator(".panes .col__empty")).toContainText("No pane matches");
+
+  await page.locator("#herdr-fleet-clear").click();
+  await expect(page.locator(".panes .row")).toHaveCount(2);
+  await expect(page.locator(".panes .col__head")).toContainText("2/2 agents");
+});
+
+test("a workspace with no panes says so and leaves the stage idle", async ({ page }) => {
+  await installBridge(page, { panes: [] });
+  await page.goto("/");
+  await expect(page.locator(".panes .col__empty")).toContainText("no panes");
+  await expect(page.locator(".scope__idle")).toContainText("no pane selected");
+  await expect(page.locator("#herdr-input")).toHaveCount(0);
+});
+
+/* -------------------------------------------------------------------- menus */
+
+test("right-click opens a menu on a pane row, a rail row and the header name", async ({ page }) => {
+  await installBridge(page);
+  await page.goto("/");
+  await page.locator('.rail [data-workspace-id="w1"]').click();
+  await page.locator('.panes .row[data-pane-id="w1:p2"]').click();
+
+  // A pane row: the full pane menu.
+  await page.locator('.panes .row[data-pane-id="w1:p2"]').click({ button: "right" });
+  await expect(page.locator('[role="menu"]')).toBeVisible();
+  await expect(page.locator('[role="menu"]')).toContainText("Copy pane id");
+  await page.keyboard.press("Escape");
+  await expect(page.locator('[role="menu"]')).toHaveCount(0);
+
+  // A rail row: the workspace menu.
+  await page.locator('.rail [data-workspace-id="w1"]').click({ button: "right" });
+  await expect(page.locator('[role="menu"]')).toContainText("Rename workspace");
+  await expect(page.locator('[role="menu"]')).toContainText("Copy workspace id");
+  await page.keyboard.press("Escape");
+
+  // The header pane name, and nowhere else.
+  await page.locator('h1 [data-pane-title]').click({ button: "right" });
+  await expect(page.locator('[role="menu"]')).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.locator("#herdr-feed-text").click({ button: "right" });
+  await expect(page.locator('[role="menu"]')).toHaveCount(0);
+});
+
+test("a long press opens the same menus, because touch has no right-click", async ({ page }) => {
+  await installBridge(page);
+  await page.goto("/");
+
+  const rail = page.locator('.rail [data-workspace-id="w1"]');
+  const railBox = (await rail.boundingBox()) ?? { x: 0, y: 0, width: 10, height: 10 };
+  await rail.dispatchEvent("touchstart", {
+    touches: [{ identifier: 1, clientX: railBox.x + 5, clientY: railBox.y + 5 }],
+  });
+  await expect(page.locator('[role="menu"]')).toBeVisible({ timeout: 3000 });
+  await page.keyboard.press("Escape");
+
+  await page.locator('.rail [data-workspace-id="w1"]').click();
+  const row = page.locator('.panes .row[data-pane-id="w1:p2"]');
+  const rowBox = (await row.boundingBox()) ?? { x: 0, y: 0, width: 10, height: 10 };
+  const x = rowBox.x + rowBox.width / 2;
+  const y = rowBox.y + rowBox.height / 2;
+  await row.dispatchEvent("touchstart", { touches: [{ identifier: 1, clientX: x, clientY: y }] });
+  await expect(page.locator('[role="menu"]')).toBeVisible({ timeout: 3000 });
+  await page.keyboard.press("Escape");
+
+  // A finger that moves is scrolling, and must not open a menu.
+  await row.dispatchEvent("touchstart", { touches: [{ identifier: 1, clientX: x, clientY: y }] });
+  await row.dispatchEvent("touchmove", { touches: [{ identifier: 1, clientX: x, clientY: y + 40 }] });
+  await page.waitForTimeout(700);
+  await expect(page.locator('[role="menu"]')).toHaveCount(0);
+});
+
+test("a pane is renamed from its row, and clearing it restores the id", async ({ page }) => {
+  const renames: string[] = [];
+  await installBridge(page);
+  await page.route("**/api/v1/herdr/panes/*/rename", async (route) => {
+    renames.push(route.request().postData() ?? "");
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+  });
+  await page.goto("/");
+  await page.locator('.rail [data-workspace-id="w1"]').click();
+
+  await page.locator('.panes .row[data-pane-id="w1:p1"]').click({ button: "right" });
+  await page.getByRole("menuitem", { name: /Rename/ }).click();
+  const input = page.locator("#herdr-rename-input");
+  await expect(input).toHaveValue("Deploy Watch");
+  await input.fill("Nightly deploy");
+  await input.press("Enter");
+  await expect.poll(() => renames).toEqual([JSON.stringify({ label: "Nightly deploy" })]);
+  await expect(page.locator('[role="menu"]')).toHaveCount(0);
+});
+
+test("a workspace is renamed from the rail, and cannot be left nameless", async ({ page }) => {
+  const renames: string[] = [];
+  await installBridge(page);
+  await page.route("**/api/v1/herdr/workspaces/*/rename", async (route) => {
+    renames.push(route.request().postData() ?? "");
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+  });
+  await page.goto("/");
+
+  await page.locator('.rail [data-workspace-id="w1"]').click({ button: "right" });
+  await page.getByRole("menuitem", { name: /Rename workspace/ }).click();
+  const input = page.locator("#herdr-rename-input");
+  await expect(input).toHaveValue("web");
+  // A workspace has no unnamed state, so a blank draft cannot be saved.
+  await input.fill("   ");
+  await expect(page.locator(".menu__save")).toBeDisabled();
+  await input.fill("prod hosts");
+  await input.press("Enter");
+  await expect.poll(() => renames).toEqual([JSON.stringify({ label: "prod hosts" })]);
+});
+
+/* -------------------------------------------------------------- transcript */
 
 test("ansi colours become styled spans, not escape bytes", async ({ page }) => {
   await installBridge(page);
   await page.goto("/");
-
   await expect(page.locator("#herdr-feed-text")).toContainText("ok and bad");
   const green = page.locator("#herdr-feed-text span").first();
   await expect(green).toHaveText("ok");
   await expect(green).toHaveAttribute("style", /var\(--ansi-2\)/);
-  await expect(page.locator("#herdr-feed-text")).not.toContainText("\u001b");
+  await expect(page.locator("#herdr-feed-text")).not.toContainText(ESC);
 });
 
 test("a 256-colour prompt renders like a real terminal", async ({ page }) => {
-  // This is the shape a zsh prompt actually arrives in, padding included.
   await installBridge(page, {
-    readText: "\u001b[0m\u001b[38;5;6madmin\u001b[0m \u001b[38;5;4m/tmp\u001b[0m \u001b[38;5;2m%\u001b[0m echo hi" +
-      " ".repeat(60) + "\r\n",
+    readText:
+      `${ESC}[0m${ESC}[38;5;6madmin${ESC}[0m ${ESC}[38;5;4m/tmp${ESC}[0m ${ESC}[38;5;2m%${ESC}[0m echo hi` +
+      " ".repeat(60) +
+      "\r\n",
   });
   await page.goto("/");
-
   const feed = page.locator("#herdr-feed-text");
   await expect(feed).toContainText("admin /tmp % echo hi");
   await expect(feed.locator("span").first()).toHaveAttribute("style", /var\(--ansi-6\)/);
-  // The terminal's trailing padding must not create ghost rows.
   await expect(page.locator(".scope__line")).toHaveCount(1);
-  await expect(feed).not.toContainText("\u001b");
+  await expect(feed).not.toContainText(ESC);
 });
 
 test("truncated scrollback is announced", async ({ page }) => {
@@ -163,6 +354,92 @@ test("a failed read is reported and does not blank the page", async ({ page }) =
   await expect(page.locator("#herdr-read-failed")).toBeVisible();
   await expect(page.locator(".masthead")).toBeVisible();
 });
+
+test.describe("a pane that paints its own canvas", () => {
+  const row = `${ESC}[48;2;20;20;20m${" ".repeat(120)}${ESC}[0m`;
+  const text = `${ESC}[48;2;20;20;20m  hello from a TUI  ${ESC}[0m`;
+  const lines = `${row}\n${text}\n${row}\n`;
+
+  test("keeps that canvas on a dark page, with no colour surgery", async ({ page }) => {
+    await page.emulateMedia({ colorScheme: "dark" });
+    await installBridge(page, { readText: lines });
+    await page.goto("/");
+
+    const feed = page.locator("#herdr-feed-text");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await expect(feed).toHaveAttribute("data-canvas", "content");
+    await expect(feed).toHaveCSS("background-color", "rgb(20, 20, 20)");
+    await expect(feed).not.toHaveAttribute("data-adapt", /.+/);
+    await expect(feed).toHaveAttribute("data-display", "wrap");
+  });
+
+  test("mirrors it onto a light page instead of punching a dark hole", async ({ page }) => {
+    await page.emulateMedia({ colorScheme: "light" });
+    await installBridge(page, { readText: lines });
+    await page.goto("/");
+
+    const feed = page.locator("#herdr-feed-text");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    await expect(feed).toHaveAttribute("data-adapt", "paper");
+    // The backdrop is the mirrored canvas, so a wrapped row still sits on the
+    // app's own surface rather than on bare paper.
+    await expect(feed).toHaveCSS("background-color", "rgb(235, 235, 235)");
+    await expect(feed.locator("span").first()).toHaveCSS("background-color", "rgb(235, 235, 235)");
+  });
+});
+
+test("plain output keeps the page background", async ({ page }) => {
+  await installBridge(page, { readText: `prompt% ls${" ".repeat(80)}\nfile.txt\n` });
+  await page.goto("/");
+  const feed = page.locator("#herdr-feed-text");
+  await expect(feed).not.toHaveAttribute("data-canvas", /.+/);
+  await expect(feed).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(page.locator(".scope__line").first()).toHaveText("prompt% ls");
+});
+
+test("the transcript layout switches between wrap, exact and fit", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 780 });
+  const wide = `${ESC}[48;2;20;20;20m${"x".repeat(120)}${ESC}[0m`;
+  await installBridge(page, { readText: `${wide}\n${wide}\n` });
+  await page.goto("/");
+
+  const feed = page.locator("#herdr-feed-text");
+  await expect(feed).toHaveAttribute("data-display", "wrap");
+
+  await page.locator("#herdr-display-exact").click();
+  await expect(feed).toHaveAttribute("data-display", "exact");
+  await expect
+    .poll(async () => feed.evaluate((node) => node.scrollWidth > node.clientWidth + 1))
+    .toBe(true);
+
+  await page.locator("#herdr-display-fit").click();
+  await expect(feed).toHaveAttribute("data-display", "fit");
+  await expect
+    .poll(async () => feed.evaluate((node) => node.scrollWidth <= node.clientWidth + 1))
+    .toBe(true);
+
+  await page.reload();
+  await expect(page.locator("#herdr-feed-text")).toHaveAttribute("data-display", "fit");
+});
+
+test("exact mode keeps one terminal row per line", async ({ page }) => {
+  const wide = `${ESC}[48;2;20;20;20m${"x".repeat(180)}${ESC}[0m`;
+  await installBridge(page, { readText: `${wide}\n${wide}\n` });
+  await page.goto("/");
+  await page.locator("#herdr-display-exact").click();
+  await expect(page.locator(".scope__line").first()).toContainText("xxx");
+
+  const heights = await page.locator(".scope__line").evaluateAll((nodes) =>
+    nodes.map((node) => Math.round(node.getBoundingClientRect().height)),
+  );
+  expect(new Set(heights).size).toBe(1);
+  const overflow = await page
+    .locator("#herdr-feed-text")
+    .evaluate((node) => node.scrollWidth > node.clientWidth);
+  expect(overflow).toBe(true);
+});
+
+/* ----------------------------------------------------------------- prompt */
 
 test("enter sends the line with a trailing newline and keeps history", async ({ page }) => {
   const posted: string[] = [];
@@ -213,7 +490,6 @@ test("tab flushes the line without a newline then sends a real Tab", async ({ pa
   await input.press("Tab");
   await expect.poll(() => keyPosts).toEqual([JSON.stringify({ keys: ["Tab"] })]);
   expect(inputPosts).toEqual([JSON.stringify({ text: "git ch" })]);
-  // The box keeps its text so the completion stays editable.
   await expect(input).toHaveValue("git ch");
 });
 
@@ -226,36 +502,7 @@ test("the send button is disabled until there is something to send", async ({ pa
   await expect(send).toBeEnabled();
 });
 
-test("right-click opens the pane menu only on a pane title", async ({ page }) => {
-  await installBridge(page);
-  await page.goto("/");
-  await expect(page.locator("#herdr-feed-text")).toContainText("plain line");
-
-  // Work on the two-pane workspace.
-  await page.locator('[data-pane-id="w1:p1"]').click();
-  await expect(page.locator('[role="tab"]')).toHaveCount(2);
-
-  // Right-click on the transcript: no menu.
-  await page.locator("#herdr-feed-text").click({ button: "right" });
-  await expect(page.locator('[role="menu"]')).toHaveCount(0);
-
-  // Right-click on the second pane tab title: menu, offering to open it.
-  await page.locator('[role="tab"] [data-pane-title="w1:p2"]').click({ button: "right" });
-  await expect(page.locator('[role="menu"]')).toBeVisible();
-  await expect(page.locator('[role="menu"]')).toContainText("Open pane");
-
-  await page.getByRole("menuitem", { name: /Open pane/ }).click();
-  await expect(page.locator('.tab[aria-selected="true"]')).toHaveAttribute("data-pane-id", "w1:p2");
-
-  // On the already-open pane the menu drops the redundant action.
-  await page.locator('h1 [data-pane-title="w1:p2"]').click({ button: "right" });
-  await expect(page.locator('[role="menu"]')).toBeVisible();
-  await expect(page.locator('[role="menu"]')).not.toContainText("Open pane");
-
-  // Clicking outside dismisses it.
-  await page.locator(".masthead").click({ position: { x: 5, y: 5 } });
-  await expect(page.locator('[role="menu"]')).toHaveCount(0);
-});
+/* ------------------------------------------------------------------ theme */
 
 test("theme switch flips the palette and persists", async ({ page }) => {
   await installBridge(page);
@@ -269,346 +516,59 @@ test("theme switch flips the palette and persists", async ({ page }) => {
   await page.getByRole("button", { name: "dark", exact: true }).click();
   await expect(html).toHaveAttribute("data-theme", "dark");
 
-  // The choice survives a reload without flashing back to auto.
   await page.reload();
   await expect(html).toHaveAttribute("data-theme", "dark");
 });
 
-test("re-selecting the open workspace keeps its pane visible", async ({ page }) => {
+/* ------------------------------------------------------------------ phone */
+
+test("a phone hides the columns behind one picker instead of scrolling them", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 780 });
   await installBridge(page);
   await page.goto("/");
-  await expect(page.locator("#herdr-feed-text")).toContainText("plain line");
 
-  const selected = page.locator('.row[aria-current="true"]');
-  await selected.click();
-  // The stage must not empty out: the pane-loading effect keys on the
-  // workspace id, which did not change.
-  await expect(page.locator("#herdr-feed-text")).toContainText("plain line");
-  await expect(page.locator(".scope__idle")).toHaveCount(0);
+  // Neither column is on screen, and nothing scrolls sideways to reach them.
+  await expect(page.locator(".rail")).toBeHidden();
+  await expect(page.locator(".panes")).toBeHidden();
+
+  const pick = page.locator("#herdr-picker-open");
+  await expect(pick).toBeVisible();
+  await pick.click();
+
+  // The sheet reaches every pane in every workspace, in one tap each.
+  const sheet = page.locator(".sheet");
+  await expect(sheet).toBeVisible();
+  await expect(sheet.locator("[data-workspace-id]")).toHaveCount(2);
+  await sheet.locator('.srow[data-pane-id="w1:p2"]').click();
+
+  await expect(sheet).toHaveCount(0);
+  await expect(page.locator("h1")).toContainText("vnstat 区间流量合计脚本");
 });
 
-test("panes are labelled with their herdr name, not the raw id", async ({ page }) => {
+test("the picker searches every pane at once", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 780 });
   await installBridge(page);
   await page.goto("/");
-  await page.locator('[data-pane-id="w1:p1"]').click();
-  await expect(page.locator('[role="tab"]')).toHaveCount(2);
+  await page.locator("#herdr-picker-open").click();
 
-  const tabs = page.locator("[role=\"tab\"]");
-  await expect(tabs.nth(0)).toContainText("Deploy Watch");
-  await expect(tabs.nth(1)).toContainText("vnstat 区间流量合计脚本 - grok");
-  // The id stays visible next to a real name, and in the tooltip.
-  await expect(tabs.nth(0).locator(".tab__id")).toHaveText("p1");
-  await expect(tabs.nth(0)).toHaveAttribute("title", "Deploy Watch — w1:p1");
-
-  // The header names the pane too, keeping the id as secondary text.
-  await expect(page.locator("h1")).toContainText("Deploy Watch");
-  await expect(page.locator("h1 .stage__pane-id")).toHaveText("w1:p1");
-});
-
-test("a pane nothing has named falls back to its id", async ({ page }) => {
-  await installBridge(page);
-  await page.goto("/");   // the blocked workspace opens first, and it is unnamed
-  await expect(page.locator(".row[aria-current=\"true\"]")).toContainText("api");
-  await expect(page.locator('[role="tab"]')).toContainText("w2:p1");
-  // Nothing to disambiguate, so no secondary id is shown.
-  await expect(page.locator(".tab__id")).toHaveCount(0);
-  await expect(page.locator("h1 .stage__pane-id")).toHaveCount(0);
-});
-
-test("the pane menu still targets the id even when a label is shown", async ({ page }) => {
-  await installBridge(page);
-  await page.goto("/");
-  await page.locator('[data-pane-id="w1:p1"]').click();
-  await page.locator('[role="tab"] [data-pane-title="w1:p2"]').click({ button: "right" });
-  await expect(page.locator('[role="menu"]')).toBeVisible();
-  await expect(page.locator('[role="menu"]')).toContainText("Open pane");
-});
-
-test.describe("a pane that paints its own canvas", () => {
-  const row = `${ESC}[48;2;20;20;20m${" ".repeat(120)}${ESC}[0m`;
-  const text = `${ESC}[48;2;20;20;20m  hello from a TUI  ${ESC}[0m`;
-  const lines = `${row}\n${text}\n${row}\n`;
-
-  test("keeps that canvas on a dark page, with no colour surgery", async ({ page }) => {
-    await page.emulateMedia({ colorScheme: "dark" });
-    await installBridge(page, { readText: lines });
-    await page.goto("/");
-
-    const feed = page.locator("#herdr-feed-text");
-    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-    await expect(feed).toHaveAttribute("data-canvas", "content");
-    await expect(feed).toHaveCSS("background-color", "rgb(20, 20, 20)");
-    await expect(feed).not.toHaveAttribute("data-adapt", /.+/);
-    // Wrap is the default, so the canvas is painted behind every row and the
-    // page can never show through.
-    await expect(feed).toHaveAttribute("data-display", "wrap");
-  });
-
-  test("mirrors it onto a light page instead of punching a dark hole", async ({ page }) => {
-    await page.emulateMedia({ colorScheme: "light" });
-    await installBridge(page, { readText: lines });
-    await page.goto("/");
-
-    const feed = page.locator("#herdr-feed-text");
-    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-    // The page provides the canvas, so the container must not paint one.
-    await expect(feed).toHaveAttribute("data-adapt", "paper");
-    // The backdrop is the *mirrored* canvas, so a wrapped row still sits on
-    // the app's own surface rather than on bare paper.
-    await expect(feed).toHaveCSS("background-color", "rgb(235, 235, 235)");
-    // The app's dark canvas becomes a light one, and its light text dark.
-    await expect(feed.locator("span").first()).toHaveCSS("background-color", "rgb(235, 235, 235)");
-    await expect(feed.locator("span").first()).toHaveCSS("color", "rgb(23, 22, 15)");
-  });
-});
-
-test("plain output keeps the page background and does not paint stripes", async ({ page }) => {
-  await installBridge(page, { readText: `prompt% ls${" ".repeat(80)}\nfile.txt\n` });
-  await page.goto("/");
-
-  const feed = page.locator("#herdr-feed-text");
-  await expect(feed).not.toHaveAttribute("data-canvas", "content");
-  await expect(feed).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
-  // Terminal padding is not content and must not become an invisible run.
-  await expect(page.locator(".scope__line").first()).toHaveText("prompt% ls");
-});
-
-test("exact mode keeps one terminal row per line", async ({ page }) => {
-  // A 180-column TUI line must not wrap in exact mode: wrapping destroys the
-  // alignment the app draws with and shreds its painted background.
-  const wide = `${ESC}[48;2;20;20;20m${"x".repeat(180)}${ESC}[0m`;
-  await installBridge(page, { readText: `${wide}\n${wide}\n` });
-  await page.goto("/");
-  await page.locator("#herdr-display-exact").click();
-  await expect(page.locator(".scope__line").first()).toContainText("xxx");
-
-  const heights = await page.locator(".scope__line").evaluateAll((nodes) =>
-    nodes.map((node) => Math.round(node.getBoundingClientRect().height)),
-  );
-  expect(new Set(heights).size).toBe(1);
-  // Wider than the viewport, so the transcript scrolls sideways instead.
-  const overflow = await page
-    .locator("#herdr-feed-text")
-    .evaluate((node) => node.scrollWidth > node.clientWidth);
-  expect(overflow).toBe(true);
+  const filter = page.locator("#herdr-sheet-filter");
+  await filter.fill("claude");
+  await expect(page.locator(".sheet .srow")).toHaveCount(1);
+  await expect(page.locator(".sheet .srow")).toContainText("claude");
+  // A cross-workspace search reaches panes the columns would have hidden.
+  await filter.fill("grok");
+  await expect(page.locator(".sheet .srow")).toContainText("grok");
 });
 
 test("plain output rewraps to a phone-sized viewport", async ({ page }) => {
-  // herdr fixes the pane's width and pane.read takes no width argument, so the
-  // browser cannot ask for narrower output. Ordinary text can still reflow,
-  // which is what makes a phone readable without sideways scrolling.
   await page.setViewportSize({ width: 390, height: 780 });
-  await installBridge(page, { readText: `a fairly long line of plain shell output that would not fit a phone\nsecond\n` });
+  await installBridge(page, {
+    readText: `a fairly long line of plain shell output that would not fit a phone\nsecond\n`,
+  });
   await page.goto("/");
 
   const feed = page.locator("#herdr-feed-text");
   await expect(feed).toHaveAttribute("data-wrap", "on");
   const overflow = await feed.evaluate((node) => node.scrollWidth > node.clientWidth + 1);
   expect(overflow, "plain output must not overflow sideways on a phone").toBe(false);
-});
-
-test("a fixed-width pane can be scaled to fit instead of only scrolling", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 780 });
-  const wide = `${ESC}[48;2;20;20;20m${"x".repeat(120)}${ESC}[0m`;
-  await installBridge(page, { readText: `${wide}\n${wide}\n` });
-  await page.goto("/");
-
-  const feed = page.locator("#herdr-feed-text");
-  // Exact keeps terminal rows intact, so it does not fit and scrolls.
-  await page.locator("#herdr-display-exact").click();
-  await expect
-    .poll(async () => feed.evaluate((node) => node.scrollWidth > node.clientWidth + 1))
-    .toBe(true);
-
-  await page.locator("#herdr-display-fit").click();
-  await expect
-    .poll(async () => feed.evaluate((node) => node.scrollWidth <= node.clientWidth + 1))
-    .toBe(true);
-});
-
-test("the fleet lists agents, not workspaces, and keeps the workspace as context", async ({ page }) => {
-  await installBridge(page);
-  await page.goto("/");
-
-  const rows = page.locator(".row");
-  await expect(rows).toHaveCount(3);
-  // Every row names the agent working there (or says shell) and the workspace.
-  await expect(rows.nth(0)).toContainText("shell");
-  await expect(rows.nth(0).locator(".row__workspace")).toHaveText("api");
-  await expect(rows.filter({ hasText: "claude" })).toHaveCount(1);
-  await expect(rows.filter({ hasText: "grok" })).toHaveCount(1);
-  await expect(page.locator(".ledger__head")).toContainText("2/3 agents");
-});
-
-test("clicking an agent row opens that pane directly", async ({ page }) => {
-  await installBridge(page);
-  await page.goto("/");
-  await page.locator('.row[data-pane-id="w1:p2"]').click();
-  await expect(page.locator('.tab[aria-selected="true"]')).toHaveAttribute("data-pane-id", "w1:p2");
-  await expect(page.locator("h1")).toContainText("vnstat 区间流量合计脚本");
-});
-
-test("the transcript layout switches between wrap, exact and fit", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 780 });
-  const wide = `${ESC}[48;2;20;20;20m${"x".repeat(120)}${ESC}[0m`;
-  await installBridge(page, { readText: `${wide}\n${wide}\n` });
-  await page.goto("/");
-
-  const feed = page.locator("#herdr-feed-text");
-  // Default: text follows the screen width.
-  await expect(feed).toHaveAttribute("data-display", "wrap");
-  await expect(feed).toHaveAttribute("data-wrap", "on");
-
-  // Exact: one row per terminal line, so it overflows and scrolls.
-  await page.locator("#herdr-display-exact").click();
-  await expect(feed).toHaveAttribute("data-display", "exact");
-  await expect(feed).toHaveAttribute("data-wrap", "off");
-  await expect
-    .poll(async () => feed.evaluate((node) => node.scrollWidth > node.clientWidth + 1))
-    .toBe(true);
-
-  // Fit: scaled so all 120 columns land inside the viewport.
-  await page.locator("#herdr-display-fit").click();
-  await expect(feed).toHaveAttribute("data-display", "fit");
-  await expect
-    .poll(async () => feed.evaluate((node) => node.scrollWidth <= node.clientWidth + 1))
-    .toBe(true);
-
-  // The choice is remembered across a reload.
-  await page.reload();
-  await expect(page.locator("#herdr-feed-text")).toHaveAttribute("data-display", "fit");
-});
-
-test("the pane menu renames a pane, and clearing it restores the id", async ({ page }) => {
-  const renames: string[] = [];
-  await installBridge(page);
-  await page.route("**/api/v1/herdr/panes/*/rename", async (route) => {
-    renames.push(route.request().postData() ?? "");
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
-  });
-  await page.goto("/");
-  await page.locator('.row[data-pane-id="w1:p1"]').click();
-
-  await page.locator('h1 [data-pane-title="w1:p1"]').click({ button: "right" });
-  await expect(page.locator('[role="menu"]')).toContainText("Rename");
-  await page.getByRole("menuitem", { name: /Rename/ }).click();
-
-  // The menu turns into an input prefilled with the current name.
-  const input = page.locator("#herdr-rename-input");
-  await expect(input).toBeVisible();
-  await expect(input).toHaveValue("Deploy Watch");
-  await input.fill("Nightly deploy");
-  await input.press("Enter");
-  await expect.poll(() => renames).toEqual([JSON.stringify({ label: "Nightly deploy" })]);
-  await expect(page.locator('[role="menu"]')).toHaveCount(0);
-});
-
-test("a long press opens the pane menu, because touch has no right-click", async ({ page }) => {
-  await installBridge(page);
-  await page.goto("/");
-  await page.locator('.row[data-pane-id="w1:p1"]').click();
-
-  const tab = page.locator('[role="tab"] [data-pane-title="w1:p2"]');
-  const box = (await tab.boundingBox()) ?? { x: 0, y: 0, width: 10, height: 10 };
-  const x = box.x + box.width / 2;
-  const y = box.y + box.height / 2;
-
-  // Playwright cannot hold a touch, so drive the same events the handlers see.
-  await tab.dispatchEvent("touchstart", { touches: [{ identifier: 1, clientX: x, clientY: y }] });
-  await expect(page.locator('[role="menu"]')).toBeVisible({ timeout: 3000 });
-  await expect(page.locator('[role="menu"]')).toContainText("Rename");
-
-  // A finger that moves is scrolling, and must not open a menu.
-  await page.keyboard.press("Escape");
-  await expect(page.locator('[role="menu"]')).toHaveCount(0);
-  await tab.dispatchEvent("touchstart", { touches: [{ identifier: 1, clientX: x, clientY: y }] });
-  await tab.dispatchEvent("touchmove", { touches: [{ identifier: 1, clientX: x, clientY: y + 40 }] });
-  await page.waitForTimeout(700);
-  await expect(page.locator('[role="menu"]')).toHaveCount(0);
-});
-
-test("the fleet never shows a pane id twice", async ({ page }) => {
-  // An unnamed pane whose agent herdr detected used to render as "w6:p1 p1".
-  await installBridge(page, {
-    panes: [
-      { id: "w6:p1", workspaceId: "w1", tabId: "w1:t1", focused: true, agentStatus: "idle", agent: "agy", cwd: "/srv/app" },
-    ],
-    workspaces: [{ id: "w1", name: "web", windows: 1, attached: true, paneCount: 1, agentStatus: "idle" }],
-  });
-  await page.goto("/");
-
-  const row = page.locator('.row[data-pane-id="w6:p1"]');
-  await expect(row.locator(".row__agent")).toHaveText("agy");
-  // The name column identifies the pane by its directory, not by a repeat.
-  await expect(row.locator(".row__name")).toHaveText("app");
-  await expect(row.locator(".row__id")).toHaveCount(0);
-});
-
-test("the fleet filter narrows the list and clears again", async ({ page }) => {
-  await installBridge(page);
-  await page.goto("/");
-  await expect(page.locator(".row")).toHaveCount(3);
-
-  const filter = page.locator("#herdr-fleet-filter");
-  await filter.fill("grok");
-  await expect(page.locator(".row")).toHaveCount(1);
-  await expect(page.locator(".ledger__head")).toContainText("1/3 match");
-  await expect(page.locator(".row")).toContainText("grok");
-
-  // A term that matches nothing says so instead of showing an empty list.
-  await filter.fill("nothing-here");
-  await expect(page.locator(".row")).toHaveCount(0);
-  await expect(page.locator(".ledger__empty")).toContainText("No pane matches");
-
-  await page.locator("#herdr-fleet-clear").click();
-  await expect(page.locator(".row")).toHaveCount(3);
-  await expect(page.locator(".ledger__head")).toContainText("2/3 agents");
-});
-
-test("a workspace can be renamed from its name in the header", async ({ page }) => {
-  const renames: string[] = [];
-  await installBridge(page);
-  await page.route("**/api/v1/herdr/workspaces/*/rename", async (route) => {
-    renames.push(route.request().postData() ?? "");
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
-  });
-  await page.goto("/");
-
-  const name = page.locator("[data-workspace-id]");
-  await expect(name).toBeVisible();
-  await name.click({ button: "right" });
-  await expect(page.locator('[role="menu"]')).toContainText("Rename workspace");
-
-  await page.getByRole("menuitem", { name: /Rename workspace/ }).click();
-  const input = page.locator("#herdr-rename-input");
-  await expect(input).toHaveValue("api");
-  await input.fill("prod hosts");
-  await input.press("Enter");
-  await expect.poll(() => renames).toEqual([JSON.stringify({ label: "prod hosts" })]);
-});
-
-test("a workspace name cannot be cleared, only replaced", async ({ page }) => {
-  await installBridge(page);
-  await page.route("**/api/v1/herdr/workspaces/*/rename", (route) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) }),
-  );
-  await page.goto("/");
-  await page.locator("[data-workspace-id]").click({ button: "right" });
-  await page.getByRole("menuitem", { name: /Rename workspace/ }).click();
-
-  // A workspace has no unnamed state, so an empty draft cannot be saved.
-  const input = page.locator("#herdr-rename-input");
-  await input.fill("   ");
-  await expect(page.locator(".menu__save")).toBeDisabled();
-  // Panes, which do have one, keep their clear action.
-  await page.keyboard.press("Escape");
-  await expect(page.locator('[role="menu"]')).toContainText("Copy workspace id");
-});
-
-test("a tainted workspace reports the no-panes state instead of a blank scope", async ({ page }) => {
-  await installBridge(page, { panes: [] });
-  await page.goto("/");
-  await expect(page.locator(".scope__idle")).toContainText("no pane selected");
-  await expect(page.locator(".ledger__empty")).toContainText("No panes reported");
-  await expect(page.locator("#herdr-input")).toHaveCount(0);
 });

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Ledger } from "@/components/Ledger";
+import { PaneList } from "@/components/PaneList";
+import { PickerSheet } from "@/components/PickerSheet";
+import { WorkspaceRail } from "@/components/WorkspaceRail";
 import { Masthead } from "@/components/Masthead";
 import { TargetMenu, type MenuTarget } from "@/components/TargetMenu";
-import { PaneStrip } from "@/components/PaneStrip";
 import { PromptBar } from "@/components/PromptBar";
 import { Scope } from "@/components/Scope";
 import {
@@ -13,7 +14,16 @@ import {
   type HerdrStatus,
   type HerdrWorkspace,
 } from "@/lib/herdr";
-import { TONE_LABEL, paneHasName, paneName, toneOf, type PageTheme } from "@/lib/fleet";
+import {
+  TONE_LABEL,
+  mostUrgentPane,
+  paneAgent,
+  paneListName,
+  paneOwnHasName,
+  toneOf,
+  type AgentPane,
+  type PageTheme,
+} from "@/lib/fleet";
 import { longPressHandlers } from "@/lib/press";
 import {
   applyTheme,
@@ -28,13 +38,14 @@ import {
 /** One poll drives the whole fleet: status, workspaces and every pane. */
 const FLEET_POLL_MS = 3000;
 
-function paneTarget(pane: HerdrPane, x: number, y: number): MenuTarget {
+function paneTarget(pane: HerdrPane | AgentPane, x: number, y: number): MenuTarget {
   return {
     kind: "pane",
     id: pane.id,
     x,
     y,
-    name: paneHasName(pane) ? paneName(pane) : "",
+    // The rename field starts from the operator's own label, if there is one.
+    name: pane.label ?? "",
   };
 }
 
@@ -61,6 +72,10 @@ export function App() {
   const [panes, setPanes] = useState<HerdrPane[]>([]);
   const [paneId, setPaneId] = useState<string | null>(null);
   const [menu, setMenu] = useState<MenuTarget | null>(null);
+  const [picker, setPicker] = useState(false);
+  // Selecting a pane in the rail also decides the workspace, so the pane list
+  // has to know which workspace to show even before a pane is chosen.
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
 
   // Keep <html data-theme> in step with the choice and the OS preference.
   useEffect(() => {
@@ -93,18 +108,20 @@ export function App() {
       setStatus(nextStatus);
       setWorkspaces(nextWorkspaces);
       setPanes(nextPanes);
+      setWorkspaceId((current) => {
+        if (current !== null && nextWorkspaces.some((workspace) => workspace.id === current)) {
+          return current;
+        }
+        const blocked = nextWorkspaces.find(
+          (workspace) => toneOf(workspace.agentStatus) === "blocked",
+        );
+        return blocked?.id ?? nextWorkspaces[0]?.id ?? null;
+      });
       setPaneId((current) => {
         if (current !== null && nextPanes.some((pane) => pane.id === current)) {
           return current;
         }
-        // Open on whatever most likely needs a human: blocked first, then
-        // whatever herdr reports as focused.
-        const blocked = nextPanes.find((pane) => toneOf(pane.agentStatus) === "blocked");
-        if (blocked) {
-          return blocked.id;
-        }
-        const focused = nextPanes.find((pane) => pane.focused);
-        return focused?.id ?? nextPanes[0]?.id ?? null;
+        return mostUrgentPane(nextPanes)?.id ?? null;
       });
     }
   }, []);
@@ -119,21 +136,29 @@ export function App() {
     () => panes.find((pane) => pane.id === paneId) ?? null,
     [panes, paneId],
   );
+  const shownWorkspaceId = activePane?.workspaceId ?? workspaceId;
   const activeWorkspace = useMemo(
-    () => workspaces.find((workspace) => workspace.id === activePane?.workspaceId) ?? null,
-    [workspaces, activePane],
+    () => workspaces.find((workspace) => workspace.id === shownWorkspaceId) ?? null,
+    [workspaces, shownWorkspaceId],
   );
-  // The strip stays scoped to the open pane's workspace so moving around one
-  // workspace does not mean going back to the fleet list.
-  const stripPanes = useMemo(
-    () => (activePane === null ? [] : panes.filter((pane) => pane.workspaceId === activePane.workspaceId)),
-    [panes, activePane],
+  const workspacePanes = useMemo(
+    () => (shownWorkspaceId === null ? [] : panes.filter((pane) => pane.workspaceId === shownWorkspaceId)),
+    [panes, shownWorkspaceId],
   );
 
   const openPaneId = useCallback((id: string) => {
     setPaneId(id);
     setMenu(null);
+    setPicker(false);
   }, []);
+
+  const openWorkspace = useCallback((id: string) => {
+    setWorkspaceId(id);
+    // Open the workspace's most urgent pane so the transcript is never blank.
+    const next = mostUrgentPane(panes.filter((pane) => pane.workspaceId === id));
+    setPaneId(next?.id ?? null);
+    setMenu(null);
+  }, [panes]);
 
   const paneTone = activePane ? toneOf(activePane.agentStatus) : null;
 
@@ -142,11 +167,19 @@ export function App() {
       <Masthead status={status} choice={choice} onChoice={chooseTheme} />
 
       <div className="body">
-        <Ledger
+        <WorkspaceRail
+          workspaces={workspaces}
           panes={panes}
+          selectedId={shownWorkspaceId}
+          onSelect={openWorkspace}
+          onMenu={(workspace, x, y) => setMenu(workspaceTarget(workspace, x, y))}
+        />
+        <PaneList
+          panes={workspacePanes}
           workspaces={workspaces}
           selectedPaneId={paneId}
           onSelect={(pane) => openPaneId(pane.id)}
+          onMenu={(pane, x, y) => setMenu(paneTarget(pane, x, y))}
         />
 
         <main className="stage">
@@ -173,14 +206,15 @@ export function App() {
               {activePane !== null && (
                 <>
                   <span className="dim">/</span>
+                  {paneAgent(activePane) !== "" && (
+                    <span className="stage__agent" title={`${paneAgent(activePane)} is running here`}>
+                      {paneAgent(activePane)}
+                    </span>
+                  )}
                   <span
                     className="stage__pane"
                     data-pane-title={activePane.id}
-                    title={
-                      paneHasName(activePane)
-                        ? `${paneName(activePane)} — ${activePane.id}`
-                        : activePane.id
-                    }
+                    title={`${paneListName(activePane, activeWorkspace?.name ?? "")} — ${activePane.id}`}
                     onContextMenu={(event) => {
                       event.preventDefault();
                       setMenu(paneTarget(activePane, event.clientX, event.clientY));
@@ -189,14 +223,23 @@ export function App() {
                       onLongPress: (x, y) => setMenu(paneTarget(activePane, x, y)),
                     })}
                   >
-                    {paneName(activePane)}
+                    {paneListName(activePane, activeWorkspace?.name ?? "")}
                   </span>
-                  {paneHasName(activePane) && (
+                  {paneOwnHasName(activePane) && (
                     <span className="dim stage__pane-id">{activePane.id}</span>
                   )}
                 </>
               )}
             </h1>
+            <button
+              type="button"
+              id="herdr-picker-open"
+              className="stage__pick"
+              aria-expanded={picker}
+              onClick={() => setPicker(true)}
+            >
+              {activeWorkspace?.name ?? "workspaces"} · {activePane !== null ? paneListName(activePane, activeWorkspace?.name ?? "") : "no pane"}
+            </button>
             <div className="stage__spacer" />
             {activePane?.cwd !== undefined && activePane.cwd !== "" && (
               <span className="stage__cwd" title={activePane.cwd}>
@@ -210,18 +253,6 @@ export function App() {
               </span>
             )}
           </div>
-
-          <PaneStrip
-            panes={stripPanes}
-            activeId={paneId}
-            onSelect={openPaneId}
-            onMenu={(id, x, y) => {
-              const pane = panes.find((candidate) => candidate.id === id);
-              if (pane !== undefined) {
-                setMenu(paneTarget(pane, x, y));
-              }
-            }}
-          />
 
           {activePane !== null ? (
             <Scope key={activePane.id} paneId={activePane.id} theme={theme} display={display} onDisplay={chooseDisplay} />
@@ -249,6 +280,16 @@ export function App() {
           {status?.socket ?? "socket unknown"}
         </span>
       </footer>
+
+      <PickerSheet
+        open={picker}
+        workspaces={workspaces}
+        panes={panes}
+        selectedWorkspaceId={shownWorkspaceId}
+        selectedPaneId={paneId}
+        onPick={(pane) => openPaneId(pane.id)}
+        onClose={() => setPicker(false)}
+      />
 
       <TargetMenu
         target={menu}

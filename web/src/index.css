@@ -28,7 +28,8 @@
   --step-name: 12px;
   --step-title: 15px;
 
-  --rail: 268px;
+  --rail: 13.5rem;
+  --rail-2: 15rem;
   --pad: 14px;
   --rule-w: 1px;
 }
@@ -301,13 +302,15 @@ body::before {
 
 .body {
   display: grid;
-  grid-template-columns: var(--rail) minmax(0, 1fr);
+  /* workspaces | panes | transcript */
+  grid-template-columns: var(--rail) var(--rail-2) minmax(0, 1fr);
   min-height: 0;
 }
 
 /* ---------------------------------------------------------------- ledger */
 
-.ledger {
+.rail,
+.panes {
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -315,11 +318,11 @@ body::before {
   background: var(--surface);
 }
 
-.ledger__head {
+.col__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px var(--pad) 9px;
+  padding: 7px 9px 6px;
   border-bottom: var(--rule-w) solid var(--rule);
   font-family: var(--font-label);
   font-size: var(--step-micro);
@@ -329,18 +332,18 @@ body::before {
   color: var(--ink-faint);
 }
 
-.ledger__filter {
+.col__filter {
   position: relative;
   display: flex;
   align-items: center;
-  padding: 7px var(--pad);
+  padding: 5px 9px;
   border-bottom: var(--rule-w) solid var(--rule);
 }
 
-.ledger__input {
+.col__input {
   width: 100%;
   min-width: 0;
-  padding: 5px 20px 5px 7px;
+  padding: 3px 20px 3px 6px;
   border: var(--rule-w) solid var(--rule);
   background: var(--paper);
   outline: none;
@@ -348,39 +351,39 @@ body::before {
   font-size: var(--step-name);
 }
 
-.ledger__input::placeholder {
+.col__input::placeholder {
   color: var(--ink-faint);
 }
 
-.ledger__input:focus {
+.col__input:focus {
   border-color: var(--rule-strong);
 }
 
 /* The browser's own clear affordance is a different size in every engine. */
-.ledger__input::-webkit-search-cancel-button {
+.col__input::-webkit-search-cancel-button {
   display: none;
 }
 
-.ledger__clear {
+.col__clear {
   position: absolute;
-  right: calc(var(--pad) + 4px);
+  right: 13px;
   padding: 0 4px;
   font-size: 14px;
   line-height: 1;
   color: var(--ink-faint);
 }
 
-.ledger__clear:hover {
+.col__clear:hover {
   color: var(--ink);
 }
 
-.ledger__list {
+.col__list {
   min-height: 0;
   overflow-y: auto;
   flex: 1;
 }
 
-.ledger__empty {
+.col__empty {
   padding: 26px var(--pad);
   color: var(--ink-faint);
   font-size: var(--step-name);
@@ -393,8 +396,8 @@ body::before {
 .group__label {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 9px var(--pad) 5px;
+  gap: 6px;
+  padding: 5px 9px 3px;
   font-family: var(--font-label);
   font-size: var(--step-micro);
   font-weight: 500;
@@ -428,11 +431,11 @@ body::before {
 .row {
   position: relative;
   display: grid;
-  grid-template-columns: 10px 6.5rem minmax(0, 1fr) 8.5rem;
+  grid-template-columns: 9px 5.5rem minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   width: 100%;
-  padding: 7px var(--pad) 7px calc(var(--pad) - 6px);
+  padding: 3px 9px 3px 4px;
   text-align: left;
   border-bottom: var(--rule-w) solid var(--rule);
   color: var(--ink-dim);
@@ -496,6 +499,62 @@ body::before {
 
 .row[aria-current="true"]::before {
   background: var(--signal, var(--accent));
+}
+
+.wrow {
+  position: relative;
+  display: grid;
+  grid-template-columns: 9px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 4px 9px 4px 4px;
+  text-align: left;
+  border-bottom: var(--rule-w) solid var(--rule);
+  color: var(--ink-dim);
+  animation: rise 0.36s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+  animation-delay: calc(var(--i) * 18ms);
+}
+
+.wrow::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: -1px;
+  width: 3px;
+  background: transparent;
+}
+
+.wrow:hover {
+  color: var(--ink);
+  background: var(--rule);
+}
+
+.wrow[aria-current="true"] {
+  color: var(--ink);
+  background: var(--raised);
+}
+
+.wrow[aria-current="true"]::before {
+  background: var(--signal, var(--accent));
+}
+
+.wrow__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--step-name);
+  font-weight: 500;
+}
+
+.wrow__count {
+  display: flex;
+  gap: 6px;
+  font-family: var(--font-label);
+  font-size: var(--step-micro);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-faint);
 }
 
 .row__name {
@@ -601,6 +660,16 @@ body::before {
    off the header. */
 .stage__workspace {
   cursor: context-menu;
+}
+
+/* Which agent is in the pane, matching the pane column's first column. */
+.stage__agent {
+  padding: 1px 6px 0;
+  border: var(--rule-w) solid var(--rule-strong);
+  font-size: var(--step-micro);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--ink-dim);
 }
 
 .stage__pane {
@@ -1028,6 +1097,117 @@ body::before {
   color: var(--paper);
 }
 
+/* ---------------------------------------------------------------- sheet */
+
+/* The phone's pane picker: one tap opens it, one tap picks, no dragging. */
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  background: var(--paper);
+}
+
+.sheet__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  border-bottom: var(--rule-w) solid var(--rule-strong);
+  background: var(--surface);
+}
+
+.sheet__title {
+  font-family: var(--font-label);
+  font-size: var(--step-label);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.sheet__close {
+  padding: 0 6px;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--ink-dim);
+}
+
+.sheet__close:hover {
+  color: var(--ink);
+}
+
+.sheet__body {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.sheet__workspace-name {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 8px 12px 2px;
+  font-size: var(--step-name);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.sheet__workspace-name[data-current="true"] {
+  color: var(--accent);
+}
+
+/* Sheet rows carry the workspace, because every workspace is listed here. */
+.srow {
+  display: grid;
+  grid-template-columns: 9px 4.5rem minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 12px 5px 7px;
+  text-align: left;
+  border-bottom: var(--rule-w) solid var(--rule);
+  color: var(--ink-dim);
+}
+
+.srow:hover,
+.srow[aria-current="true"] {
+  color: var(--ink);
+  background: var(--rule);
+}
+
+.srow__agent {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-label);
+  font-size: var(--step-micro);
+  color: var(--ink);
+}
+
+.srow__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--step-name);
+}
+
+/* The pane picker button is only useful where the columns are hidden. */
+.stage__pick {
+  display: none;
+  min-width: 0;
+  max-width: 22rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 3px 8px 2px;
+  border: var(--rule-w) solid var(--rule-strong);
+  font-family: var(--font-label);
+  font-size: var(--step-micro);
+  letter-spacing: 0.08em;
+  color: var(--ink-dim);
+}
+
 /* --------------------------------------------------------------- motion */
 
 @keyframes rise {
@@ -1093,104 +1273,34 @@ body::before {
 
 /* --------------------------------------------------------------- narrow */
 
-@media (max-width: 880px) {
+/* Two columns: the workspace rail folds into the header picker, and the pane
+   list keeps the space it needs to stay readable. */
+@media (max-width: 1180px) {
+  .body {
+    grid-template-columns: var(--rail-2) minmax(0, 1fr);
+  }
+
+  .rail {
+    display: none;
+  }
+
+  .stage__pick {
+    display: block;
+  }
+}
+
+/* One column: the pane list becomes the sheet, so nothing scrolls sideways. */
+@media (max-width: 720px) {
   .body {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
   }
 
-  .ledger {
-    border-right: 0;
-    border-bottom: var(--rule-w) solid var(--rule-strong);
-  }
-
-  .ledger__list {
-    display: flex;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: none;
-  }
-
-  .ledger__list::-webkit-scrollbar {
+  .panes {
     display: none;
   }
 
-  .group {
-    display: flex;
-    align-items: stretch;
-    border-top: 0;
-  }
-
-  .group + .group {
-    border-top: 0;
-    border-left: var(--rule-w) solid var(--rule);
-  }
-
-  .group__label {
-    align-items: center;
-    padding: 0 9px;
-    border-right: var(--rule-w) solid var(--rule);
-  }
-
-  .group__label-text {
-    display: none;
-  }
-
-  .group__code {
-    display: inline;
-  }
-
-  /* A four-column row cannot fit a phone-width cell, so each cell stacks:
-     the agent on top, the pane name under it. The workspace is context the
-     pane id already implies, and it is in the cell's tooltip. */
-  .row {
-    grid-template-columns: 10px minmax(0, 1fr);
-    grid-template-rows: auto auto;
-    row-gap: 1px;
-    align-items: center;
-    width: auto;
-    min-width: 11rem;
-    max-width: 13rem;
-    padding: 7px 11px;
-    border-bottom: 0;
-    border-right: var(--rule-w) solid var(--rule);
-  }
-
-  .row .signal {
-    grid-column: 1;
-    grid-row: 1;
-  }
-
-  .row__agent {
-    grid-column: 2;
-    grid-row: 1;
-    font-size: 8.5px;
-  }
-
-  .row__name {
-    grid-column: 2;
-    grid-row: 2;
-  }
-
-  .row__id,
-  .row__workspace {
-    display: none;
-  }
-
-  .row::before {
-    top: auto;
-    bottom: 0;
-    right: 0;
-    width: auto;
-    height: 3px;
-  }
-
-  .row__name {
-    max-width: 15ch;
-  }
-
-  .row__meta {
-    display: none;
+  .scope__display {
+    opacity: 1;
   }
 
   .prompt__hints {
@@ -1215,9 +1325,5 @@ body::before {
   .statusline {
     gap: 8px;
     overflow: hidden;
-  }
-
-  .ledger__filter {
-    padding: 6px 10px;
   }
 }
