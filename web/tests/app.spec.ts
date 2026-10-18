@@ -6,6 +6,8 @@ import { expect, test, type Page } from "@playwright/test";
  * exercised by the Go suite and by the live end-to-end check.
  */
 
+const ESC = "\u001b";
+
 const WORKSPACES = [
   { id: "w1", name: "web", windows: 2, attached: false, paneCount: 2, agentStatus: "idle" },
   { id: "w2", name: "api", windows: 1, attached: true, paneCount: 1, agentStatus: "blocked" },
@@ -255,6 +257,66 @@ test("theme switch flips the palette and persists", async ({ page }) => {
   // The choice survives a reload without flashing back to auto.
   await page.reload();
   await expect(html).toHaveAttribute("data-theme", "dark");
+});
+
+test("re-selecting the open workspace keeps its pane visible", async ({ page }) => {
+  await installBridge(page);
+  await page.goto("/");
+  await expect(page.locator("#herdr-feed-text")).toContainText("plain line");
+
+  const selected = page.locator('.row[aria-current="true"]');
+  await selected.click();
+  // The stage must not empty out: the pane-loading effect keys on the
+  // workspace id, which did not change.
+  await expect(page.locator("#herdr-feed-text")).toContainText("plain line");
+  await expect(page.locator(".scope__idle")).toHaveCount(0);
+});
+
+test("a pane that paints its own canvas gets a matching backdrop", async ({ page }) => {
+  // A full-screen app fills every row with its own background. Without a
+  // matching backdrop the page shows through the gaps and the transcript
+  // breaks into stripes.
+  const row = `${ESC}[48;2;20;20;20m${" ".repeat(120)}${ESC}[0m`;
+  const text = `${ESC}[48;2;20;20;20m  hello from a TUI  ${ESC}[0m`;
+  await installBridge(page, { readText: `${row}\n${text}\n${row}\n` });
+  await page.goto("/");
+
+  const feed = page.locator("#herdr-feed-text");
+  await expect(feed).toHaveAttribute("data-canvas", "content");
+  await expect(feed).toHaveCSS("background-color", "rgb(20, 20, 20)");
+  // Text on the content's canvas must not inherit the page's near-black ink.
+  const span = feed.locator("span").first();
+  await expect(span).toHaveCSS("color", "rgb(242, 240, 233)");
+});
+
+test("plain output keeps the page background and does not paint stripes", async ({ page }) => {
+  await installBridge(page, { readText: `prompt% ls${" ".repeat(80)}\nfile.txt\n` });
+  await page.goto("/");
+
+  const feed = page.locator("#herdr-feed-text");
+  await expect(feed).not.toHaveAttribute("data-canvas", "content");
+  await expect(feed).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  // Terminal padding is not content and must not become an invisible run.
+  await expect(page.locator(".scope__line").first()).toHaveText("prompt% ls");
+});
+
+test("one terminal row stays one row", async ({ page }) => {
+  // A 180-column TUI line must not wrap: wrapping destroys the alignment the
+  // app draws with and shreds its painted background.
+  const wide = `${ESC}[48;2;20;20;20m${"x".repeat(180)}${ESC}[0m`;
+  await installBridge(page, { readText: `${wide}\n${wide}\n` });
+  await page.goto("/");
+  await expect(page.locator(".scope__line").first()).toContainText("xxx");
+
+  const heights = await page.locator(".scope__line").evaluateAll((nodes) =>
+    nodes.map((node) => Math.round(node.getBoundingClientRect().height)),
+  );
+  expect(new Set(heights).size).toBe(1);
+  // Wider than the viewport, so the transcript scrolls sideways instead.
+  const overflow = await page
+    .locator("#herdr-feed-text")
+    .evaluate((node) => node.scrollWidth > node.clientWidth);
+  expect(overflow).toBe(true);
 });
 
 test("a tainted workspace reports the no-panes state instead of a blank scope", async ({ page }) => {

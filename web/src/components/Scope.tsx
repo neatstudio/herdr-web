@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ansiLineToHtml } from "@/lib/ansi";
+import { ansiLineToHtml, dominantBackground } from "@/lib/ansi";
 import { READ_LINES, readPane } from "@/lib/herdr";
 import { splitLines } from "@/lib/fleet";
 
@@ -62,6 +62,8 @@ export function Scope({ paneId }: { paneId: string }) {
     }
   }, [lines]);
 
+  const canvas = dominantBackground(lines);
+
   return (
     <section className="scope" aria-label="Pane output">
       {truncated && (
@@ -83,6 +85,10 @@ export function Scope({ paneId }: { paneId: string }) {
         role="log"
         aria-live="polite"
         aria-relevant="text"
+        // A full-screen app paints its own canvas; matching it here keeps the
+        // viewport continuous instead of showing the page through the gaps.
+        data-canvas={canvas !== null ? "content" : undefined}
+        style={canvas !== null ? { background: canvas } : undefined}
         onScroll={(event) => {
           const element = event.currentTarget;
           followRef.current =

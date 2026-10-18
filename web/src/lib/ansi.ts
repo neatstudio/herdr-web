@@ -180,6 +180,12 @@ function styleToCss(style: Style): string {
   }
   if (fg !== null) {
     declarations.push(`color:${fg}`);
+  } else if (bg !== null) {
+    // A background with no foreground of its own: full-screen apps paint
+    // their canvas this way and rely on the terminal's own default text
+    // colour. Inheriting the page's ink would print dark-on-dark in the
+    // light theme, so pick an ink that contrasts with this background.
+    declarations.push(`color:${inkOn(bg)}`);
   }
   if (bg !== null) {
     declarations.push(`background-color:${bg}`);
@@ -199,16 +205,36 @@ function styleToCss(style: Style): string {
   return declarations.join(";");
 }
 
-function wrap(text: string, style: Style): string {
-  // Belt and braces: no escape byte may reach the DOM, even from a sequence
-  // the parser did not recognise.
-  const safe = text.replace(/\u001b/g, "");
-  if (safe === "") {
-    return "";
+/** Base ANSI palette entries 7 and 15 are the light ones in both themes. */
+const LIGHT_BASE_COLOURS = new Set([7, 15]);
+
+/*
+ * Ink chosen against a background the content declared. These two tokens are
+ * absolute, not palette entries: each theme tints the ANSI palette for its own
+ * paper, so reusing a palette entry here would pick the opposite of what is
+ * needed (the light theme's "bright white" is near black on purpose).
+ */
+const INK_ON_DARK = "var(--ansi-ink-on-dark)";
+const INK_ON_LIGHT = "var(--ansi-ink-on-light)";
+
+/**
+ * An ink that stays readable on `background`. Absolute colours are measured;
+ * palette references fall back to the known light/dark split of the 16 base
+ * entries.
+ */
+export function inkOn(background: string): string {
+  const rgb = /^rgb\((\d+),(\d+),(\d+)\)$/.exec(background);
+  if (rgb !== null) {
+    // Rec. 601 luma: good enough to choose black or white ink.
+    const luma =
+      (0.299 * Number(rgb[1]) + 0.587 * Number(rgb[2]) + 0.114 * Number(rgb[3])) / 255;
+    return luma > 0.55 ? INK_ON_LIGHT : INK_ON_DARK;
   }
-  const css = styleToCss(style);
-  const escaped = escapeHtml(safe);
-  return css === "" ? escaped : `<span style="${css}">${escaped}</span>`;
+  const palette = /^var\(--ansi-(\d+)\)$/.exec(background);
+  if (palette !== null) {
+    return LIGHT_BASE_COLOURS.has(Number(palette[1])) ? INK_ON_LIGHT : INK_ON_DARK;
+  }
+  return INK_ON_DARK;
 }
 
 // eslint-disable-next-line no-control-regex
@@ -218,28 +244,28 @@ const ESC = "\u001b";
 const SGR_RE = new RegExp(`${ESC}\\[([0-9;-]*)m`, "g");
 const CSI_RE = new RegExp(`${ESC}\\[[0-9;?-]*[A-Za-z]`, "g");
 
+type Segment = { text: string; style: Style };
+
 /**
- * One line of pane text to HTML. A terminal pads lines to its width and ends
- * them with CRLF, so carriage returns and the trailing padding are dropped:
- * they are not content, and keeping them wrapped the feed into blank rows.
+ * Split one line into styled runs. Non-SGR control sequences are dropped
+ * first, so cursor moves and erases never reach the output.
  */
-export function ansiLineToHtml(line: string): string {
-  const text = line.replace(/\r/g, "").replace(/\s+$/, "");
+function parseLine(line: string): Segment[] {
+  const text = line.replace(/\r/g, "");
   if (text === "") {
-    return "";
+    return [];
   }
-  // Drop non-SGR CSI sequences (cursor moves, erases) before parsing.
   const clean = text.replace(CSI_RE, (match) => (match.endsWith("m") ? match : ""));
+  const segments: Segment[] = [];
   const style = resetStyle();
-  let html = "";
   let cursor = 0;
-  let plain = "";
   SGR_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = SGR_RE.exec(clean)) !== null) {
-    plain += clean.slice(cursor, match.index);
-    html += wrap(plain, style);
-    plain = "";
+    const chunk = clean.slice(cursor, match.index);
+    if (chunk !== "") {
+      segments.push({ text: chunk, style: { ...style } });
+    }
     cursor = match.index + match[0].length;
     const params = match[1]
       .split(";")
@@ -249,9 +275,94 @@ export function ansiLineToHtml(line: string): string {
       index += applySgr(style, params, index);
     }
   }
-  plain += clean.slice(cursor);
-  html += wrap(plain, style);
+  const tail = clean.slice(cursor);
+  if (tail !== "") {
+    segments.push({ text: tail, style: { ...style } });
+  }
+  return segments;
+}
+
+/**
+ * Drop the terminal's padding. A terminal fills the rest of every row with
+ * spaces so the background reaches the right edge; those spaces are canvas,
+ * not content, and only survive when they are actually painting something.
+ */
+function trimPadding(segments: Segment[]): Segment[] {
+  const out = segments.slice();
+  for (let index = out.length - 1; index >= 0; index -= 1) {
+    const segment = out[index];
+    if (segment.style.bg !== null) {
+      // Backgrounded padding is the canvas reaching the row edge: keep it.
+      break;
+    }
+    if (segment.text.trim() === "") {
+      out.splice(index, 1);
+      continue;
+    }
+    segment.text = segment.text.replace(/\s+$/, "");
+    break;
+  }
+  return out;
+}
+
+function render(segments: Segment[]): string {
+  let html = "";
+  for (const segment of segments) {
+    // Belt and braces: no escape byte may reach the DOM, even from a sequence
+    // the parser did not recognise.
+    const safe = segment.text.replace(/\u001b/g, "");
+    if (safe === "") {
+      continue;
+    }
+    const css = styleToCss(segment.style);
+    const escaped = escapeHtml(safe);
+    html += css === "" ? escaped : `<span style="${css}">${escaped}</span>`;
+  }
   return html;
+}
+
+/** One line of pane text to HTML. */
+export function ansiLineToHtml(line: string): string {
+  return render(trimPadding(parseLine(line)));
+}
+
+/**
+ * The canvas colour a full-screen application paints for itself, if it paints
+ * one. Such an app assumes its own background spans the whole viewport; when
+ * a line is shorter than the pane, the gap would otherwise show the page and
+ * break the canvas into stripes.
+ *
+ * Returns null for ordinary output, so a plain shell keeps the page's own
+ * background and the light theme stays light.
+ */
+export function dominantBackground(lines: string[]): string | null {
+  const counts = new Map<string, number>();
+  const linesWithBackground = new Set<string>();
+  for (const line of lines) {
+    for (const segment of parseLine(line)) {
+      if (segment.style.bg === null) {
+        continue;
+      }
+      counts.set(segment.style.bg, (counts.get(segment.style.bg) ?? 0) + segment.text.length);
+      linesWithBackground.add(segment.style.bg);
+    }
+  }
+  let best: string | null = null;
+  let bestCount = 0;
+  for (const [colour, count] of counts) {
+    if (count > bestCount) {
+      best = colour;
+      bestCount = count;
+    }
+  }
+  // A couple of highlighted words are not a canvas; a filled screen is.
+  if (best === null || bestCount < 120 || linesWithBackground.size === 0) {
+    return null;
+  }
+  const coveringLines = lines.filter((line) =>
+    parseLine(line).some((segment) => segment.style.bg === best && segment.text.length > 0),
+  ).length;
+  return coveringLines >= 2 ? best : null;
 }
 
 /** Strip every escape sequence, for accessible text and clipboard use. */

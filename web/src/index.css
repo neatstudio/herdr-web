@@ -16,6 +16,12 @@
   --font-label: "Martian Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
 
+  /* Ink for text sitting on a background the *content* declared. These are
+     absolute on purpose: the page theme tints the ANSI palette for its own
+     background, so a palette entry would be the wrong ink here. */
+  --ansi-ink-on-dark: #f2f0e9;
+  --ansi-ink-on-light: #17160f;
+
   --step-micro: 9.5px;
   --step-label: 10.5px;
   --step-body: 12.5px;
@@ -611,8 +617,7 @@ body::before {
 .scope__scroll {
   position: relative;
   min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: auto;
   padding: 12px var(--pad) 18px;
   font-family: var(--font-mono);
   font-size: var(--step-body);
@@ -621,11 +626,15 @@ body::before {
   animation: settle 0.22s ease-out both;
 }
 
+/* A terminal reads horizontally and its rows are drawn with spaces, so
+   wrapping destroys alignment and shreds painted backgrounds into stripes.
+   Keep one row per terminal line and scroll sideways instead. */
 .scope__line {
   position: relative;
   z-index: 1;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  white-space: pre;
+  width: max-content;
+  min-width: 100%;
   min-height: 1.55em;
 }
 

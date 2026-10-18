@@ -142,6 +142,12 @@ export function App() {
           workspaces={workspaces}
           selectedId={workspaceId}
           onSelect={(id) => {
+            // Re-selecting the open workspace must not clear its pane: the
+            // pane-loading effect keys on workspaceId, so it would not run
+            // again and the stage would sit empty.
+            if (id === workspaceId) {
+              return;
+            }
             setWorkspaceId(id);
             setPaneId(null);
           }}
