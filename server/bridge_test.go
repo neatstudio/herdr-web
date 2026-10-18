@@ -430,6 +430,34 @@ func TestPaneLayoutReportsBoxesAndFocus(t *testing.T) {
 	}
 }
 
+func TestPaneResizePassesTheDirectionThrough(t *testing.T) {
+	socket, state, closeFn := startFakeHerdr(t)
+	defer closeFn()
+	handler := newTestHandler(t, socket)
+
+	ok := do(t, handler, http.MethodPost, "/api/v1/herdr/panes/w1:p1/resize", `{"direction":"right"}`)
+	if ok.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", ok.Code, ok.Body.String())
+	}
+	state.waitForCalls(t, 1)
+	state.mu.Lock()
+	resized := append([]string(nil), state.resized...)
+	state.mu.Unlock()
+	if len(resized) != 1 || resized[0] != "right" {
+		t.Fatalf("resized=%q", resized)
+	}
+
+	// A direction herdr does not accept is refused before it is sent.
+	for _, body := range []string{`{"direction":"sideways"}`, `{}`} {
+		if got := do(t, handler, http.MethodPost, "/api/v1/herdr/panes/w1:p1/resize", body); got.Code != http.StatusBadRequest {
+			t.Fatalf("body=%s status=%d", body, got.Code)
+		}
+	}
+	if got := do(t, handler, http.MethodGet, "/api/v1/herdr/panes/w1:p1/resize", ""); got.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("GET status=%d", got.Code)
+	}
+}
+
 func TestDaemonErrorBecomesBadGateway(t *testing.T) {
 	socket, state, closeFn := startFakeHerdr(t)
 	defer closeFn()

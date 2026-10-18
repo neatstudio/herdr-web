@@ -36,6 +36,8 @@ type fakeHerdr struct {
 	renamedTo []string
 	// renamedWorkspace records workspace.rename as "id=label".
 	renamedWorkspace []string
+	// resized records every pane.resize direction.
+	resized []string
 }
 
 func startFakeHerdr(t *testing.T) (socket string, state *fakeHerdr, closeFn func()) {
@@ -136,6 +138,10 @@ func serveFake(conn net.Conn, state *fakeHerdr) {
 			state.readText += text
 		}
 		result = map[string]any{"type": "ok"}
+	case "pane.resize":
+		direction, _ := req.Params["direction"].(string)
+		state.resized = append(state.resized, direction)
+		result = map[string]any{"type": "ok"}
 	case "pane.layout":
 		paneID, _ := req.Params["pane_id"].(string)
 		result = map[string]any{
@@ -146,6 +152,10 @@ func serveFake(conn net.Conn, state *fakeHerdr) {
 				"zoomed":          false,
 				"area":            map[string]int{"x": 0, "y": 0, "width": 120, "height": 40},
 				"focused_pane_id": paneID,
+				"splits": []map[string]any{
+					{"id": "split_0_root", "direction": "right", "ratio": 0.5,
+						"rect": map[string]int{"x": 0, "y": 0, "width": 120, "height": 40}},
+				},
 				"panes": []map[string]any{
 					{"pane_id": "w1:p1", "focused": true, "rect": map[string]int{"x": 0, "y": 0, "width": 60, "height": 40}},
 					{"pane_id": "w1:p2", "focused": false, "rect": map[string]int{"x": 60, "y": 0, "width": 60, "height": 40}},

@@ -9,6 +9,7 @@ const split: layout.PaneLayout = {
   zoomed: false,
   area: { x: 0, y: 0, width: 120, height: 40 },
   focusedPaneId: "w1:p1",
+  splits: [{ id: "split_0_root", direction: "right", ratio: 0.5, rect: { x: 0, y: 0, width: 120, height: 40 } }],
   panes: [
     { id: "w1:p1", focused: true, rect: { x: 0, y: 0, width: 60, height: 40 } },
     { id: "w1:p2", focused: false, rect: { x: 60, y: 0, width: 60, height: 40 } },
@@ -33,6 +34,10 @@ test("the same split stacks on a phone", () => {
 test("a nested split is just more boxes", () => {
   const nested: layout.PaneLayout = {
     ...split,
+    splits: [
+      { id: "a", direction: "right", ratio: 0.5, rect: { x: 0, y: 0, width: 120, height: 40 } },
+      { id: "b", direction: "down", ratio: 0.5, rect: { x: 60, y: 0, width: 60, height: 40 } },
+    ],
     panes: [
       { id: "a", focused: true, rect: { x: 0, y: 0, width: 60, height: 40 } },
       { id: "b", focused: false, rect: { x: 60, y: 0, width: 60, height: 20 } },
@@ -47,6 +52,35 @@ test("a nested split is just more boxes", () => {
       ["c", 50, 50, 50, 50],
     ],
   );
+});
+
+test("splitsOf places each edge where herdr says it is", () => {
+  const handles = layout.splitsOf(split, "side");
+  assert.deepEqual(handles, [{ paneId: "w1:p1", direction: "right", at: 50 }]);
+
+  // A stacked phone arrangement has no vertical edge to drag.
+  assert.deepEqual(layout.splitsOf(split, "stack"), []);
+  // A zoomed tab has one pane, so no edge either.
+  assert.deepEqual(layout.splitsOf({ ...split, zoomed: true }, "side"), []);
+});
+
+test("a nested split reports both edges, at their own positions", () => {
+  const nested: layout.PaneLayout = {
+    ...split,
+    splits: [
+      { id: "a", direction: "right", ratio: 0.5, rect: { x: 0, y: 0, width: 120, height: 40 } },
+      { id: "b", direction: "down", ratio: 0.5, rect: { x: 60, y: 0, width: 60, height: 40 } },
+    ],
+    panes: [
+      { id: "a", focused: true, rect: { x: 0, y: 0, width: 60, height: 40 } },
+      { id: "b", focused: false, rect: { x: 60, y: 0, width: 60, height: 20 } },
+      { id: "c", focused: false, rect: { x: 60, y: 20, width: 60, height: 20 } },
+    ],
+  };
+  assert.deepEqual(layout.splitsOf(nested, "side"), [
+    { paneId: "a", direction: "right", at: 50 },
+    { paneId: "b", direction: "down", at: 50 },
+  ]);
 });
 
 test("a zoomed tab is one pane filling the stage", () => {

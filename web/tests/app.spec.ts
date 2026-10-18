@@ -31,6 +31,8 @@ const PANES = [
 type FixtureOptions = {
   workspaces?: unknown;
   panes?: unknown;
+  /** Report the panes' directories as absent, as a remote host's would be. */
+  pathMissing?: boolean;
   /** Extra panes to report for the open tab, to exercise a split. */
   splitWith?: string[];
   readText?: string;
@@ -40,6 +42,8 @@ type FixtureOptions = {
 };
 
 async function installBridge(page: Page, options: FixtureOptions = {}): Promise<void> {
+  const resizes: string[] = [];
+  (page as Page & { resizes?: string[] }).resizes = resizes;
   const workspaces = options.workspaces ?? WORKSPACES;
   const panes = options.panes ?? PANES;
   await page.route("**/api/v1/herdr/status", (route) =>
@@ -76,6 +80,18 @@ async function installBridge(page: Page, options: FixtureOptions = {}): Promise<
       }),
     });
   });
+  // Every path is on this host unless a test says otherwise.
+  await page.route("**/api/v1/herdr/host/stat*", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ path: "/tmp", exists: options.pathMissing !== true, isDir: true }),
+    }),
+  );
+  await page.route("**/api/v1/herdr/panes/*/resize", async (route) => {
+    resizes.push(route.request().postData() ?? "");
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+  });
   // How the open tab is split. By default one pane fills the area.
   await page.route("**/api/v1/herdr/panes/*/layout", (route) => {
     const url = new URL(route.request().url());
@@ -92,6 +108,12 @@ async function installBridge(page: Page, options: FixtureOptions = {}): Promise<
         zoomed: false,
         area: { x: 0, y: 0, width: 120, height: 40 },
         focusedPaneId: paneId,
+        // One edge when there is a split, because herdr reports the split's own
+        // box and ratio rather than leaving the client to infer it.
+        splits:
+          ids.length > 1
+            ? [{ id: "split_0_root", direction: "right", ratio: 0.5, rect: { x: 0, y: 0, width: 120, height: 40 } }]
+            : [],
         panes: ids.map((id, index) => ({
           id,
           focused: index === 0,
@@ -530,6 +552,55 @@ test("a split stacks on a phone instead of squeezing side by side", async ({ pag
   for (const box of boxes) {
     expect(box.width).toBe(390);
   }
+});
+
+test("a split edge can be dragged, one herdr step at a time", async ({ page }) => {
+  await installBridge(page, { splitWith: ["w1:p2"] });
+  await page.goto("/");
+  await page.locator('.side--spaces [data-workspace-id="w1"]').click();
+
+  // The edge sits where herdr says, not where the tiles happen to be.
+  const bar = page.locator('.splitbar[data-direction="right"]');
+  await expect(bar).toHaveCount(1);
+  const stage = await page.locator(".tiles").boundingBox();
+  const box = await bar.boundingBox();
+  const at = Math.round(((box.x + 4 - stage.x) / stage.width) * 100);
+  expect(Math.abs(at - 50)).toBeLessThanOrEqual(2);
+
+  // Dragging asks herdr for a step rather than moving the edge locally, because
+  // herdr owns the step size and clamps at its own minimum.
+  await page.mouse.move(box.x + 4, box.y + 200);
+  await page.mouse.down();
+  for (let step = 1; step <= 5; step += 1) {
+    await page.mouse.move(box.x + 4 - step * 20, box.y + 200);
+  }
+  await page.mouse.up();
+
+  const sent = (page as Page & { resizes?: string[] }).resizes ?? [];
+  await expect.poll(() => sent.length).toBeGreaterThan(0);
+  for (const body of sent) {
+    expect(body).toBe(JSON.stringify({ direction: "left" }));
+  }
+});
+
+test("a split has no edge to drag on a phone, because it stacks", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 780 });
+  await installBridge(page, { splitWith: ["w1:p2"] });
+  await page.goto("/");
+  await expect(page.locator(".tile")).toHaveCount(2);
+  await expect(page.locator(".splitbar")).toHaveCount(0);
+});
+
+test("a pane whose directory is not on this host is marked remote", async ({ page }) => {
+  await installBridge(page, { pathMissing: true });
+  await page.goto("/");
+  await expect(page.locator('.tile[data-pane-id="w2:p1"] .tile__remote')).toHaveText("remote");
+});
+
+test("a local pane carries no remote mark", async ({ page }) => {
+  await installBridge(page);
+  await page.goto("/");
+  await expect(page.locator(".tile__remote")).toHaveCount(0);
 });
 
 test("the transcript layout switches between wrap, exact and fit", async ({ page }) => {

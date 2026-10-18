@@ -427,6 +427,45 @@ func (s *Server) handlePaneInput(w http.ResponseWriter, r *http.Request, paneID 
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "paneId": paneID})
 }
 
+// handlePaneResize moves one split edge. herdr owns the step size: it ignores
+// small amounts and moves in its own increments, clamped so no pane falls below
+// its minimum, so the client asks for a direction and then re-reads the layout
+// rather than assuming where the edge landed.
+func (s *Server) handlePaneResize(w http.ResponseWriter, r *http.Request, paneID string) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, "POST")
+		return
+	}
+	paneID = strings.Trim(strings.TrimSpace(paneID), "/")
+	if paneID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "pane id is required")
+		return
+	}
+	var request struct {
+		Direction string   `json:"direction"`
+		Amount    *float64 `json:"amount"`
+	}
+	if !decodeBody(w, r, &request) {
+		return
+	}
+	switch request.Direction {
+	case "left", "right", "up", "down":
+	default:
+		writeError(w, http.StatusBadRequest, "invalid_request",
+			"direction must be left, right, up or down")
+		return
+	}
+	params := map[string]any{"pane_id": paneID, "direction": request.Direction}
+	if request.Amount != nil {
+		params["amount"] = *request.Amount
+	}
+	if err := s.client().Call(r.Context(), "pane.resize", params, nil); err != nil {
+		writeBadGateway(w, "herdr_resize_failed", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "paneId": paneID, "direction": request.Direction})
+}
+
 // herdrRect is a pane's box in terminal cells, relative to its tab's area.
 type herdrRect struct {
 	X      int `json:"x"`
@@ -441,6 +480,13 @@ type herdrLayoutPane struct {
 	Rect    herdrRect `json:"rect"`
 }
 
+type herdrSplit struct {
+	ID        string    `json:"id"`
+	Direction string    `json:"direction"`
+	Ratio     float64   `json:"ratio"`
+	Rect      herdrRect `json:"rect"`
+}
+
 type herdrLayout struct {
 	WorkspaceID   string            `json:"workspace_id"`
 	TabID         string            `json:"tab_id"`
@@ -448,6 +494,7 @@ type herdrLayout struct {
 	Area          herdrRect         `json:"area"`
 	FocusedPaneID string            `json:"focused_pane_id"`
 	Panes         []herdrLayoutPane `json:"panes"`
+	Splits        []herdrSplit      `json:"splits"`
 }
 
 // handlePaneLayout reports how the panes of one tab are split. herdr gives each
@@ -478,7 +525,17 @@ func (s *Server) handlePaneLayout(w http.ResponseWriter, r *http.Request, paneID
 			"rect":    pane.Rect,
 		})
 	}
+	splits := make([]map[string]any, 0, len(result.Layout.Splits))
+	for _, split := range result.Layout.Splits {
+		splits = append(splits, map[string]any{
+			"id":        split.ID,
+			"direction": split.Direction,
+			"ratio":     split.Ratio,
+			"rect":      split.Rect,
+		})
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
+		"splits":        splits,
 		"tabId":         result.Layout.TabID,
 		"workspaceId":   result.Layout.WorkspaceID,
 		"zoomed":        result.Layout.Zoomed,
@@ -568,6 +625,7 @@ func (s *Server) Handler() http.Handler {
 
 	// Read-only file preview: an agent writes a chart or a log, prints its path,
 	// and clicking that path shows it. Reads only, regular files only.
+	mux.HandleFunc("/api/v1/herdr/host/stat", handleHostStat)
 	mux.HandleFunc("/api/v1/herdr/file", handleFileRead)
 	mux.HandleFunc("/api/v1/herdr/file/raw", handleFileRaw)
 
@@ -588,6 +646,8 @@ func (s *Server) Handler() http.Handler {
 			s.handlePaneInput(w, r, strings.TrimSuffix(rest, "/input"))
 		case strings.HasSuffix(rest, "/keys"):
 			s.handlePaneKeys(w, r, strings.TrimSuffix(rest, "/keys"))
+		case strings.HasSuffix(rest, "/resize"):
+			s.handlePaneResize(w, r, strings.TrimSuffix(rest, "/resize"))
 		case strings.HasSuffix(rest, "/layout"):
 			s.handlePaneLayout(w, r, strings.TrimSuffix(rest, "/layout"))
 		case strings.HasSuffix(rest, "/rename"):

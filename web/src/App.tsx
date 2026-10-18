@@ -9,6 +9,8 @@ import { PromptBar } from "@/components/PromptBar";
 import {
   fetchAllPanes,
   fetchLayout,
+  hostHas,
+  resizePane,
   fetchStatus,
   fetchWorkspaces,
   type HerdrPane,
@@ -77,6 +79,9 @@ export function App() {
   const [picker, setPicker] = useState(false);
   const [layout, setLayout] = useState<PaneLayout | null>(null);
   const [narrow, setNarrow] = useState(false);
+  // Panes whose working directory is not on this host: herdr can drive panes on
+  // another machine over SSH, and a preview there cannot work from here.
+  const [remotePanes, setRemotePanes] = useState<Set<string>>(() => new Set());
   // Selecting a pane in the rail also decides the workspace, so the pane list
   // has to know which workspace to show even before a pane is chosen.
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
@@ -190,6 +195,31 @@ export function App() {
       .map((entry) => panes.find((pane) => pane.id === entry.id))
       .filter((pane) => pane !== undefined) as AgentPane[];
   }, [layout, panes, activePane]);
+
+  // One probe per pane, not per poll: a pane's host does not change under it.
+  const probeKey = tilePanes.map((pane) => `${pane.id}=${pane.cwd ?? ""}`).join("|");
+  useEffect(() => {
+    let cancelled = false;
+    async function probe(): Promise<void> {
+      const found = new Set<string>();
+      for (const pane of tilePanes) {
+        if (pane.cwd === undefined || pane.cwd === "") {
+          continue;
+        }
+        if ((await hostHas(pane.cwd)) === false) {
+          found.add(pane.id);
+        }
+      }
+      if (!cancelled) {
+        setRemotePanes(found);
+      }
+    }
+    void probe();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [probeKey]);
 
   const openPaneId = useCallback((id: string) => {
     setPaneId(id);
@@ -320,6 +350,13 @@ export function App() {
               onDisplay={chooseDisplay}
               onActivate={openPaneId}
               onMenu={(pane, x, y) => setMenu(paneTarget(pane, x, y))}
+              onResize={(id, direction) => {
+                // herdr decides where the edge lands, so the layout is re-read
+                // rather than adjusted locally.
+                void resizePane(id, direction).then(() => void fetchLayout(id).then(setLayout));
+              }}
+              remote={remotePanes}
+              layout={layout}
             />
           ) : (
             <div className="scope__idle">

@@ -8,6 +8,9 @@ export type Rect = { x: number; y: number; width: number; height: number };
 
 export type LayoutPane = { id: string; focused: boolean; rect: Rect };
 
+/** One split edge: its direction, where it sits inside its box, and how far along. */
+export type LayoutSplit = { id: string; direction: "right" | "down"; ratio: number; rect: Rect };
+
 export type PaneLayout = {
   tabId: string;
   workspaceId: string;
@@ -15,6 +18,7 @@ export type PaneLayout = {
   area: Rect;
   focusedPaneId: string;
   panes: LayoutPane[];
+  splits: LayoutSplit[];
 };
 
 /** A tile's place on the page, as percentages of the stage. */
@@ -82,4 +86,47 @@ export function tabsOf<T extends { id: string; tabId: string; focused?: boolean 
     }
   }
   return [...seen.entries()].map(([tabId, pane]) => ({ tabId, pane }));
+}
+
+/** A split edge, ready to be drawn and dragged. */
+export type SplitHandle = { paneId: string; direction: "right" | "down"; at: number };
+
+/**
+ * Where each split edge sits, as a percentage of the stage. A stacked phone
+ * arrangement has no edges to offer, and neither has a zoomed tab: both are one
+ * pane after the fact, so dragging one would resize nothing.
+ */
+export function splitsOf(layout: PaneLayout | null, mode: ArrangeMode): SplitHandle[] {
+  if (layout === null || mode === "stack" || layout.zoomed || layout.area.width <= 0 || layout.area.height <= 0) {
+    return [];
+  }
+  const handles: SplitHandle[] = [];
+  for (const split of layout.splits ?? []) {
+    const vertical = split.direction === "right";
+    const edge = vertical
+      ? split.rect.x + split.rect.width * split.ratio
+      : split.rect.y + split.rect.height * split.ratio;
+    // The pane on the near side of the edge is the one herdr moves: its far
+    // edge is the line itself.
+    const near = layout.panes
+      .filter((pane) => {
+        const far = vertical ? pane.rect.x + pane.rect.width : pane.rect.y + pane.rect.height;
+        const start = vertical ? pane.rect.x : pane.rect.y;
+        return far <= edge + 1 && start >= (vertical ? split.rect.x : split.rect.y) - 1;
+      })
+      .sort((left, right) =>
+        vertical
+          ? right.rect.x + right.rect.width - (left.rect.x + left.rect.width)
+          : right.rect.y + right.rect.height - (left.rect.y + left.rect.height),
+      )[0];
+    if (near === undefined) {
+      continue;
+    }
+    handles.push({
+      paneId: near.id,
+      direction: vertical ? "right" : "down",
+      at: (edge / (vertical ? layout.area.width : layout.area.height)) * 100,
+    });
+  }
+  return handles;
 }

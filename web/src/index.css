@@ -1017,6 +1017,68 @@ body::before {
   color: var(--ink-faint);
 }
 
+/* The split edge. herdr moves it in its own large steps and clamps at a
+   minimum, so this is a handle that steps, not a free drag. */
+.splitbar {
+  position: absolute;
+  z-index: 4;
+  background: transparent;
+  touch-action: none;
+}
+
+.splitbar[data-direction="right"] {
+  top: 0;
+  bottom: 0;
+  width: 9px;
+  margin-left: -4px;
+  cursor: col-resize;
+}
+
+.splitbar[data-direction="down"] {
+  left: 0;
+  right: 0;
+  height: 9px;
+  margin-top: -4px;
+  cursor: row-resize;
+}
+
+.splitbar::after {
+  content: "";
+  position: absolute;
+  background: var(--ink-faint);
+  opacity: 0;
+  transition: opacity 0.12s ease-out;
+}
+
+.splitbar[data-direction="right"]::after {
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 1px;
+}
+
+.splitbar[data-direction="down"]::after {
+  left: 0;
+  right: 0;
+  top: 4px;
+  height: 1px;
+}
+
+.splitbar:hover::after,
+.splitbar:active::after {
+  opacity: 1;
+  background: var(--accent);
+}
+
+/* herdr drives panes on other hosts over SSH; a path from such a pane is not
+   readable here, so the tile says so instead of offering a preview. */
+.tile__remote {
+  padding: 1px 5px 0;
+  border: var(--rule-w) solid var(--rule-strong);
+  font-family: var(--font-label);
+  color: var(--blocked);
+}
+
 .tile__spacer {
   flex: 1 1 auto;
 }

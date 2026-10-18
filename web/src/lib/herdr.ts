@@ -309,7 +309,33 @@ export function parsePaneLayout(raw: unknown): PaneLayout | null {
     panes: value.panes.filter(
       (pane) => typeof pane === "object" && pane !== null && typeof pane.id === "string",
     ),
+    // A layout without edges is still usable: it just has nothing to drag.
+    splits: Array.isArray(value.splits) ? value.splits : [],
   };
+}
+
+export type SplitDirection = "left" | "right" | "up" | "down";
+
+/**
+ * Move one split edge. herdr ignores small amounts and moves in its own
+ * increments, clamped so no pane falls below its minimum, so the caller
+ * re-reads the layout afterwards rather than assuming where the edge landed.
+ */
+export async function resizePane(
+  paneId: string,
+  direction: SplitDirection,
+): Promise<boolean> {
+  return postJSON(`${panePath(paneId)}/resize`, { direction });
+}
+
+/** Whether a path exists on the machine this bridge runs on. */
+export async function hostHas(path: string): Promise<boolean | null> {
+  const raw = await getJSON(`/api/v1/herdr/host/stat?path=${encodeURIComponent(path)}`);
+  if (typeof raw !== "object" || raw === null) {
+    return null;
+  }
+  const value = raw as { exists?: unknown };
+  return typeof value.exists === "boolean" ? value.exists : null;
 }
 
 /** How the panes of one tab are split. */
