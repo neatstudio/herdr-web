@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"strings"
 
 	"herdr-web/server"
 )
@@ -30,26 +31,29 @@ func webFS() fs.FS {
 	return sub
 }
 
-func defaultSocketPath() string {
-	return server.DefaultSocketPath()
-}
-
 func main() {
-	addr := flag.String("addr", server.DefaultAddr, "TCP address to listen on (host:port)")
+	addr := flag.String("addr", server.DefaultAddr(),
+		"Tailscale-facing listen address; \"\" to skip it (default: first Tailscale IPv4 on port "+server.DefaultPort+")")
+	localAddr := flag.String("local-addr", server.DefaultLocalAddr(),
+		"loopback listen address; \"\" to skip it")
 	socket := flag.String("herdr-socket", "", "herdr daemon socket path (default ~/.config/herdr/herdr.sock)")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "herdr-web: standalone web UI + API bridge for a herdr daemon.\n\n")
-		fmt.Fprintf(os.Stderr, "Usage:\n  herdr-web [-addr HOST:PORT] [-herdr-socket PATH]\n\n")
+		fmt.Fprintf(os.Stderr, "Usage:\n  herdr-web [-addr HOST:PORT] [-local-addr HOST:PORT] [-herdr-socket PATH]\n\n")
+		fmt.Fprintf(os.Stderr, "Both listeners serve the same console. Only loopback, RFC1918,\n")
+		fmt.Fprintf(os.Stderr, "Tailscale and IPv6 ULA addresses are accepted; this binary has no\n")
+		fmt.Fprintf(os.Stderr, "authentication of its own.\n\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
 
-	socketPath := *socket
+	socketPath := strings.TrimSpace(*socket)
 	if socketPath == "" {
-		socketPath = defaultSocketPath()
+		socketPath = server.DefaultSocketPath()
 	}
-	fmt.Fprintf(os.Stderr, "herdr-web: listening on http://%s (socket %s)\n", *addr, socketPath)
-	if err := server.Run(*addr, socketPath, webFS()); err != nil {
+
+	fmt.Fprintf(os.Stderr, "herdr-web: socket %s\n", socketPath)
+	if err := server.Run([]string{*addr, *localAddr}, socketPath, webFS()); err != nil {
 		fmt.Fprintln(os.Stderr, "herdr-web:", err)
 		os.Exit(1)
 	}

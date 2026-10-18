@@ -9,7 +9,8 @@
 SHELL := /bin/bash
 BIN := herdr-web
 
-.PHONY: all build web go-build run test test-go test-web e2e fmt vet clean
+.PHONY: all build web go-build run test test-go test-web e2e fmt vet clean \
+	install-service uninstall-service service-status service-restart
 
 all: build
 
@@ -18,7 +19,9 @@ build: web go-build
 
 ## web: build the Vite bundle into web/dist (embedded by go-build)
 web:
-	cd web && npm install --no-audit --no-fund
+	@# npm ci, not install: it is lockfile-exact and does not re-resolve the
+	@# optional platform packages that npm 11 mis-dedupes.
+	cd web && npm ci --no-audit --no-fund
 	cd web && npm run build
 	@# Vite empties web/dist; restore the placeholder so a later `git status`
 	@# does not look like the tracked file was deleted.
@@ -54,3 +57,16 @@ clean:
 	rm -f $(BIN)
 	find web/dist -mindepth 1 ! -name .gitkeep -delete 2>/dev/null || true
 	rm -rf web/test-results web/playwright-report
+
+## install-service: run at login on the Tailscale and loopback ports
+install-service: build
+	./scripts/install-service.sh install
+
+uninstall-service:
+	./scripts/install-service.sh uninstall
+
+service-status:
+	./scripts/install-service.sh status
+
+service-restart:
+	./scripts/install-service.sh restart

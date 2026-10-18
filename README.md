@@ -9,8 +9,13 @@ dependencies beyond the binary itself.
 
 ```
 make build          # frontend + binary -> ./herdr-web
-./herdr-web         # http://127.0.0.1:18080
+./herdr-web         # Tailscale :5000 and loopback :5001
 ```
+
+Those two ports are deliberate: they are the ones the retired `tmuxd`
+control plane used, so existing Tailscale links and local bookmarks keep
+working. `-addr ""` or `-local-addr ""` drops whichever listener you do not
+want.
 
 ## Why a bridge
 
@@ -44,13 +49,38 @@ calls.
 ## Flags
 
 ```
--addr           host:port to listen on            (default 127.0.0.1:18080)
+-addr           Tailscale-facing listen address   (default: first Tailscale IPv4 on :5000)
+-local-addr     loopback listen address           (default 127.0.0.1:5001)
 -herdr-socket   daemon socket path                (default ~/.config/herdr/herdr.sock)
 ```
 
-To expose it beyond loopback, put it behind whatever already fronts your
-private network — the binary has no authentication of its own, and anyone who
-can reach it can type into your panes.
+Both listeners serve the same console. Pass `""` to skip one.
+
+Only loopback, RFC1918, Tailscale CGNAT and IPv6 ULA addresses are accepted;
+a wildcard or public bind is refused at startup. This binary has no
+authentication, so exposing it means anyone who can reach the port can type
+into your panes.
+
+## Running as a service (macOS)
+
+```
+make install-service     # launchd unit dev.herdr-web, starts at login
+make service-status
+make uninstall-service
+```
+
+The unit logs to `~/.local/share/herdr-web/herdr-web.log`. It runs the binary
+from this directory, so rebuild before restarting:
+
+```
+make build && make service-restart
+```
+
+This console replaces the retired `tmuxd` control plane on this machine: that
+launchd unit is unloaded and its plist renamed to `*.plist.disabled-*`, so a
+reboot cannot make it fight for ports 5000/5001. To bring it back, rename the
+plist and `launchctl bootstrap gui/$(id -u) <plist>` after unloading this one.
+
 
 ## Layout
 
