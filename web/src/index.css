@@ -1072,7 +1072,8 @@ body::before {
 
 /* herdr drives panes on other hosts over SSH; a path from such a pane is not
    readable here, so the tile says so instead of offering a preview. */
-.tile__remote {
+.tile__remote,
+.stage__remote {
   padding: 1px 5px 0;
   border: var(--rule-w) solid var(--rule-strong);
   font-family: var(--font-label);

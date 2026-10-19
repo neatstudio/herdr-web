@@ -22,9 +22,7 @@ import { arrangeTiles, tabsOf, type PaneLayout } from "@/lib/layout";
 import {
   TONE_LABEL,
   mostUrgentPane,
-  paneAgent,
   paneListName,
-  paneOwnHasName,
   toneOf,
   type AgentPane,
   type PageTheme,
@@ -257,6 +255,8 @@ export function App() {
         />
 
         <main className="stage">
+          {/* Identity lives in the tab strip directly below; this line answers
+              "where am I and what state", so it does not repeat the pane name. */}
           <div className="stage__head">
             <h1 className="stage__title">
               {activeWorkspace !== null ? (
@@ -277,33 +277,6 @@ export function App() {
               ) : (
                 <span className="dim">no workspace</span>
               )}
-              {activePane !== null && (
-                <>
-                  <span className="dim">/</span>
-                  {paneAgent(activePane) !== "" && (
-                    <span className="stage__agent" title={`${paneAgent(activePane)} is running here`}>
-                      {paneAgent(activePane)}
-                    </span>
-                  )}
-                  <span
-                    className="stage__pane"
-                    data-pane-title={activePane.id}
-                    title={`${paneListName(activePane, activeWorkspace?.name ?? "")} — ${activePane.id}`}
-                    onContextMenu={(event) => {
-                      event.preventDefault();
-                      setMenu(paneTarget(activePane, event.clientX, event.clientY));
-                    }}
-                    {...longPressHandlers({
-                      onLongPress: (x, y) => setMenu(paneTarget(activePane, x, y)),
-                    })}
-                  >
-                    {paneListName(activePane, activeWorkspace?.name ?? "")}
-                  </span>
-                  {paneOwnHasName(activePane) && (
-                    <span className="dim stage__pane-id">{activePane.id}</span>
-                  )}
-                </>
-              )}
             </h1>
             <button
               type="button"
@@ -315,6 +288,13 @@ export function App() {
               {activeWorkspace?.name ?? "workspaces"} · {activePane !== null ? paneListName(activePane, activeWorkspace?.name ?? "") : "no pane"}
             </button>
             <div className="stage__spacer" />
+            {activePane !== null && remotePanes.has(activePane.id) && (
+              // The working directory above belongs to another machine, so the
+              // paths this pane prints are not readable from here.
+              <span className="stage__remote" title="this pane runs on another host">
+                remote
+              </span>
+            )}
             {activePane?.cwd !== undefined && activePane.cwd !== "" && (
               <span className="stage__cwd" title={activePane.cwd}>
                 {activePane.cwd}

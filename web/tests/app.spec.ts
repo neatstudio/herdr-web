@@ -239,8 +239,10 @@ test("clicking an agent row opens that pane in the transcript", async ({ page })
 
   await page.locator('.side--agents .row[data-pane-id="w1:p1"]').click();
   await expect(page.locator('.row[aria-current="true"]')).toHaveAttribute("data-pane-id", "w1:p1");
-  await expect(page.locator("h1")).toContainText("Deploy Watch");
-  await expect(page.locator("h1 .stage__pane-id")).toHaveText("w1:p1");
+  // The tab strip names the open pane; the line above it says where, not which.
+  const tab = page.locator('.tab[aria-selected="true"]');
+  await expect(tab).toContainText("Deploy Watch");
+  await expect(tab.locator(".tab__id")).toHaveText("p1");
 });
 
 test("panes are labelled with their herdr name, with the id kept as context", async ({ page }) => {
@@ -275,9 +277,8 @@ test("a plain shell stays out of the sidebar but reachable from the tabs", async
   const tab = page.locator('.tab[data-pane-id="w2:p1"]');
   await expect(tab).toHaveCount(1);
   await expect(tab).toContainText("w2:p1");
-  // The header names it too; the id is not repeated beside itself.
-  await expect(page.locator("h1")).toContainText("w2:p1");
-  await expect(page.locator("h1 .stage__pane-id")).toHaveCount(0);
+  // The header says where the pane is, not which pane it is.
+  await expect(page.locator("h1")).not.toContainText("w2:p1");
 });
 
 test("an unnamed pane with an agent is identified by its directory, not a repeat", async ({ page }) => {
@@ -347,8 +348,8 @@ test("right-click opens a menu on a pane row, a rail row and the header name", a
   await expect(page.locator('[role="menu"]')).toContainText("Copy workspace id");
   await page.keyboard.press("Escape");
 
-  // The header pane name, and nowhere else.
-  await page.locator('h1 [data-pane-title]').click({ button: "right" });
+  // The pane name in the tab strip, and nowhere else.
+  await page.locator('.strip [data-pane-title]').first().click({ button: "right" });
   await expect(page.locator('[role="menu"]')).toBeVisible();
   await page.keyboard.press("Escape");
   await page.locator("#herdr-feed-text").click({ button: "right" });
@@ -583,6 +584,28 @@ test("a split edge can be dragged, one herdr step at a time", async ({ page }) =
   }
 });
 
+test("one pane names itself once, not in three stacked lines", async ({ page }) => {
+  await installBridge(page);
+  await page.goto("/");
+
+  // The tab names the pane; a single tile has no header of its own, and the
+  // title line above says where the pane is rather than repeating its name.
+  // (The picker button on the same row names the pane too, but that is the
+  // phone's sheet opener and is hidden on a wide window.)
+  await expect(page.locator('.tab[aria-selected="true"]')).toContainText("w2:p1");
+  await expect(page.locator(".tile__head")).toHaveCount(0);
+  const title = page.locator(".stage__title");
+  await expect(title).not.toContainText("w2:p1");
+  await expect(title).toContainText("api");
+});
+
+test("a split labels each tile, because one tab holds several panes", async ({ page }) => {
+  await installBridge(page, { splitWith: ["w1:p2"] });
+  await page.goto("/");
+  await page.locator('.side--spaces [data-workspace-id="w1"]').click();
+  await expect(page.locator(".tile__head")).toHaveCount(2);
+});
+
 test("a split has no edge to drag on a phone, because it stacks", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 780 });
   await installBridge(page, { splitWith: ["w1:p2"] });
@@ -594,12 +617,15 @@ test("a split has no edge to drag on a phone, because it stacks", async ({ page 
 test("a pane whose directory is not on this host is marked remote", async ({ page }) => {
   await installBridge(page, { pathMissing: true });
   await page.goto("/");
-  await expect(page.locator('.tile[data-pane-id="w2:p1"] .tile__remote')).toHaveText("remote");
+  // The mark sits beside the directory it applies to, which is the one place
+  // that survives when the tab holds a single pane.
+  await expect(page.locator(".stage__remote")).toHaveText("remote");
 });
 
 test("a local pane carries no remote mark", async ({ page }) => {
   await installBridge(page);
   await page.goto("/");
+  await expect(page.locator(".stage__remote")).toHaveCount(0);
   await expect(page.locator(".tile__remote")).toHaveCount(0);
 });
 
@@ -928,7 +954,7 @@ test("picking an agent closes the sheet and opens it in the transcript", async (
 
   await page.locator('.sheet .srow[data-pane-id="w1:p2"]').click();
   await expect(page.locator(".sheet")).toHaveCount(0);
-  await expect(page.locator("h1")).toContainText("vnstat 区间流量合计脚本");
+  await expect(page.locator('.tab[aria-selected="true"]')).toContainText("vnstat 区间流量合计脚本");
 });
 
 test("the picker searches every pane at once", async ({ page }) => {

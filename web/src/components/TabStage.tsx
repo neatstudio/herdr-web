@@ -147,6 +147,7 @@ export function TabStage({
               }
             }}
           >
+            {tiles.length > 1 && (
             <header
               className="tile__head"
               // A right-click on the header targets the pane's menu, like the tab.
@@ -168,6 +169,7 @@ export function TabStage({
               <span className="tile__spacer" />
               <span className="tile__status">{toneOf(pane.agentStatus)}</span>
             </header>
+            )}
             {active ? (
               <Scope
                 key={tile.id}
