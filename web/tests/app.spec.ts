@@ -536,6 +536,76 @@ test.describe("a pane that paints its own canvas", () => {
   });
 });
 
+test("a painted block has no seam between its rows", async ({ page }) => {
+  // A TUI paints its echoed input as a bar, padding included. If the line box is
+  // taller than the painted background, every row shows a light seam and one
+  // block reads as a stack of separate bars.
+  // The painted run is long, as a TUI's full-width bar is: a couple of coloured
+  // characters are a highlight, not a bar, and the renderer treats them apart.
+  const bar = `${ESC}[48;2;48;53;62m > hello ${" ".repeat(160)}${ESC}[0m`;
+  await installBridge(page, { readText: `${bar}\n${bar}\n${bar}\n` });
+  await page.goto("/");
+  await expect(page.locator(".scope__line")).toHaveCount(3);
+
+  const rows = await page.locator(".scope__line").evaluateAll((nodes) =>
+    nodes.map((node) => {
+      const span = node.querySelector("span[style*='background-color']");
+      const line = node.getBoundingClientRect();
+      const painted = span?.getBoundingClientRect();
+      return {
+        line: Math.round(line.height),
+        painted: painted ? Math.round(painted.height) : 0,
+        offset: painted ? Math.round(painted.top - line.top) : null,
+      };
+    }),
+  );
+  expect(rows).toHaveLength(3);
+  for (const row of rows) {
+    expect(row.painted, "the background fills the row box").toBe(row.line);
+    expect(row.offset).toBe(0);
+  }
+  // An empty row still occupies a row, so the transcript keeps its shape.
+  const empty = await page.locator(".scope__line").first().evaluate((node) => node.getBoundingClientRect().height);
+  expect(Math.round(empty)).toBe(rows[0].line);
+});
+
+test("a dark bar is mirrored on paper and left alone on carbon", async ({ page }) => {
+  const bar = `${ESC}[48;2;48;53;62m${ESC}[38;2;242;240;233m > hello ${" ".repeat(160)}${ESC}[0m`;
+
+  // On paper the app's absolute colours are mirrored: a light bar, dark ink.
+  await page.emulateMedia({ colorScheme: "light" });
+  await installBridge(page, { readText: `${bar}\n` });
+  await page.goto("/");
+  const feed = page.locator("#herdr-feed-text");
+  await expect(feed).toHaveAttribute("data-adapt", "paper");
+  const light = await page.locator(".scope__line span").first().evaluate((node) => ({
+    bg: getComputedStyle(node).backgroundColor,
+    ink: getComputedStyle(node).color,
+  }));
+  expect(light.bg).not.toBe("rgb(48, 53, 62)");
+  // The mirrored bar is lighter than the ink it carries.
+  const lum = (css: string): number => {
+    const [r, g, b] = css.match(/\d+/g)?.map(Number) ?? [0, 0, 0];
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  expect(lum(light.bg)).toBeGreaterThan(lum(light.ink));
+
+  // On carbon the bar is what the app drew, because that is the theme it was
+  // designed for.
+  const dark = await page.context().browser()?.newContext({ colorScheme: "dark" });
+  const page2 = await dark!.newPage();
+  await installBridge(page2, { readText: `${bar}\n` });
+  await page2.goto("/");
+  await expect(page2.locator("#herdr-feed-text")).not.toHaveAttribute("data-adapt", /.+/);
+  const carbon = await page2.locator(".scope__line span").first().evaluate((node) => ({
+    bg: getComputedStyle(node).backgroundColor,
+    ink: getComputedStyle(node).color,
+  }));
+  expect(carbon.bg).toBe("rgb(48, 53, 62)");
+  expect(carbon.ink).toBe("rgb(242, 240, 233)");
+  await dark!.close();
+});
+
 test("plain output keeps the page background", async ({ page }) => {
   await installBridge(page, { readText: `prompt% ls${" ".repeat(80)}\nfile.txt\n` });
   await page.goto("/");

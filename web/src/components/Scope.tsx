@@ -16,8 +16,13 @@ const BASE_FONT_PX = 12.5;
  */
 const MIN_FIT_PX = 4;
 
-/** Past this share, a background is worth mirroring for the page theme. */
-const MIRROR_SHARE = 0.4;
+/**
+ * Past this share, a background is worth mirroring for the page theme. The bar
+ * is low because an absolute colour was chosen for a terminal: a TUI that paints
+ * its echoed input on a navy bar leaves hard navy blocks on paper otherwise.
+ * Palette references are untouched either way, so a theme's own colours stay.
+ */
+const MIRROR_SHARE = 0.1;
 
 /** Past this share, it is the pane's own canvas and may be painted behind it. */
 const CANVAS_SHARE = 0.6;

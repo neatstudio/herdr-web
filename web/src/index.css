@@ -867,7 +867,10 @@ body::before {
   padding: 12px var(--pad) 18px;
   font-family: var(--font-mono);
   font-size: var(--step-body);
-  line-height: 1.55;
+  /* The font's own line box, so a painted background fills the row exactly.
+     A taller line box leaves a seam between rows, which makes one block of
+     highlighted lines look like a stack of separate bars. */
+  line-height: normal;
   tab-size: 8;
   animation: settle 0.22s ease-out both;
 }
@@ -880,7 +883,7 @@ body::before {
   white-space: pre;
   width: max-content;
   min-width: 100%;
-  min-height: 1.55em;
+  min-height: 1lh;
 }
 
 /* Ordinary output is just text: let it reflow to the viewport, which is what
@@ -890,7 +893,7 @@ body::before {
   z-index: 1;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  min-height: 1.55em;
+  min-height: 1lh;
 }
 
 /* Transcript layout switch: wrap the text, keep terminal rows exact, or
