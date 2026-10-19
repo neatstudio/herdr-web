@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchHerdrHost, runHostAction, type HerdrHost } from "@/lib/herdr";
 
-type Props = { open: boolean; onClose: () => void };
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  /** The console's own build, so a second copy on another host is tellable apart. */
+  consoleVersion: string;
+};
 
 /**
  * The state of herdr on this machine, and the two things you might do about it:
@@ -9,7 +14,7 @@ type Props = { open: boolean; onClose: () => void };
  * one fixed command on the host, so this panel never builds a command from what
  * is typed here.
  */
-export function HerdrPanel({ open, onClose }: Props) {
+export function HerdrPanel({ open, onClose, consoleVersion }: Props) {
   const [host, setHost] = useState<HerdrHost | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; command: string; output: string } | null>(null);
@@ -81,6 +86,8 @@ export function HerdrPanel({ open, onClose }: Props) {
         ) : (
           <>
             <dl className="hostpanel__facts">
+              <dt>this console</dt>
+              <dd id="herdr-console-version">{consoleVersion || "unknown"}</dd>
               <dt>installed</dt>
               <dd id="herdr-host-installed">
                 {host.installed ? host.binary : "no — herdr is not on this host"}

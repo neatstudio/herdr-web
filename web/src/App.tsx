@@ -471,7 +471,11 @@ export function App() {
 
       <FileViewer path={openPath} onClose={() => setOpenPath(null)} />
 
-      <HerdrPanel open={hostPanel} onClose={() => setHostPanel(false)} />
+      <HerdrPanel
+        open={hostPanel}
+        onClose={() => setHostPanel(false)}
+        consoleVersion={status?.consoleVersion ?? ""}
+      />
 
       <TargetMenu
         target={menu}

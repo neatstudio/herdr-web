@@ -31,7 +31,13 @@ func webFS() fs.FS {
 	return sub
 }
 
+// version is set at build time: -ldflags "-X main.version=$(git describe --tags)".
+// A released binary can then say what it is, which is what the installer and an
+// operator need to tell two copies apart.
+var version = "dev"
+
 func main() {
+	showVersion := flag.Bool("version", false, "print the version and exit")
 	addr := flag.String("addr", server.DefaultAddr(),
 		"Tailscale-facing listen address; \"\" to skip it (default: first Tailscale IPv4 on port "+server.DefaultPort+")")
 	localAddr := flag.String("local-addr", server.DefaultLocalAddr(),
@@ -41,7 +47,7 @@ func main() {
 		"herdr binary to inspect, install and update (default: herdr on PATH, then ~/.local/bin/herdr)")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "herdr-web: standalone web UI + API bridge for a herdr daemon.\n\n")
-		fmt.Fprintf(os.Stderr, "Usage:\n  herdr-web [-addr HOST:PORT] [-local-addr HOST:PORT] [-herdr-socket PATH] [-herdr-bin PATH]\n\n")
+		fmt.Fprintf(os.Stderr, "Usage:\n  herdr-web [-version] [-addr HOST:PORT] [-local-addr HOST:PORT] [-herdr-socket PATH] [-herdr-bin PATH]\n\n")
 		fmt.Fprintf(os.Stderr, "Both listeners serve the same console. Only loopback, RFC1918,\n")
 		fmt.Fprintf(os.Stderr, "Tailscale and IPv6 ULA addresses are accepted; this binary has no\n")
 		fmt.Fprintf(os.Stderr, "authentication of its own.\n\n")
@@ -49,10 +55,16 @@ func main() {
 	}
 	flag.Parse()
 
+	if *showVersion {
+		fmt.Printf("herdr-web %s\n", version)
+		return
+	}
+
 	// The console reports and manages herdr on this host, so it needs to know
 	// which binary that is. launchd does not inherit the shell PATH, which is
 	// why this can be set explicitly.
 	server.SetHerdrBin(strings.TrimSpace(*herdrBin))
+	server.ConsoleVersion = version
 
 	socketPath := strings.TrimSpace(*socket)
 	if socketPath == "" {

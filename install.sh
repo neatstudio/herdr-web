@@ -207,8 +207,8 @@ if [ "$(uname -s)" = "Darwin" ] && command -v xattr >/dev/null 2>&1; then
   xattr -d com.apple.quarantine "$BIN" 2>/dev/null || true
 fi
 
-say "installed $BIN"
-"$BIN" -version 2>/dev/null || true
+INSTALLED_VERSION="$("$BIN" -version 2>/dev/null || echo "herdr-web unknown")"
+say "installed $BIN ($INSTALLED_VERSION)"
 
 if [ "$WITH_SERVICE" -eq 1 ]; then
   export HERDR_WEB_ADDR="$ADDR"

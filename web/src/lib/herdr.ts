@@ -10,6 +10,8 @@ export type HerdrStatus = {
   version?: string;
   protocol?: number;
   protocolTested?: boolean;
+  /** Which build of the console itself is answering. */
+  consoleVersion?: string;
   error?: string;
 };
 

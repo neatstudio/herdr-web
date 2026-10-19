@@ -16,6 +16,39 @@ binary="$root/herdr-web"
 label="dev.herdr-web"
 remote_root="${HERDR_WEB_REMOTE_ROOT:-.local/share/herdr-web/app}"
 
+# binary_for prints the binary to send to a target. A macOS laptop cannot run a
+# Linux target's binary and vice versa, so the platform is asked of the target
+# itself and the matching release build is used. Building from this checkout is
+# only a fallback for the host we are already on.
+binary_for() {
+  local host="$1"
+  local target_os target_arch
+  target_os="$(ssh "${ssh_opts[@]}" "$host" 'uname -s' 2>/dev/null | tr '[:upper:]' '[:lower:]')" || return 1
+  target_arch="$(ssh "${ssh_opts[@]}" "$host" 'uname -m' 2>/dev/null)" || return 1
+  case "$target_arch" in
+    x86_64 | amd64) target_arch="amd64" ;;
+    arm64 | aarch64) target_arch="arm64" ;;
+    *) say "  unknown architecture on $host: $target_arch"; return 1 ;;
+  esac
+  local candidate="$root/dist/release/herdr-web-$target_os-$target_arch"
+  if [[ -x "$candidate" ]]; then
+    printf '%s' "$candidate"
+    return 0
+  fi
+  # A local checkout binary only matches a target of the same platform.
+  local here_os here_arch
+  here_os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+  here_arch="$(uname -m)"
+  case "$here_arch" in x86_64) here_arch=amd64 ;; aarch64) here_arch=arm64 ;; esac
+  if [[ "$here_os" == "$target_os" && "$here_arch" == "$target_arch" && -x "$root/herdr-web" ]]; then
+    printf '%s' "$root/herdr-web"
+    return 0
+  fi
+  say "  no $target_os/$target_arch binary available."
+  say "  run 'make release-archives' here, or build on $host and pass --from."
+  return 1
+}
+
 usage() {
   cat <<'USAGE'
 usage: deploy-remote.sh [options] TARGET...
@@ -104,12 +137,14 @@ deploy_one() {
   fi
   # A relative dir is relative to the remote home, which is what makes the
   # default work without knowing the remote user name.
-  local remote_bin="$dir/herdr-web"
+  # scp does not expand $HOME or ~ in its destination, so the absolute path is
+  # resolved on the target first and used everywhere afterwards.
   local remote_dir
   case "$dir" in
     /*) remote_dir="$dir" ;;
-    *) remote_dir="\$HOME/$dir" ;;
+    *) remote_dir="$(ssh "${ssh_opts[@]}" "$host" "printf '%s/%s' \"\$HOME\" '$dir'")" || return 1 ;;
   esac
+  local remote_bin="$remote_dir/herdr-web"
 
   say "checking $host"
   if ! ssh "${ssh_opts[@]}" "$host" 'echo ok' >/dev/null 2>&1; then
@@ -134,11 +169,20 @@ deploy_one() {
     return 0
   fi
 
-  say "  copying $(du -h "$binary" | cut -f1) to $host:$dir/"
+  local payload
+  payload="$(binary_for "$host")" || return 1
+  say "  copying $(du -h "$payload" | cut -f1) to $host:$remote_dir/"
   ssh "${ssh_opts[@]}" "$host" "mkdir -p $remote_dir" || return 1
-  scp "${ssh_opts[@]}" -q "$binary" "$host:$remote_dir/herdr-web.new" || return 1
+  scp "${ssh_opts[@]}" -q "$payload" "$host:$remote_dir/herdr-web.new" || return 1
   ssh "${ssh_opts[@]}" "$host" "chmod 0755 $remote_dir/herdr-web.new && mv $remote_dir/herdr-web.new $remote_dir/herdr-web" || return 1
-  say "  installed $host:$remote_dir/herdr-web ($os_arch)"
+  # The binary has to run on the target before it is registered as a service:
+  # a wrong-architecture copy would just restart forever in systemd.
+  if ! ssh "${ssh_opts[@]}" "$host" "$remote_bin -version >/dev/null 2>&1"; then
+    say "  the copied binary does not run on $host; nothing registered"
+    ssh "${ssh_opts[@]}" "$host" "rm -f $remote_dir/herdr-web" || true
+    return 1
+  fi
+  say "  installed $host:$remote_dir/herdr-web"
 
   if [[ "$WITH_SERVICE" -eq 1 ]]; then
     local args=()

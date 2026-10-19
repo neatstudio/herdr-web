@@ -11,6 +11,9 @@ BIN := herdr-web
 GO ?= go
 GOFLAGS ?= -trimpath
 LDFLAGS ?= -s -w
+# The released binary should be able to say which release it is.
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+LDFLAGS += -X main.version=$(VERSION)
 
 .PHONY: all build web go-build run test test-go test-web e2e fmt vet clean \
 	install-service uninstall-service service-status service-restart \
@@ -33,7 +36,7 @@ web:
 
 ## go-build: compile the bridge with the bundle embedded
 go-build:
-	$(GO) build $(GOFLAGS) -o $(BIN) .
+	$(GO) build $(GOFLAGS) -ldflags="$(LDFLAGS)" -o $(BIN) .
 	@echo "built ./$(BIN) ($$(du -h $(BIN) | cut -f1))"
 
 ## run: run the bridge from source; needs web/dist to exist for a real UI

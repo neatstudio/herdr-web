@@ -82,6 +82,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "service": "herdr-web"})
 }
 
+// ConsoleVersion is stamped by main so the UI can say which build it is.
+var ConsoleVersion = "dev"
+
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeMethodNotAllowed(w, "GET")
@@ -91,6 +94,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"enabled": true,
 		"socket":  s.socketPath,
 		"status":  "ok",
+		// Which build of the console is answering, so a second copy on another
+		// host can be told apart from this one.
+		"consoleVersion": ConsoleVersion,
 	}
 	var pong struct {
 		Version   string `json:"version"`
