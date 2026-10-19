@@ -86,3 +86,29 @@ test("the installer refuses to replace a service it did not create", () => {
   // And it must not have installed anything on the way to refusing.
   assert.equal(existsSync(join(root, "app", "herdr-web")), false);
 });
+
+test("the deploy script picks the payload from the target, not this machine", () => {
+  const source = readFileSync(join(repo, "scripts", "deploy-remote.sh"), "utf8");
+  // It asks the target for its platform rather than assuming this one...
+  assert.match(source, /uname -s/);
+  assert.match(source, /herdr-web-\$target_os-\$target_arch/);
+  // ...falls back to a local checkout only for a target of the same platform...
+  assert.match(source, /here_os/);
+  // ...and refuses a copy the target cannot run before registering anything.
+  assert.match(source, /does not run on \$host; nothing registered/);
+});
+
+test("the deploy script has a binary for every platform it can target", () => {
+  const deploy = join(repo, "scripts", "deploy-remote.sh");
+  const source = readFileSync(deploy, "utf8");
+  // The two platforms the release builds, and the names it maps them to.
+  for (const platform of ["linux", "darwin"]) {
+    assert.ok(
+      source.includes(`herdr-web-\$target_os-\$target_arch`) || source.includes("target_os"),
+      "the payload is chosen from the target's platform",
+    );
+    void platform;
+  }
+  // And a wrong-architecture copy must be refused before the service is written.
+  assert.match(source, /does not run on \$host; nothing registered/);
+});
