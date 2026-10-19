@@ -59,13 +59,24 @@ test("the installer copies a binary and skips the service on request", () => {
 test("the installer refuses to replace a service it did not create", () => {
   const root = mkdtempSync(join(tmpdir(), "hw-install-"));
   const home = mkdtempSync(join(tmpdir(), "hw-home-"));
-  // A launchd unit pointing at a source checkout, as this repo's own machine has.
-  const agents = join(home, "Library", "LaunchAgents");
-  execFileSync("mkdir", ["-p", agents]);
-  writeFileSync(
-    join(agents, "dev.herdr-web.plist"),
-    '<?xml version="1.0"?><plist><array><string>/somewhere/else/herdr-web</string></array></plist>\n',
-  );
+  // The unit the running platform would look for, pointing at a source checkout
+  // as this repo's own machine has: launchd on macOS, a systemd user unit
+  // elsewhere. The guard has to hold on both, so the test follows the platform.
+  if (process.platform === "darwin") {
+    const agents = join(home, "Library", "LaunchAgents");
+    execFileSync("mkdir", ["-p", agents]);
+    writeFileSync(
+      join(agents, "dev.herdr-web.plist"),
+      '<?xml version="1.0"?><plist><array><string>/somewhere/else/herdr-web</string></array></plist>\n',
+    );
+  } else {
+    const units = join(home, ".config", "systemd", "user");
+    execFileSync("mkdir", ["-p", units]);
+    writeFileSync(
+      join(units, "dev.herdr-web.service"),
+      "[Service]\nExecStart=/somewhere/else/herdr-web\n",
+    );
+  }
   const fake = join(root, "source-binary");
   writeFileSync(fake, "#!/bin/sh\n");
   chmodSync(fake, 0o755);

@@ -137,6 +137,28 @@ TMP="$BIN.incoming"
 
 # Installing on a machine that already runs herdr-web from a source checkout
 # would silently repoint that service at this copy and stop the one being used.
+# Both service managers are checked: the guard has to hold on Linux as well.
+existing_unit() {
+  case "$(uname -s)" in
+    Darwin) printf '%s' "$HOME/Library/LaunchAgents/$SERVICE_LABEL.plist" ;;
+    *) printf '%s' "$HOME/.config/systemd/user/$SERVICE_LABEL.service" ;;
+  esac
+}
+
+if [ "$WITH_SERVICE" -eq 1 ]; then
+  EXISTING="$(existing_unit)"
+  if [ -f "$EXISTING" ] && ! grep -q "$BIN" "$EXISTING" 2>/dev/null; then
+    case "$EXISTING" in
+      *.plist) FOUND="$(sed -n 's|.*<string>\(/[^<]*herdr-web\)</string>.*|\1|p' "$EXISTING" | head -1)" ;;
+      *) FOUND="$(sed -n 's|^ExecStart=\([^ ]*\).*|\1|p' "$EXISTING" | head -1)" ;;
+    esac
+    say "a $SERVICE_LABEL service already exists and points elsewhere:"
+    say "  ${FOUND:-unknown}"
+    say "pass --root to replace it, or --no-service to leave it alone."
+    die "refusing to replace a running service that this installer did not create"
+  fi
+fi
+
 if [ "$WITH_SERVICE" -eq 1 ]; then
   case "$(uname -s)" in
     Darwin)
