@@ -14,7 +14,7 @@
     <string>__HOME__</string>
     <!-- launchd does not inherit the shell PATH. -->
     <key>PATH</key>
-    <string>/opt/homebrew/bin:/home/op/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <string>/opt/homebrew/bin:__HOME__/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
   <key>WorkingDirectory</key>
   <string>__HOME__</string>

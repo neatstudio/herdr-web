@@ -25,6 +25,42 @@ a web page at. So this project is a thin translator: HTTP in, herdr JSON-RPC
 out. Nothing is stored, nothing is cached, and no state lives here that is not
 in herdr.
 
+## What the console does
+
+The window is three things: a sidebar, a transcript, and a prompt.
+
+- **Sidebar, in two halves.** Workspaces on top, listed in herdr's own order
+  with no status of their own — a workspace is a place you attach to. The
+  agents underneath, ordered by what needs a human and coloured to say so
+  (green working, amber blocked, grey idle, blue finished). Plain shells are
+  not listed there; the pane tabs reach them.
+- **Pane tabs, above the transcript**, one per herdr tab. A tab that herdr has
+  split shows its panes as tiles side by side; below the phone breakpoint they
+  stack instead, because two 60-column panes on a phone leave neither readable.
+  Dragging a tile edge asks herdr to move the split: herdr owns the step size
+  and clamps at its own minimum, so the edge lands where herdr puts it.
+- **The prompt sends to the pane you clicked**, and the caret is already in it.
+  `+` splits the open pane (right on a wide window, down on a phone) and
+  selects the new one. `Enter` sends, `Tab` flushes the line and asks the shell
+  to complete it, `↑`/`↓` walk the send history.
+- **Attachments by path.** herdr can only send text, so a dropped, pasted or
+  picked file is stored under the system temp directory and its absolute path
+  goes into the prompt — which is how a CLI agent takes an image anyway.
+- **Path previews.** A path printed in the output is a link; clicking it shows
+  the image or the text in a side panel. A path that is not on this machine
+  says so, because herdr can drive panes elsewhere over SSH.
+- **Renaming.** Panes and workspaces are renamed from the same menu, on
+  right-click or long press. Panes can be cleared back to their id; a
+  workspace has no unnamed state, so an empty name is refused.
+- **Two themes**, both first-class: `paper` (light) and `carbon` (dark), with
+  `auto` following the OS. The choice is applied before first paint by an
+  inline script, so there is no flash. A full-screen app that paints its own
+  dark canvas is mirrored on paper rather than punching a dark hole, and a
+  band of highlighted output is not mistaken for a canvas.
+
+On a phone the sidebar becomes one menu with a switch between its two lists,
+and the transcript reflows to the screen width.
+
 ## Routes
 
 Everything the UI needs, and nothing else. The set is closed: an unknown
@@ -36,9 +72,20 @@ Everything the UI needs, and nothing else. The set is closed: an unknown
 | GET | `/api/v1/herdr/status` | `ping` |
 | GET | `/api/v1/herdr/workspaces` | `workspace.list` |
 | GET | `/api/v1/herdr/workspaces/{id}` | `workspace.list` + `pane.list` |
+| POST | `/api/v1/herdr/workspaces/{id}/rename` | `workspace.rename` |
+| GET | `/api/v1/herdr/panes` | `pane.list` (every pane, one call) |
 | GET | `/api/v1/herdr/panes/{id}/read?lines=&format=` | `pane.read` + `pane.get` |
+| GET | `/api/v1/herdr/panes/{id}/layout` | `pane.layout` |
 | POST | `/api/v1/herdr/panes/{id}/input` | `pane.send_text` |
 | POST | `/api/v1/herdr/panes/{id}/keys` | `pane.send_keys` |
+| POST | `/api/v1/herdr/panes/{id}/rename` | `pane.rename` (`null` clears) |
+| POST | `/api/v1/herdr/panes/{id}/split` | `pane.split` |
+| POST | `/api/v1/herdr/panes/{id}/close` | `pane.close` |
+| POST | `/api/v1/herdr/panes/{id}/resize` | `pane.resize` |
+| POST | `/api/v1/herdr/uploads` | — (stores one attachment) |
+| GET | `/api/v1/herdr/file?path=` | — (metadata for one path) |
+| GET | `/api/v1/herdr/file/raw?path=` | — (image bytes) |
+| GET | `/api/v1/herdr/host/stat?path=` | — (is this path on this host) |
 
 `{id}` is URL-encoded; pane ids contain a colon (`w1:p1` → `w1%3Ap1`).
 
@@ -57,9 +104,22 @@ calls.
 Both listeners serve the same console. Pass `""` to skip one.
 
 Only loopback, RFC1918, Tailscale CGNAT and IPv6 ULA addresses are accepted;
-a wildcard or public bind is refused at startup. This binary has no
-authentication, so exposing it means anyone who can reach the port can type
-into your panes.
+a wildcard or public bind is refused at startup.
+
+**This binary has no authentication.** Exposing it means anyone who can reach
+the port can type into your panes, read files this user can read, and close
+panes. Keep it on loopback or a private link. The file endpoints are read-only
+and refuse anything that is not a regular file, and SVG is never served as an
+image (it can carry script), but the console is as powerful as a shell.
+
+## Files
+
+Attachments are written to `herdr-web-uploads` under the system temp directory
+(`$TMPDIR`, or `/tmp` on Linux) and are named so that the path needs no
+quoting: no whitespace, no shell metacharacters, no separators. Because `/tmp`
+is world-writable, the directory is checked before every write — it must not
+be a symlink, must be a directory, must belong to this user, and is tightened
+to `0700`. `HERDR_WEB_UPLOAD_DIR` overrides the location.
 
 ## Running as a service (macOS)
 
@@ -76,26 +136,27 @@ from this directory, so rebuild before restarting:
 make build && make service-restart
 ```
 
-This console replaces the retired `tmuxd` control plane on this machine: that
-launchd unit is unloaded and its plist renamed to `*.plist.disabled-*`, so a
-reboot cannot make it fight for ports 5000/5001. To bring it back, rename the
-plist and `launchctl bootstrap gui/$(id -u) <plist>` after unloading this one.
-
-
 ## Layout
 
 ```
 main.go              entry point: flags, embed, shutdown
-server/bridge.go     the seven routes and their JSON shapes
+server/bridge.go     the routes and their JSON shapes
+server/netaddr.go    which binds are allowed
+server/uploads.go    attachment storage
+server/file.go       read-only file metadata and image bytes
+server/host.go       is a path on this machine
 server/static.go     embedded SPA, cache headers, 404 for missing assets
 server/herdr.go      herdr JSON-RPC client over the unix socket
+web/src/lib/         DOM-free logic: ANSI renderer, layout, paths, focus
+web/src/components/  the shell: sidebar, tabs, tiles, viewer, prompt
 web/                 Vite + React + TypeScript frontend
 ```
 
 ## Development
 
 ```
-make web            # build the frontend into web/dist
+make build          # frontend + binary
+make web            # frontend only
 make go-build       # compile with the current web/dist embedded
 make run            # run from source on :18080
 make test           # Go tests + frontend unit tests
@@ -117,20 +178,18 @@ it was built without a bundle, and the API still serves.
 
 - `server/*_test.go` run against an in-process fake herdr socket, so they
   assert the exact JSON-RPC the bridge emits.
-- `web/src/lib/*.test.ts` are DOM-free unit suites (node:test).
-- `web/tests/*.spec.ts` drive the real UI in Chrome with the bridge mocked at
-  the HTTP boundary. They cover grouping, polling, the prompt, Tab completion,
-  the pane menu and theme switching.
+- `web/src/lib/*.test.ts` are DOM-free unit suites (node:test), run by
+  `make test-web`. The script globs every suite, so a new one is never
+  silently skipped.
+- `web/tests/app.spec.ts` drives the real UI in Chrome with the bridge mocked
+  at the HTTP boundary: the sidebar, tabs and split tiles, the prompt and its
+  focus rules, the pane menu, renames, attachments, previews, themes and the
+  phone layout.
 
-## UI notes
+Nothing in the tests depends on the wall clock, and no test touches a real
+herdr session: anything that would mutate panes is either mocked or run
+against a throwaway `herdr --session`.
 
-Two themes, both first-class: `paper` (light) and `carbon` (dark), with an
-`auto` setting that follows the OS. The choice is applied before first paint
-by an inline script, so there is no flash.
+## Requirements
 
-Right-click a pane id — in the tab strip or the header — for the pane menu.
-It is bound to those elements only, so a right-click on the output does
-nothing and a nested surface cannot trigger it twice.
-
-The herdr API has no pane-kill or workspace-delete, so the menu does not
-pretend to offer them.
+Go 1.24+, Node 24+, and a running herdr daemon.
