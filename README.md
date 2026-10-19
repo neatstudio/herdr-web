@@ -61,6 +61,24 @@ The window is three things: a sidebar, a transcript, and a prompt.
 On a phone the sidebar becomes one menu with a switch between its two lists,
 and the transcript reflows to the screen width.
 
+## Running without herdr
+
+The console does not need herdr to start: it serves the UI, reports that the
+daemon is not reachable, and keeps the last state it saw. That last part
+matters — herdr restarting is not herdr empty, so a failed poll holds the view
+and an "herdr is not reachable" strip says why, instead of showing a console
+with nothing in it.
+
+The masthead's daemon state opens a panel with what herdr is on this machine:
+the binary, its version and channel, whether the daemon is running, whether a
+restart is pending, how it was installed, and the newest release. From there it
+can install herdr when it is missing, or update it when a newer release exists.
+
+Install and update run one fixed command on the host — `curl -fsSL
+https://herdr.dev/install.sh | sh` and `herdr update`, or `brew upgrade herdr`
+for a Homebrew copy. A Nix copy is deliberately not offered a button: `herdr
+update` would fight the store. Nothing typed into the panel reaches a command.
+
 ## Routes
 
 Everything the UI needs, and nothing else. The set is closed: an unknown
@@ -86,6 +104,9 @@ Everything the UI needs, and nothing else. The set is closed: an unknown
 | GET | `/api/v1/herdr/file?path=` | — (metadata for one path) |
 | GET | `/api/v1/herdr/file/raw?path=` | — (image bytes) |
 | GET | `/api/v1/herdr/host/stat?path=` | — (is this path on this host) |
+| GET | `/api/v1/herdr/host` | `herdr status --json` + the release feed |
+| POST | `/api/v1/herdr/host/update` | — (runs `herdr update` / `brew upgrade herdr`) |
+| POST | `/api/v1/herdr/host/install` | — (runs the official installer) |
 
 `{id}` is URL-encoded; pane ids contain a colon (`w1:p1` → `w1%3Ap1`).
 
@@ -99,6 +120,8 @@ calls.
 -addr           Tailscale-facing listen address   (default: first Tailscale IPv4 on :5000)
 -local-addr     loopback listen address           (default 127.0.0.1:5001)
 -herdr-socket   daemon socket path                (default ~/.config/herdr/herdr.sock)
+-herdr-bin      herdr binary to inspect, install and update
+                (default: herdr on PATH, then ~/.local/bin/herdr)
 ```
 
 Both listeners serve the same console. Pass `""` to skip one.
@@ -145,6 +168,7 @@ server/netaddr.go    which binds are allowed
 server/uploads.go    attachment storage
 server/file.go       read-only file metadata and image bytes
 server/host.go       is a path on this machine
+server/herdrhost.go  what herdr is here, and installing or updating it
 server/static.go     embedded SPA, cache headers, 404 for missing assets
 server/herdr.go      herdr JSON-RPC client over the unix socket
 web/src/lib/         DOM-free logic: ANSI renderer, layout, paths, focus
@@ -192,4 +216,5 @@ against a throwaway `herdr --session`.
 
 ## Requirements
 
-Go 1.24+, Node 24+, and a running herdr daemon.
+Go 1.24+ and Node 24+ to build. At runtime, herdr is optional: without it the
+console still serves, and offers to install it.

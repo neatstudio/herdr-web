@@ -215,8 +215,14 @@ export async function fetchStatus(): Promise<HerdrStatus | null> {
   }
 }
 
-export async function fetchWorkspaces(): Promise<HerdrWorkspace[]> {
-  return parseHerdrWorkspaces(await getJSON("/api/v1/herdr/workspaces"));
+/**
+ * Workspaces, or null when herdr could not be reached. Null is not the same as
+ * empty: an empty answer means the daemon is up and has nothing, while null
+ * means it is restarting and the console should keep what it already has.
+ */
+export async function fetchWorkspaces(): Promise<HerdrWorkspace[] | null> {
+  const payload = await getJSON("/api/v1/herdr/workspaces");
+  return payload === null ? null : parseHerdrWorkspaces(payload);
 }
 
 /** Rename a workspace. herdr requires a non-empty label. */
@@ -225,8 +231,12 @@ export async function renameWorkspace(workspaceId: string, label: string): Promi
 }
 
 /** Every pane across every workspace, in one call. */
-export async function fetchAllPanes(): Promise<HerdrPane[]> {
+/** Every pane, or null when herdr could not be reached. See fetchWorkspaces. */
+export async function fetchAllPanes(): Promise<HerdrPane[] | null> {
   const payload = await getJSON("/api/v1/herdr/panes");
+  if (payload === null) {
+    return null;
+  }
   const record = asRecord(payload);
   return parseHerdrPanes(record?.panes ?? payload);
 }
@@ -373,6 +383,46 @@ export async function hostHas(path: string): Promise<boolean | null> {
 /** How the panes of one tab are split. */
 export async function fetchLayout(paneId: string): Promise<PaneLayout | null> {
   return parsePaneLayout(await getJSON(`${panePath(paneId)}/layout`));
+}
+
+/** What this machine's herdr looks like: installed, running, and up to date. */
+export type HerdrHost = {
+  installed: boolean;
+  binary: string;
+  clientVersion: string;
+  channel: string;
+  serverRunning: boolean;
+  serverVersion: string;
+  serverStatus: string;
+  compatible: boolean;
+  socket: string;
+  restartNeeded: boolean;
+  serverBinaryStale: boolean;
+  installMethod: "direct" | "homebrew" | "nix" | "unknown";
+  latestVersion: string;
+  updateAvailable: boolean;
+  canUpdate: boolean;
+  error: string;
+};
+
+export type HostAction = { ok: boolean; command: string; output: string; exitCode: number };
+
+/** The state of herdr on this host, for the console's status panel. */
+export async function fetchHerdrHost(): Promise<HerdrHost | null> {
+  const raw = await getJSON("/api/v1/herdr/host");
+  if (raw === null || typeof raw !== "object") {
+    return null;
+  }
+  return raw as HerdrHost;
+}
+
+/** Install herdr on this host, or update it. Both run a fixed command. */
+export async function runHostAction(action: "install" | "update"): Promise<HostAction | null> {
+  const raw = await postJSONResult(`/api/v1/herdr/host/${action}`, {});
+  if (raw === null || typeof raw !== "object") {
+    return null;
+  }
+  return raw as HostAction;
 }
 
 /** Rename a pane; pass null to clear the name. */

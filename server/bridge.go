@@ -712,6 +712,11 @@ func (s *Server) Handler() http.Handler {
 
 	// Read-only file preview: an agent writes a chart or a log, prints its path,
 	// and clicking that path shows it. Reads only, regular files only.
+	// What herdr is on this machine, and the two ways to change that. These work
+	// without herdr installed at all: that is exactly when they matter.
+	mux.HandleFunc("/api/v1/herdr/host", handleHostStatus)
+	mux.HandleFunc("/api/v1/herdr/host/update", handleHostUpdate)
+	mux.HandleFunc("/api/v1/herdr/host/install", handleHostInstall)
 	mux.HandleFunc("/api/v1/herdr/host/stat", handleHostStat)
 	mux.HandleFunc("/api/v1/herdr/file", handleFileRead)
 	mux.HandleFunc("/api/v1/herdr/file/raw", handleFileRaw)

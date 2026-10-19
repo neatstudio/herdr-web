@@ -31,6 +31,8 @@ const PANES = [
 type FixtureOptions = {
   workspaces?: unknown;
   panes?: unknown;
+  /** Answer every herdr route with 502, as a restarting daemon does. */
+  daemonDown?: boolean;
   /** Report the panes' directories as absent, as a remote host's would be. */
   pathMissing?: boolean;
   /** Extra panes to report for the open tab, to exercise a split. */
@@ -53,6 +55,16 @@ async function installBridge(page: Page, options: FixtureOptions = {}): Promise<
   });
   const workspaces = options.workspaces ?? WORKSPACES;
   const panes = options.panes ?? PANES;
+  if (options.daemonDown === true) {
+    await page.route("**/api/v1/herdr/*", (route) =>
+      route.fulfill({
+        status: 502,
+        contentType: "application/json",
+        body: JSON.stringify({ error: { code: "herdr_unreachable", message: "daemon restarting" } }),
+      }),
+    );
+    return;
+  }
   await page.route("**/api/v1/herdr/status", (route) =>
     route.fulfill({
       status: 200,
@@ -914,6 +926,132 @@ test("closing a pane asks first, because it ends what runs there", async ({ page
   await close.click({ force: true });
   const closes = (page as Page & { closes?: string[] }).closes ?? [];
   await expect.poll(() => closes.length).toBe(1);
+});
+
+test("a daemon restart keeps the view instead of blanking it", async ({ page }) => {
+  await installBridge(page);
+  await page.goto("/");
+  await page.locator('.side--spaces [data-workspace-id="w1"]').click();
+  await expect(page.locator(".tile")).toHaveCount(1);
+  await expect(page.locator(".offline")).toHaveCount(0);
+
+  // herdr restarting is not herdr empty. The console says so and holds on to
+  // what it last knew, rather than showing a console with nothing in it.
+  await page.route("**/api/v1/herdr/*", (route) =>
+    route.fulfill({
+      status: 502,
+      contentType: "application/json",
+      body: JSON.stringify({ error: { code: "herdr_unreachable", message: "daemon restarting" } }),
+    }),
+  );
+  await expect(page.locator(".offline")).toBeVisible({ timeout: 8000 });
+  await expect(page.locator(".offline")).toContainText("not reachable");
+  await expect(page.locator('.side--spaces [data-workspace-id="w1"]')).toHaveCount(1);
+  await expect(page.locator(".tile")).toHaveCount(1);
+  // A 502 from the bridge means the console cannot reach it at all, which the
+  // cluster words as "not reachable"; a reachable bridge with a dead daemon
+  // says "daemon down".
+  await expect(page.locator("#herdr-host-open")).toContainText("not reachable");
+});
+
+test("the daemon state opens a panel that can install or update herdr", async ({ page }) => {
+  const actions: string[] = [];
+  await installBridge(page);
+  await page.route("**/api/v1/herdr/host", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        installed: true,
+        binary: "/Users/op/.local/bin/herdr",
+        clientVersion: "0.9.0",
+        channel: "stable",
+        serverRunning: true,
+        serverVersion: "0.9.0",
+        serverStatus: "running",
+        compatible: true,
+        socket: "/Users/op/.config/herdr/herdr.sock",
+        restartNeeded: false,
+        serverBinaryStale: false,
+        installMethod: "direct",
+        latestVersion: "0.9.5",
+        updateAvailable: true,
+        canUpdate: true,
+        error: "",
+      }),
+    }),
+  );
+  // Only the two actions, so the path probe for /host/stat is not counted.
+  for (const action of ["update", "install"]) {
+    await page.route(`**/api/v1/herdr/host/${action}`, async (route) => {
+      actions.push(new URL(route.request().url()).pathname);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true, command: "herdr update", output: "updated to 0.9.5", exitCode: 0 }),
+      });
+    });
+  }
+  await page.goto("/");
+
+  await page.locator("#herdr-host-open").click();
+  const panel = page.locator(".hostpanel");
+  await expect(panel).toBeVisible();
+  await expect(page.locator("#herdr-host-installed")).toContainText("/Users/op/.local/bin/herdr");
+  await expect(panel).toContainText("latest 0.9.5");
+
+  // A newer release turns the action into what it will do.
+  const update = page.locator("#herdr-host-update");
+  await expect(update).toContainText("update to 0.9.5");
+  page.once("dialog", (dialog) => void dialog.accept());
+  await update.click();
+  await expect.poll(() => actions).toEqual(["/api/v1/herdr/host/update"]);
+  await expect(page.locator("#herdr-host-output")).toContainText("updated to 0.9.5");
+});
+
+test("a missing herdr offers install, and a nix copy is left to nix", async ({ page }) => {
+  await installBridge(page);
+  let host: Record<string, unknown> = {
+    installed: false,
+    binary: "",
+    clientVersion: "",
+    channel: "",
+    serverRunning: false,
+    serverVersion: "",
+    serverStatus: "",
+    compatible: false,
+    socket: "/Users/op/.config/herdr/herdr.sock",
+    restartNeeded: false,
+    serverBinaryStale: false,
+    installMethod: "unknown",
+    latestVersion: "0.9.5",
+    updateAvailable: false,
+    canUpdate: false,
+    error: "herdr is not installed on this host",
+  };
+  await page.route("**/api/v1/herdr/host", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(host) }),
+  );
+  await page.route("**/api/v1/herdr/host/*", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, command: "sh -c curl …", output: "installed 0.9.5", exitCode: 0 }),
+    }),
+  );
+  await page.goto("/");
+  await page.locator("#herdr-host-open").click();
+
+  await expect(page.locator("#herdr-host-installed")).toContainText("not on this host");
+  await expect(page.locator("#herdr-host-install")).toBeVisible();
+  await expect(page.locator("#herdr-host-update")).toHaveCount(0);
+
+  // A copy from nix is updated by nix, so no button is offered for it.
+  host = { ...host, installed: true, binary: "/nix/store/x/bin/herdr", installMethod: "nix", canUpdate: false };
+  await page.locator("#herdr-host-refresh").click();
+  await expect(page.locator("#herdr-host-install")).toHaveCount(0);
+  await expect(page.locator("#herdr-host-update")).toHaveCount(0);
+  await expect(page.locator(".hostpanel")).toContainText("update it with that package manager");
 });
 
 /* ----------------------------------------------------------------- prompt */

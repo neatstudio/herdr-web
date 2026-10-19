@@ -5,9 +5,11 @@ type Props = {
   status: HerdrStatus | null;
   choice: ThemeChoice;
   onChoice: (choice: ThemeChoice) => void;
+  /** Opens the panel that shows what herdr is and can install or update it. */
+  onHost: () => void;
 };
 
-export function Masthead({ status, choice, onChoice }: Props) {
+export function Masthead({ status, choice, onChoice, onHost }: Props) {
   const live = status?.status === "ok";
   const version = status?.version ?? "—";
   const protocol = status?.protocol;
@@ -22,9 +24,17 @@ export function Masthead({ status, choice, onChoice }: Props) {
 
       <div className="masthead__spacer" />
 
-      <div className="cluster">
+      {/* The daemon state is also the way in to installing or updating herdr,
+          which matters most when the daemon is exactly what is missing. */}
+      <button
+        type="button"
+        id="herdr-host-open"
+        className="cluster cluster--button"
+        title="herdr status, install and update"
+        onClick={onHost}
+      >
         <span className="signal" data-tone={live ? "working" : "blocked"} aria-hidden />
-        <span>{live ? "daemon live" : (status?.status ?? "connecting")}</span>
+        <span>{live ? "daemon live" : status === null ? "not reachable" : "daemon down"}</span>
         <span className="cluster__sep" aria-hidden />
         <span>v{version}</span>
         {protocol !== undefined && (
@@ -36,7 +46,7 @@ export function Masthead({ status, choice, onChoice }: Props) {
             </span>
           </>
         )}
-      </div>
+      </button>
 
       <div className="switch" role="group" aria-label="Theme">
         {THEME_CHOICES.map((item) => (

@@ -3,6 +3,7 @@ import { PaneTabs } from "@/components/PaneTabs";
 import { PickerSheet } from "@/components/PickerSheet";
 import { Sidebar } from "@/components/Sidebar";
 import { FileViewer } from "@/components/FileViewer";
+import { HerdrPanel } from "@/components/HerdrPanel";
 import { TabStage } from "@/components/TabStage";
 import { Masthead } from "@/components/Masthead";
 import { TargetMenu, type MenuTarget } from "@/components/TargetMenu";
@@ -86,6 +87,9 @@ export function App() {
   const [layout, setLayout] = useState<PaneLayout | null>(null);
   // The path whose preview is open, if any.
   const [openPath, setOpenPath] = useState<string | null>(null);
+  // True while herdr cannot be reached; the view keeps its last known state.
+  const [offline, setOffline] = useState(false);
+  const [hostPanel, setHostPanel] = useState(false);
   const [narrow, setNarrow] = useState(false);
   // Panes whose working directory is not on this host: herdr can drive panes on
   // another machine over SSH, and a preview there cannot work from here.
@@ -123,10 +127,17 @@ export function App() {
     {
       const [nextStatus, nextWorkspaces, nextPanes] = await Promise.all([
         fetchStatus(),
-        fetchWorkspaces().catch(() => [] as HerdrWorkspace[]),
-        fetchAllPanes().catch(() => [] as HerdrPane[]),
+        fetchWorkspaces().catch(() => null),
+        fetchAllPanes().catch(() => null),
       ]);
+      // herdr restarting is not herdr empty. A failed poll keeps the last known
+      // view, so the console does not go blank while the daemon comes back; the
+      // offline strip says what is going on.
+      setOffline(nextStatus === null || nextWorkspaces === null || nextPanes === null);
       setStatus(nextStatus);
+      if (nextWorkspaces === null || nextPanes === null) {
+        return;
+      }
       setWorkspaces(nextWorkspaces);
       setPanes(nextPanes);
       setWorkspaceId((current) => {
@@ -300,7 +311,8 @@ export function App() {
 
   return (
     <div className="shell">
-      <Masthead status={status} choice={choice} onChoice={chooseTheme} />
+      <Masthead
+        onHost={() => setHostPanel(true)} status={status} choice={choice} onChoice={chooseTheme} />
 
       <div className="body">
         <Sidebar
@@ -315,6 +327,20 @@ export function App() {
         />
 
         <main className="stage">
+          {offline && (
+            <div className="offline" role="status">
+              <span className="signal" data-tone="blocked" aria-hidden />
+              herdr is not reachable — showing the last known state, and this clears itself
+              when the daemon is back
+              <button
+                type="button"
+                className="offline__action"
+                onClick={() => setHostPanel(true)}
+              >
+                herdr status
+              </button>
+            </div>
+          )}
           {/* Identity lives in the tab strip directly below; this line answers
               "where am I and what state", so it does not repeat the pane name. */}
           <div className="stage__head">
@@ -444,6 +470,8 @@ export function App() {
       />
 
       <FileViewer path={openPath} onClose={() => setOpenPath(null)} />
+
+      <HerdrPanel open={hostPanel} onClose={() => setHostPanel(false)} />
 
       <TargetMenu
         target={menu}

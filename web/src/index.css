@@ -1366,6 +1366,204 @@ body::before {
   color: var(--paper);
 }
 
+/* herdr restarting is not herdr empty: the view keeps its last state and this
+   strip says why it is not moving. */
+.offline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 5px var(--pad);
+  border-bottom: var(--rule-w) solid var(--rule-strong);
+  background: var(--raised);
+  font-family: var(--font-label);
+  font-size: var(--step-micro);
+  letter-spacing: 0.06em;
+  color: var(--ink-dim);
+}
+
+.offline__action {
+  margin-left: auto;
+  padding: 1px 7px 0;
+  border: var(--rule-w) solid var(--rule-strong);
+  font-size: var(--step-micro);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.offline__action:hover {
+  color: var(--ink);
+  background: var(--rule);
+}
+
+/* The daemon state doubles as the way in to the herdr panel. */
+.cluster--button {
+  padding: 2px 7px 1px;
+  border: var(--rule-w) solid transparent;
+  text-align: left;
+}
+
+.cluster--button:hover {
+  border-color: var(--rule-strong);
+  color: var(--ink);
+}
+
+/* --------------------------------------------------------- herdr panel */
+
+.hostpanel {
+  position: fixed;
+  top: 46px;
+  right: var(--pad);
+  z-index: 45;
+  width: min(38rem, 92vw);
+  max-height: calc(100vh - 90px);
+  display: flex;
+  flex-direction: column;
+  border: var(--rule-w) solid var(--rule-strong);
+  background: var(--paper);
+  box-shadow: 0 18px 40px rgb(0 0 0 / 28%);
+}
+
+.hostpanel__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-bottom: var(--rule-w) solid var(--rule-strong);
+  background: var(--surface);
+}
+
+.hostpanel__title {
+  font-family: var(--font-label);
+  font-size: var(--step-label);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.hostpanel__button,
+.hostpanel__act {
+  padding: 3px 9px 2px;
+  border: var(--rule-w) solid var(--rule-strong);
+  font-family: var(--font-label);
+  font-size: var(--step-micro);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.hostpanel__button:hover:not(:disabled),
+.hostpanel__act:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--rule);
+}
+
+.hostpanel__act[data-available="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.hostpanel__close {
+  margin-left: auto;
+  padding: 0 6px;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--ink-dim);
+}
+
+.hostpanel__close:hover {
+  color: var(--ink);
+}
+
+.hostpanel__body {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px;
+}
+
+.hostpanel__facts {
+  display: grid;
+  grid-template-columns: 8rem minmax(0, 1fr);
+  gap: 4px 10px;
+  margin: 0 0 10px;
+  font-size: var(--step-name);
+}
+
+.hostpanel__facts dt {
+  font-family: var(--font-label);
+  font-size: var(--step-micro);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.hostpanel__facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+}
+
+.hostpanel__mono {
+  font-family: var(--font-mono);
+  font-size: var(--step-micro);
+}
+
+.hostpanel__dim {
+  color: var(--ink-faint);
+}
+
+.hostpanel__warn {
+  color: var(--blocked);
+}
+
+.hostpanel__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
+
+.hostpanel__note {
+  margin: 6px 0 0;
+  font-size: var(--step-name);
+  color: var(--ink-dim);
+}
+
+.hostpanel__note--bad {
+  color: var(--blocked);
+}
+
+.hostpanel__result {
+  margin-top: 10px;
+  border-top: var(--rule-w) solid var(--rule);
+  padding-top: 8px;
+}
+
+.hostpanel__result[data-ok="false"] .hostpanel__command {
+  color: var(--blocked);
+}
+
+.hostpanel__command {
+  font-family: var(--font-mono);
+  font-size: var(--step-micro);
+  color: var(--ink-dim);
+}
+
+.hostpanel__output {
+  margin: 6px 0 0;
+  max-height: 16rem;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--step-micro);
+  line-height: normal;
+  white-space: pre-wrap;
+  color: var(--ink);
+}
+
 /* --------------------------------------------------------------- paths */
 
 /* A path in the output opens its preview, so it has to look clickable without
@@ -1747,6 +1945,13 @@ body::before {
   .viewer {
     width: 100%;
     border-left: 0;
+  }
+
+  .hostpanel {
+    top: 40px;
+    right: 0;
+    left: 0;
+    width: auto;
   }
 
   .cluster__socket,
