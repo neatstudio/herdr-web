@@ -316,6 +316,38 @@ export function parsePaneLayout(raw: unknown): PaneLayout | null {
 
 export type SplitDirection = "left" | "right" | "up" | "down";
 
+/** POST and read the JSON body, for the calls that answer with something. */
+async function postJSONResult(path: string, body: unknown): Promise<unknown> {
+  try {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return response.ok ? await response.json() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Split a pane, which is how a new pane is made; answers with its id. */
+export async function splitPane(
+  paneId: string,
+  direction: "right" | "down",
+): Promise<string | null> {
+  const raw = await postJSONResult(`${panePath(paneId)}/split`, { direction });
+  if (typeof raw !== "object" || raw === null) {
+    return null;
+  }
+  const value = raw as { paneId?: unknown };
+  return typeof value.paneId === "string" && value.paneId !== "" ? value.paneId : null;
+}
+
+/** Close a pane and whatever is running in it. */
+export async function closePane(paneId: string): Promise<boolean> {
+  return postJSON(`${panePath(paneId)}/close`, {});
+}
+
 /**
  * Move one split edge. herdr ignores small amounts and moves in its own
  * increments, clamped so no pane falls below its minimum, so the caller

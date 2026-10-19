@@ -458,6 +458,56 @@ func TestPaneResizePassesTheDirectionThrough(t *testing.T) {
 	}
 }
 
+func TestPaneSplitAnswersWithTheNewPane(t *testing.T) {
+	socket, state, closeFn := startFakeHerdr(t)
+	defer closeFn()
+	handler := newTestHandler(t, socket)
+
+	ok := do(t, handler, http.MethodPost, "/api/v1/herdr/panes/w1:p1/split", `{"direction":"right"}`)
+	if ok.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", ok.Code, ok.Body.String())
+	}
+	body := decodeMap(t, ok)
+	if body["paneId"] != "w1:p9" {
+		t.Fatalf("the client needs the new pane id, got %v", body["paneId"])
+	}
+	state.waitForCalls(t, 1)
+	state.mu.Lock()
+	split := append([]string(nil), state.split...)
+	state.mu.Unlock()
+	if len(split) != 1 || split[0] != "right" {
+		t.Fatalf("split=%q", split)
+	}
+
+	// Only the two directions herdr accepts are passed on.
+	for _, body := range []string{`{"direction":"left"}`, `{"direction":""}`, `{}`} {
+		if got := do(t, handler, http.MethodPost, "/api/v1/herdr/panes/w1:p1/split", body); got.Code != http.StatusBadRequest {
+			t.Fatalf("body=%s status=%d", body, got.Code)
+		}
+	}
+}
+
+func TestPaneCloseNamesThePaneItClosed(t *testing.T) {
+	socket, state, closeFn := startFakeHerdr(t)
+	defer closeFn()
+	handler := newTestHandler(t, socket)
+
+	ok := do(t, handler, http.MethodPost, "/api/v1/herdr/panes/w1:p2/close", "")
+	if ok.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", ok.Code, ok.Body.String())
+	}
+	state.waitForCalls(t, 1)
+	state.mu.Lock()
+	closed := append([]string(nil), state.closed...)
+	state.mu.Unlock()
+	if len(closed) != 1 || closed[0] != "w1:p2" {
+		t.Fatalf("closed=%q", closed)
+	}
+	if method := do(t, handler, http.MethodGet, "/api/v1/herdr/panes/w1:p2/close", ""); method.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("GET status=%d", method.Code)
+	}
+}
+
 func TestDaemonErrorBecomesBadGateway(t *testing.T) {
 	socket, state, closeFn := startFakeHerdr(t)
 	defer closeFn()

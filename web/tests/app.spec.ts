@@ -43,7 +43,14 @@ type FixtureOptions = {
 
 async function installBridge(page: Page, options: FixtureOptions = {}): Promise<void> {
   const resizes: string[] = [];
-  (page as Page & { resizes?: string[] }).resizes = resizes;
+  const splits: string[] = [];
+  const closes: string[] = [];
+  const created: unknown[] = [];
+  Object.assign(page as Page & { resizes?: string[]; splits?: string[]; closes?: string[] }, {
+    resizes,
+    splits,
+    closes,
+  });
   const workspaces = options.workspaces ?? WORKSPACES;
   const panes = options.panes ?? PANES;
   await page.route("**/api/v1/herdr/status", (route) =>
@@ -65,8 +72,14 @@ async function installBridge(page: Page, options: FixtureOptions = {}): Promise<
   );
   // The fleet poll fetches every pane in one call, so the ledger can be
   // grouped by pane status rather than by workspace.
+  // A split really does add a pane to herdr, so later polls must include it;
+  // otherwise the selection would fall back to the default and hide a bug.
   await page.route("**/api/v1/herdr/panes", (route) =>
-    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ panes }) }),
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ panes: [...(panes as unknown[]), ...created] }),
+    }),
   );
   await page.route("**/api/v1/herdr/workspaces/*", (route) => {
     const id = decodeURIComponent(new URL(route.request().url()).pathname.split("/").pop() ?? "");
@@ -88,6 +101,30 @@ async function installBridge(page: Page, options: FixtureOptions = {}): Promise<
       body: JSON.stringify({ path: "/tmp", exists: options.pathMissing !== true, isDir: true }),
     }),
   );
+  await page.route("**/api/v1/herdr/panes/*/split", async (route) => {
+    splits.push(route.request().postData() ?? "");
+    const source = decodeURIComponent(new URL(route.request().url()).pathname.split("/").at(-2) ?? "");
+    const parent = (panes as { id: string; workspaceId: string; tabId: string }[]).find(
+      (item) => item.id === source,
+    );
+    created.push({
+      id: "w1:p9",
+      workspaceId: parent?.workspaceId ?? "w1",
+      tabId: parent?.tabId ?? "w1:t1",
+      focused: false,
+      cwd: "/tmp/new",
+      agentStatus: "unknown",
+    });
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, paneId: "w1:p9" }),
+    });
+  });
+  await page.route("**/api/v1/herdr/panes/*/close", async (route) => {
+    closes.push(route.request().postData() ?? route.request().url());
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+  });
   await page.route("**/api/v1/herdr/panes/*/resize", async (route) => {
     resizes.push(route.request().postData() ?? "");
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
@@ -725,6 +762,66 @@ test("a path that is not on this host says so instead of showing nothing", async
   await expect(page.locator(".viewer__note")).toContainText("not on this host");
   await page.locator("#herdr-viewer-close").click();
   await expect(page.locator(".viewer")).toHaveCount(0);
+});
+
+test("the strip's + makes a new pane by splitting the open one", async ({ page }) => {
+  await installBridge(page);
+  await page.goto("/");
+
+  // Sideways where there is room; stacked on a phone, where side by side would
+  // leave neither pane readable.
+  await page.locator("#herdr-new-pane").click();
+  const sent = (page as Page & { splits?: string[] }).splits ?? [];
+  await expect.poll(() => sent).toEqual([JSON.stringify({ direction: "right" })]);
+  // The new pane becomes the one being typed at.
+  await expect(page.locator("#herdr-input")).toHaveAttribute("placeholder", "send to w1:p9");
+});
+
+test("a phone splits downwards", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 780 });
+  await installBridge(page);
+  await page.goto("/");
+  await page.locator("#herdr-new-pane").click();
+  const sent = (page as Page & { splits?: string[] }).splits ?? [];
+  await expect.poll(() => sent).toEqual([JSON.stringify({ direction: "down" })]);
+});
+
+test("a split offers both directions and a close from the pane menu", async ({ page }) => {
+  await installBridge(page);
+  await page.goto("/");
+  await page.locator('.side--agents .row[data-pane-id="w1:p2"]').click({ button: "right" });
+
+  const menu = page.locator('[role="menu"]');
+  await expect(menu).toContainText("Split right");
+  await expect(menu).toContainText("Split down");
+  await expect(menu).toContainText("Close pane");
+
+  await page.getByRole("menuitem", { name: /Split down/ }).click();
+  const sent = (page as Page & { splits?: string[] }).splits ?? [];
+  await expect.poll(() => sent).toEqual([JSON.stringify({ direction: "down" })]);
+});
+
+test("closing a pane asks first, because it ends what runs there", async ({ page }) => {
+  // Both panes of the tab are listed, so the pair stays a pair whichever of
+  // them is the active one; a one-sided mock would collapse to a single tile
+  // as soon as the click activated the other pane.
+  await installBridge(page, { splitWith: ["w1:p1", "w1:p2"] });
+  await page.goto("/");
+  await page.locator('.side--spaces [data-workspace-id="w1"]').click();
+  await expect(page.locator(".tile")).toHaveCount(2);
+
+  const close = page.locator('.tile[data-pane-id="w1:p2"] .tile__close');
+  // Refusing the prompt closes nothing.
+  page.once("dialog", (dialog) => void dialog.dismiss());
+  await close.click({ force: true });
+  await page.waitForTimeout(200);
+  expect((page as Page & { closes?: string[] }).closes).toEqual([]);
+
+  // Accepting it closes that pane.
+  page.once("dialog", (dialog) => void dialog.accept());
+  await close.click({ force: true });
+  const closes = (page as Page & { closes?: string[] }).closes ?? [];
+  await expect.poll(() => closes.length).toBe(1);
 });
 
 /* ----------------------------------------------------------------- prompt */

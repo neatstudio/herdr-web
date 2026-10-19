@@ -22,6 +22,10 @@ type Props = {
   onClose: () => void;
   /** Called after a successful rename so the caller can refresh at once. */
   onRenamed?: () => void;
+  /** Split the pane: how a new pane is made. */
+  onSplit?: (paneId: string, direction: "right" | "down") => void;
+  /** Close the pane and whatever is running in it. */
+  onClosePane?: (paneId: string) => void;
 };
 
 async function copyText(text: string): Promise<void> {
@@ -37,7 +41,15 @@ async function copyText(text: string): Promise<void> {
   }
 }
 
-export function TargetMenu({ target, activePaneId, onSelect, onClose, onRenamed }: Props) {
+export function TargetMenu({
+  target,
+  activePaneId,
+  onSelect,
+  onClose,
+  onRenamed,
+  onSplit,
+  onClosePane,
+}: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [renaming, setRenaming] = useState(false);
@@ -129,11 +141,30 @@ export function TargetMenu({ target, activePaneId, onSelect, onClose, onRenamed 
   if (kind === "pane" && target.name !== undefined && target.name !== "") {
     items.push({ label: "Clear name", hint: "pane id", run: () => void commit(null) });
   }
+  if (kind === "pane" && onSplit !== undefined) {
+    items.push(
+      { label: "Split right", hint: "new pane", run: () => onSplit(target.id, "right") },
+      { label: "Split down", hint: "new pane", run: () => onSplit(target.id, "down") },
+    );
+  }
   items.push({
     label: kind === "pane" ? "Copy pane id" : "Copy workspace id",
     hint: target.id,
     run: () => void copyText(target.id),
   });
+
+  if (kind === "pane" && onClosePane !== undefined) {
+    items.push({
+      label: "Close pane",
+      hint: "ends it",
+      run: () => {
+        // Closing ends the process in the pane, so it asks first.
+        if (window.confirm(`Close ${target.id} and whatever is running in it?`)) {
+          onClosePane(target.id);
+        }
+      },
+    });
+  }
 
   const width = renaming ? 300 : 240;
   const itemHeight = 34;

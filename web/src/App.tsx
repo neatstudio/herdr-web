@@ -8,10 +8,12 @@ import { Masthead } from "@/components/Masthead";
 import { TargetMenu, type MenuTarget } from "@/components/TargetMenu";
 import { PromptBar } from "@/components/PromptBar";
 import {
+  closePane,
   fetchAllPanes,
   fetchLayout,
   hostHas,
   resizePane,
+  splitPane,
   fetchStatus,
   fetchWorkspaces,
   type HerdrPane,
@@ -40,6 +42,11 @@ import {
 
 /** One poll drives the whole fleet: status, workspaces and every pane. */
 const FLEET_POLL_MS = 3000;
+
+/** The socket path without a trailing separator, which reads as a directory. */
+function trimPath(path: string): string {
+  return path.replace(/\/+$/, "");
+}
 
 function paneTarget(pane: HerdrPane | AgentPane, x: number, y: number): MenuTarget {
   return {
@@ -228,6 +235,27 @@ export function App() {
     setPicker(false);
   }, []);
 
+  const newPane = useCallback(async (): Promise<void> => {
+    if (paneId === null) {
+      return;
+    }
+    const created = await splitPane(paneId, narrow ? "down" : "right");
+    if (created !== null) {
+      // Select what was just made, so the next thing typed lands in it.
+      setPaneId(created);
+      setLayout(await fetchLayout(created));
+    }
+  }, [paneId, narrow]);
+
+  const closeActivePane = useCallback(async (target: string): Promise<void> => {
+    if (!(await closePane(target))) {
+      return;
+    }
+    setMenu(null);
+    // herdr has already removed it; the next poll fills in what is left.
+    await loadFleet();
+  }, [loadFleet]);
+
   const openWorkspace = useCallback((id: string) => {
     setWorkspaceId(id);
     // Open the workspace's most urgent pane so the transcript is never blank.
@@ -313,6 +341,8 @@ export function App() {
             workspaceName={activeWorkspace?.name ?? ""}
             activeId={paneId}
             onSelect={openPaneId}
+            onNewPane={() => void newPane()}
+            canSplit={paneId !== null}
             onMenu={(id, x, y) => {
               const pane = panes.find((candidate) => candidate.id === id);
               if (pane !== undefined) {
@@ -341,6 +371,7 @@ export function App() {
               remote={remotePanes}
               layout={layout}
               onOpenPath={setOpenPath}
+              onClosePane={(id) => void closeActivePane(id)}
             />
           ) : (
             <div className="scope__idle">
@@ -362,8 +393,10 @@ export function App() {
         <span className="cluster__sep" aria-hidden />
         <span>poll {Math.round(FLEET_POLL_MS / 1000)}s</span>
         <span className="statusline__spacer" />
+        {/* The socket is named here and nowhere else: it is the same string in
+            both places, and the footer has room for all of it. */}
         <span className="statusline__path" title={status?.socket ?? ""}>
-          {status?.socket ?? "socket unknown"}
+          {status?.socket !== undefined && status.socket !== "" ? trimPath(status.socket) : "socket unknown"}
         </span>
       </footer>
 
@@ -386,6 +419,16 @@ export function App() {
         onSelect={openPaneId}
         onClose={() => setMenu(null)}
         onRenamed={() => void loadFleet()}
+        onSplit={(id, direction) => {
+          setMenu(null);
+          void splitPane(id, direction).then((created) => {
+            if (created !== null) {
+              setPaneId(created);
+              void fetchLayout(created).then(setLayout);
+            }
+          });
+        }}
+        onClosePane={(id) => void closeActivePane(id)}
       />
     </div>
   );

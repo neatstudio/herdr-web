@@ -38,6 +38,9 @@ type fakeHerdr struct {
 	renamedWorkspace []string
 	// resized records every pane.resize direction.
 	resized []string
+	// split records every pane.split direction, closed every pane.close id.
+	split  []string
+	closed []string
 }
 
 func startFakeHerdr(t *testing.T) (socket string, state *fakeHerdr, closeFn func()) {
@@ -137,6 +140,14 @@ func serveFake(conn net.Conn, state *fakeHerdr) {
 			state.sentText = append(state.sentText, text)
 			state.readText += text
 		}
+		result = map[string]any{"type": "ok"}
+	case "pane.split":
+		direction, _ := req.Params["direction"].(string)
+		state.split = append(state.split, direction)
+		result = map[string]any{"type": "pane_info", "pane": map[string]any{"pane_id": "w1:p9"}}
+	case "pane.close":
+		paneID, _ := req.Params["pane_id"].(string)
+		state.closed = append(state.closed, paneID)
 		result = map[string]any{"type": "ok"}
 	case "pane.resize":
 		direction, _ := req.Params["direction"].(string)

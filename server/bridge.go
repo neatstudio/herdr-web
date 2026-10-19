@@ -427,6 +427,66 @@ func (s *Server) handlePaneInput(w http.ResponseWriter, r *http.Request, paneID 
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "paneId": paneID})
 }
 
+// handlePaneSplit creates a pane by splitting one. herdr decides where the new
+// pane goes and answers with its id, which the client selects so the next thing
+// typed lands in the pane that was just made.
+func (s *Server) handlePaneSplit(w http.ResponseWriter, r *http.Request, paneID string) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, "POST")
+		return
+	}
+	paneID = strings.Trim(strings.TrimSpace(paneID), "/")
+	if paneID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "pane id is required")
+		return
+	}
+	var request struct {
+		Direction string   `json:"direction"`
+		Ratio     *float64 `json:"ratio"`
+	}
+	if !decodeBody(w, r, &request) {
+		return
+	}
+	switch request.Direction {
+	case "right", "down":
+	default:
+		writeError(w, http.StatusBadRequest, "invalid_request", "direction must be right or down")
+		return
+	}
+	params := map[string]any{"pane_id": paneID, "direction": request.Direction}
+	if request.Ratio != nil {
+		params["ratio"] = *request.Ratio
+	}
+	var result struct {
+		Pane struct {
+			PaneID string `json:"pane_id"`
+		} `json:"pane"`
+	}
+	if err := s.client().Call(r.Context(), "pane.split", params, &result); err != nil {
+		writeBadGateway(w, "herdr_split_failed", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "paneId": result.Pane.PaneID})
+}
+
+// handlePaneClose closes one pane and everything running in it.
+func (s *Server) handlePaneClose(w http.ResponseWriter, r *http.Request, paneID string) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, "POST")
+		return
+	}
+	paneID = strings.Trim(strings.TrimSpace(paneID), "/")
+	if paneID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "pane id is required")
+		return
+	}
+	if err := s.client().Call(r.Context(), "pane.close", map[string]any{"pane_id": paneID}, nil); err != nil {
+		writeBadGateway(w, "herdr_close_failed", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "paneId": paneID})
+}
+
 // handlePaneResize moves one split edge. herdr owns the step size: it ignores
 // small amounts and moves in its own increments, clamped so no pane falls below
 // its minimum, so the client asks for a direction and then re-reads the layout
@@ -646,6 +706,10 @@ func (s *Server) Handler() http.Handler {
 			s.handlePaneInput(w, r, strings.TrimSuffix(rest, "/input"))
 		case strings.HasSuffix(rest, "/keys"):
 			s.handlePaneKeys(w, r, strings.TrimSuffix(rest, "/keys"))
+		case strings.HasSuffix(rest, "/split"):
+			s.handlePaneSplit(w, r, strings.TrimSuffix(rest, "/split"))
+		case strings.HasSuffix(rest, "/close"):
+			s.handlePaneClose(w, r, strings.TrimSuffix(rest, "/close"))
 		case strings.HasSuffix(rest, "/resize"):
 			s.handlePaneResize(w, r, strings.TrimSuffix(rest, "/resize"))
 		case strings.HasSuffix(rest, "/layout"):

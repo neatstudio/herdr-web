@@ -9,6 +9,9 @@ type Props = {
   activeId: string | null;
   onSelect: (id: string) => void;
   onMenu: (paneId: string, x: number, y: number) => void;
+  /** Split the active pane: how a new pane is made. */
+  onNewPane: () => void;
+  canSplit: boolean;
 };
 
 /**
@@ -16,7 +19,7 @@ type Props = {
  * pane's own name (label, then title, then terminal title) with the id beside
  * it, and doubles as the right-click and long-press target for the pane menu.
  */
-export function PaneTabs({ panes, workspaceName, activeId, onSelect, onMenu }: Props) {
+export function PaneTabs({ panes, workspaceName, activeId, onSelect, onMenu, onNewPane, canSplit }: Props) {
   if (panes.length === 0) {
     return null;
   }
@@ -55,6 +58,18 @@ export function PaneTabs({ panes, workspaceName, activeId, onSelect, onMenu }: P
           </button>
         );
       })}
+      {canSplit && (
+        <button
+          type="button"
+          id="herdr-new-pane"
+          className="tab tab--new"
+          title="new pane: split this one"
+          aria-label="New pane"
+          onClick={onNewPane}
+        >
+          +
+        </button>
+      )}
     </div>
   );
 }

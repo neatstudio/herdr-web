@@ -80,6 +80,7 @@ type Props = {
   remote: Set<string>;
   /** A path in a transcript was clicked. */
   onOpenPath: (path: string) => void;
+  onClosePane: (paneId: string) => void;
 };
 
 export function TabStage({
@@ -97,6 +98,7 @@ export function TabStage({
   onResize,
   remote,
   onOpenPath,
+  onClosePane,
 }: Props) {
   const names = new Map(workspaces.map((workspace) => [workspace.id, workspace.name]));
 
@@ -168,6 +170,23 @@ export function TabStage({
               )}
               <span className="tile__spacer" />
               <span className="tile__status">{toneOf(pane.agentStatus)}</span>
+              {/* Closing is per pane, so it belongs on the pane's own header.
+                  A single-pane tab has no header; the menu covers that case. */}
+              <button
+                type="button"
+                className="tile__close"
+                data-close-pane={tile.id}
+                title={`close ${tile.id}`}
+                aria-label={`Close ${tile.id}`}
+                onClick={() => {
+                  // Closing ends the process in the pane, so it asks first.
+                  if (window.confirm(`Close ${tile.id} and whatever is running in it?`)) {
+                    onClosePane(tile.id);
+                  }
+                }}
+              >
+                ×
+              </button>
             </header>
             )}
             {active ? (

@@ -1,6 +1,5 @@
 import type { HerdrStatus } from "@/lib/herdr";
 import { THEME_CHOICES, type ThemeChoice } from "@/lib/theme";
-import { tailPath } from "@/lib/fleet";
 
 type Props = {
   status: HerdrStatus | null;
@@ -34,14 +33,6 @@ export function Masthead({ status, choice, onChoice }: Props) {
             <span title={status?.protocolTested === false ? "protocol outside the tested range" : ""}>
               proto {protocol}
               {status?.protocolTested === false ? " !" : ""}
-            </span>
-          </>
-        )}
-        {status?.socket !== undefined && status.socket !== "" && (
-          <>
-            <span className="cluster__sep" aria-hidden />
-            <span className="cluster__socket" title={status.socket}>
-              {tailPath(status.socket, 2)}
             </span>
           </>
         )}
