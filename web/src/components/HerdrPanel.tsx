@@ -119,6 +119,21 @@ export function HerdrPanel({ open, onClose, consoleVersion }: Props) {
             </dl>
 
             {host.error !== "" && <p className="hostpanel__note hostpanel__note--bad">{host.error}</p>}
+            {host.installed && !host.serverRunning && (
+              // An update stops an old server on purpose rather than killing the
+              // sessions in it, so a stopped daemon is a step, not a fault: say
+              // what to run next instead of leaving it at "not running".
+              <p className="hostpanel__note" id="herdr-daemon-hint">
+                no daemon is running here. Start one with <code>herdr</code>, or finish an update
+                that stopped an old server by running <code>herdr update</code> again.
+              </p>
+            )}
+            {host.serverRunning && (host.restartNeeded || host.serverBinaryStale) && (
+              <p className="hostpanel__note" id="herdr-restart-hint">
+                the running server is still on an older build. Stop it with <code>herdr server
+                stop</code> (that ends its panes) and start herdr again to pick up this build.
+              </p>
+            )}
             {host.installed && host.latestVersion === "" && (
               // No network is a normal state for a machine behind a private
               // link: say what still works instead of leaving a silent gap.

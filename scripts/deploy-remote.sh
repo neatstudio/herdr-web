@@ -32,6 +32,11 @@ binary_for() {
   esac
   local candidate="$root/dist/release/herdr-web-$target_os-$target_arch"
   if [[ -x "$candidate" ]]; then
+    # A release artifact older than this checkout ships an old frontend without
+    # saying so, which is worse than refusing: warn, then let the operator decide.
+    if [[ "$candidate" -ot "$BASH_SOURCE" || "$candidate" -ot "$root/install.sh" ]]; then
+      say "  warning: $candidate is older than this checkout; run 'make release-archives'"
+    fi
     printf '%s' "$candidate"
     return 0
   fi
@@ -267,7 +272,10 @@ StandardError=append:%h/.local/share/herdr-web/herdr-web.log
 WantedBy=default.target
 UNIT
 systemctl --user daemon-reload 2>/dev/null || true
-systemctl --user enable --now $label.service 2>/dev/null || true
+# enable --now leaves an already-running unit alone, which would keep the old
+# binary in memory after the file was replaced. Restart, always.
+systemctl --user enable $label.service 2>/dev/null || true
+systemctl --user restart $label.service 2>/dev/null || systemctl --user start $label.service 2>/dev/null || true
 loginctl enable-linger \$(id -un) 2>/dev/null || true" || return 1
   say "  service registered on $host (systemd user unit)"
 }

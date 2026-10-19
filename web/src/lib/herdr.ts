@@ -106,6 +106,9 @@ export function parseHerdrStatus(payload: unknown): HerdrStatus {
     version: optionalString(record.version),
     protocol: asNumber(record.protocol),
     protocolTested: record.protocolTested === true,
+    // Which build of the console answered: the panel names it so two copies on
+    // two hosts can be told apart.
+    consoleVersion: optionalString(record.consoleVersion),
     error: optionalString(record.error),
   };
 }

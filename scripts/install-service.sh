@@ -108,7 +108,10 @@ install_systemd() {
     echo "WantedBy=default.target"
   } > "$unit"
   systemctl --user daemon-reload
-  systemctl --user enable --now "$label.service"
+  systemctl --user enable "$label.service"
+  # enable --now leaves an already-running unit alone, so a rebuild would keep
+  # the old binary in memory.
+  systemctl --user restart "$label.service" 2>/dev/null || systemctl --user start "$label.service"
   # Without lingering a user unit starts at login, not at boot.
   loginctl enable-linger "$(id -un)" 2>/dev/null || \
     echo "note: enable-linger failed; the service starts at login, not at boot" >&2

@@ -1009,6 +1009,82 @@ test("the daemon state opens a panel that can install or update herdr", async ({
   await expect(page.locator("#herdr-host-output")).toContainText("updated to 0.9.5");
 });
 
+test("a stopped daemon says what to run, instead of leaving it at not running", async ({ page }) => {
+  await installBridge(page);
+  await page.route("**/api/v1/herdr/host", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        installed: true,
+        binary: "/home/op/.local/bin/herdr",
+        clientVersion: "0.9.5",
+        channel: "stable",
+        serverRunning: false,
+        serverVersion: "",
+        serverStatus: "stopped",
+        compatible: true,
+        socket: "/home/op/.config/herdr/herdr.sock",
+        restartNeeded: false,
+        serverBinaryStale: false,
+        installMethod: "direct",
+        latestVersion: "0.9.5",
+        updateAvailable: false,
+        canUpdate: true,
+        error: "",
+      }),
+    }),
+  );
+  await page.goto("/");
+  await page.locator("#herdr-host-open").click();
+
+  await expect(page.locator(".hostpanel")).toContainText("not running");
+  // An update stops an old server on purpose; a stopped daemon is a step, and
+  // the panel has to say which command finishes it.
+  const hint = page.locator("#herdr-daemon-hint");
+  await expect(hint).toBeVisible();
+  await expect(hint).toContainText("herdr");
+  await expect(page.locator("#herdr-restart-hint")).toHaveCount(0);
+});
+
+test("a server on an older build names the command that picks the new one up", async ({ page }) => {
+  await installBridge(page);
+  await page.route("**/api/v1/herdr/host", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        installed: true,
+        binary: "/home/op/.local/bin/herdr",
+        clientVersion: "0.9.5",
+        channel: "stable",
+        serverRunning: true,
+        serverVersion: "0.8.2",
+        serverStatus: "running",
+        compatible: true,
+        socket: "/home/op/.config/herdr/herdr.sock",
+        restartNeeded: true,
+        serverBinaryStale: true,
+        installMethod: "direct",
+        latestVersion: "0.9.5",
+        updateAvailable: false,
+        canUpdate: true,
+        error: "",
+      }),
+    }),
+  );
+  await page.goto("/");
+  await page.locator("#herdr-host-open").click();
+
+  await expect(page.locator(".hostpanel")).toContainText("restart needed");
+  const hint = page.locator("#herdr-restart-hint");
+  await expect(hint).toBeVisible();
+  await expect(hint).toContainText("herdr server");
+  // Stopping a server ends its panes, so the panel says so rather than doing it.
+  await expect(hint).toContainText("ends its panes");
+  await expect(page.locator("#herdr-daemon-hint")).toHaveCount(0);
+});
+
 test("a missing herdr offers install, and a nix copy is left to nix", async ({ page }) => {
   await installBridge(page);
   let host: Record<string, unknown> = {

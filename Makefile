@@ -95,6 +95,8 @@ release-archives: go-build web
 
 ## deploy-remote: copy to other hosts and register the service there
 ##   make deploy-remote TARGETS="nas desktop-7"
-deploy-remote: build
+# release-archives, not build: the script sends the release artifact for the
+# target's platform, and a stale one would ship an old frontend without saying so.
+deploy-remote: release-archives
 	@test -n "$(TARGETS)" || { echo "usage: make deploy-remote TARGETS=\"host [host:path ...]\"" >&2; exit 64; }
 	./scripts/deploy-remote.sh $(TARGETS)
