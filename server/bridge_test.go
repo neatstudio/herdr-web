@@ -471,12 +471,21 @@ func TestPaneSplitAnswersWithTheNewPane(t *testing.T) {
 	if body["paneId"] != "w1:p9" {
 		t.Fatalf("the client needs the new pane id, got %v", body["paneId"])
 	}
-	state.waitForCalls(t, 1)
+	// The pane's tab is focused first: herdr splits the focused tab, so without
+	// this the split would land wherever the operator last was.
+	if body["tabId"] != "w1:t2" {
+		t.Fatalf("tabId=%v", body["tabId"])
+	}
+	state.waitForCalls(t, 3)
 	state.mu.Lock()
 	split := append([]string(nil), state.split...)
+	focused := append([]string(nil), state.focusedTabs...)
 	state.mu.Unlock()
 	if len(split) != 1 || split[0] != "right" {
 		t.Fatalf("split=%q", split)
+	}
+	if len(focused) != 1 || focused[0] != "w1:t2" {
+		t.Fatalf("focusedTabs=%q", focused)
 	}
 
 	// Only the two directions herdr accepts are passed on.

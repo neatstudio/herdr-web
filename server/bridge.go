@@ -427,9 +427,12 @@ func (s *Server) handlePaneInput(w http.ResponseWriter, r *http.Request, paneID 
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "paneId": paneID})
 }
 
-// handlePaneSplit creates a pane by splitting one. herdr decides where the new
-// pane goes and answers with its id, which the client selects so the next thing
-// typed lands in the pane that was just made.
+// handlePaneSplit creates a pane by splitting one.
+//
+// herdr splits the *focused* tab, not an arbitrary pane: measured against a live
+// daemon, a split aimed at a pane in another tab landed in the focused tab
+// instead. So the pane's tab is focused first — which is what the operator meant
+// by aiming at that pane — and only then is the split asked for.
 func (s *Server) handlePaneSplit(w http.ResponseWriter, r *http.Request, paneID string) {
 	if r.Method != http.MethodPost {
 		writeMethodNotAllowed(w, "POST")
@@ -453,6 +456,26 @@ func (s *Server) handlePaneSplit(w http.ResponseWriter, r *http.Request, paneID 
 		writeError(w, http.StatusBadRequest, "invalid_request", "direction must be right or down")
 		return
 	}
+
+	var got struct {
+		Pane struct {
+			TabID string `json:"tab_id"`
+		} `json:"pane"`
+	}
+	if err := s.client().Call(r.Context(), "pane.get", map[string]any{"pane_id": paneID}, &got); err != nil {
+		writeBadGateway(w, "herdr_split_failed", err)
+		return
+	}
+	if got.Pane.TabID != "" {
+		// Focusing the tab the pane lives in is what makes herdr split *that*
+		// pane. It is idempotent when the tab is already in front.
+		if err := s.client().Call(r.Context(), "tab.focus",
+			map[string]any{"tab_id": got.Pane.TabID}, nil); err != nil {
+			writeBadGateway(w, "herdr_split_failed", err)
+			return
+		}
+	}
+
 	params := map[string]any{"pane_id": paneID, "direction": request.Direction}
 	if request.Ratio != nil {
 		params["ratio"] = *request.Ratio
@@ -466,7 +489,11 @@ func (s *Server) handlePaneSplit(w http.ResponseWriter, r *http.Request, paneID 
 		writeBadGateway(w, "herdr_split_failed", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "paneId": result.Pane.PaneID})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":     true,
+		"paneId": result.Pane.PaneID,
+		"tabId":  got.Pane.TabID,
+	})
 }
 
 // handlePaneClose closes one pane and everything running in it.

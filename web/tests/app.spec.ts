@@ -777,6 +777,28 @@ test("the strip's + makes a new pane by splitting the open one", async ({ page }
   await expect(page.locator("#herdr-input")).toHaveAttribute("placeholder", "send to w1:p9");
 });
 
+test("a split keeps the view where it was, and selects the new pane at once", async ({ page }) => {
+  await installBridge(page);
+  await page.goto("/");
+  await page.locator('.side--spaces [data-workspace-id="w1"]').click();
+  await expect(page.locator('.tab[aria-selected="true"]')).toHaveCount(1);
+
+  await page.locator("#herdr-new-pane").click();
+
+  // The new pane is not in herdr's pane list until the next poll. The console
+  // must not go blank or jump to another workspace in the meantime: the tab
+  // stays selected, the pane joins the list at once, and the prompt aims at it.
+  await expect(page.locator("#herdr-input")).toHaveAttribute("placeholder", "send to w1:p9");
+  await expect(page.locator('.tab[aria-selected="true"]')).toHaveCount(1);
+  await expect(page.locator('.side--spaces [aria-current="true"]')).toHaveAttribute(
+    "data-workspace-id",
+    "w1",
+  );
+  // The tab it landed in is the tab that is open, not the one whose label
+  // happens to equal the new pane's id.
+  await expect(page.locator('.strip .tab[data-pane-id="w1:p9"]')).toHaveCount(0);
+});
+
 test("a phone splits downwards", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 780 });
   await installBridge(page);

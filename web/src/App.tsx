@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PaneTabs } from "@/components/PaneTabs";
 import { PickerSheet } from "@/components/PickerSheet";
 import { Sidebar } from "@/components/Sidebar";
@@ -93,6 +93,10 @@ export function App() {
   // Selecting a pane in the rail also decides the workspace, so the pane list
   // has to know which workspace to show even before a pane is chosen.
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  // The poll runs on an interval, so it reads the current workspace from a ref
+  // rather than from a closure captured when the interval was created.
+  const workspaceRef = useRef<string | null>(null);
+  workspaceRef.current = workspaceId;
 
   // Keep <html data-theme> in step with the choice and the OS preference.
   useEffect(() => {
@@ -138,7 +142,11 @@ export function App() {
         if (current !== null && nextPanes.some((pane) => pane.id === current)) {
           return current;
         }
-        return mostUrgentPane(nextPanes)?.id ?? null;
+        // A pane that herdr has only just created is not in this poll yet.
+        // Falling back across every workspace would throw the view somewhere
+        // else, so the search stays inside the workspace being viewed.
+        const here = nextPanes.filter((pane) => pane.workspaceId === workspaceRef.current);
+        return (mostUrgentPane(here) ?? mostUrgentPane(nextPanes))?.id ?? null;
       });
     }
   }, []);
@@ -239,20 +247,44 @@ export function App() {
     if (paneId === null) {
       return;
     }
+    const source = panes.find((pane) => pane.id === paneId);
     const created = await splitPane(paneId, narrow ? "down" : "right");
-    if (created !== null) {
-      // Select what was just made, so the next thing typed lands in it.
-      setPaneId(created);
-      setLayout(await fetchLayout(created));
+    if (created === null) {
+      return;
     }
-  }, [paneId, narrow]);
+    // herdr will report the new pane on the next poll, but the console must not
+    // sit blank until then: the tab strip, the tiles and the prompt all resolve
+    // against the pane list, so the new pane joins it immediately.
+    const layoutOfNew = await fetchLayout(created);
+    setPanes((current) =>
+      current.some((pane) => pane.id === created)
+        ? current
+        : [
+            ...current,
+            {
+              id: created,
+              workspaceId: source?.workspaceId ?? workspaceRef.current ?? "",
+              tabId: layoutOfNew?.tabId ?? source?.tabId ?? "",
+              focused: false,
+              agentStatus: "unknown",
+              cwd: "",
+            },
+          ],
+    );
+    setPaneId(created);
+    if (layoutOfNew !== null) {
+      setLayout(layoutOfNew);
+    }
+  }, [paneId, narrow, panes]);
 
   const closeActivePane = useCallback(async (target: string): Promise<void> => {
     if (!(await closePane(target))) {
       return;
     }
     setMenu(null);
-    // herdr has already removed it; the next poll fills in what is left.
+    // Drop it at once: waiting for the poll would leave a tile for a pane that
+    // is already gone, and the next poll would re-add nothing.
+    setPanes((current) => current.filter((pane) => pane.id !== target));
     await loadFleet();
   }, [loadFleet]);
 
@@ -339,7 +371,7 @@ export function App() {
           <PaneTabs
             panes={tabs.map((tab) => tab.pane)}
             workspaceName={activeWorkspace?.name ?? ""}
-            activeId={paneId}
+            activeTabId={activePane?.tabId ?? null}
             onSelect={openPaneId}
             onNewPane={() => void newPane()}
             canSplit={paneId !== null}
@@ -421,10 +453,30 @@ export function App() {
         onRenamed={() => void loadFleet()}
         onSplit={(id, direction) => {
           setMenu(null);
-          void splitPane(id, direction).then((created) => {
-            if (created !== null) {
-              setPaneId(created);
-              void fetchLayout(created).then(setLayout);
+          const source = panes.find((pane) => pane.id === id);
+          void splitPane(id, direction).then(async (created) => {
+            if (created === null) {
+              return;
+            }
+            const layoutOfNew = await fetchLayout(created);
+            setPanes((current) =>
+              current.some((pane) => pane.id === created)
+                ? current
+                : [
+                    ...current,
+                    {
+                      id: created,
+                      workspaceId: source?.workspaceId ?? workspaceRef.current ?? "",
+                      tabId: layoutOfNew?.tabId ?? source?.tabId ?? "",
+                      focused: false,
+                      agentStatus: "unknown",
+                      cwd: "",
+                    },
+                  ],
+            );
+            setPaneId(created);
+            if (layoutOfNew !== null) {
+              setLayout(layoutOfNew);
             }
           });
         }}

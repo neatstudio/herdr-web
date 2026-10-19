@@ -38,9 +38,11 @@ type fakeHerdr struct {
 	renamedWorkspace []string
 	// resized records every pane.resize direction.
 	resized []string
-	// split records every pane.split direction, closed every pane.close id.
-	split  []string
-	closed []string
+	// split records every pane.split direction, closed every pane.close id,
+	// focusedTabs every tab.focus.
+	split       []string
+	closed      []string
+	focusedTabs []string
 }
 
 func startFakeHerdr(t *testing.T) (socket string, state *fakeHerdr, closeFn func()) {
@@ -129,6 +131,9 @@ func serveFake(conn net.Conn, state *fakeHerdr) {
 	case "pane.get":
 		result = map[string]any{"type": "pane_info", "pane": map[string]any{
 			"pane_id": "w1:p1", "workspace_id": "w1", "agent_status": "blocked",
+			// The split route reads the tab from here, because herdr splits the
+			// focused tab rather than an arbitrary pane.
+			"tab_id": "w1:t2",
 		}}
 	case "pane.read":
 		result = map[string]any{"type": "pane_read", "read": map[string]any{
@@ -141,6 +146,10 @@ func serveFake(conn net.Conn, state *fakeHerdr) {
 			state.readText += text
 		}
 		result = map[string]any{"type": "ok"}
+	case "tab.focus":
+		tabID, _ := req.Params["tab_id"].(string)
+		state.focusedTabs = append(state.focusedTabs, tabID)
+		result = map[string]any{"type": "tab_info", "tab": map[string]any{"tab_id": tabID}}
 	case "pane.split":
 		direction, _ := req.Params["direction"].(string)
 		state.split = append(state.split, direction)

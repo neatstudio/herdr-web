@@ -6,7 +6,12 @@ type Props = {
   panes: HerdrPane[];
   /** Only used to skip a directory that merely repeats the space's name. */
   workspaceName: string;
-  activeId: string | null;
+  /**
+   * The tab that holds the pane being read. A tab is selected because it
+   * *contains* that pane, not because its label happens to be that pane: after a
+   * split the pane in front is one the tab does not name.
+   */
+  activeTabId: string | null;
   onSelect: (id: string) => void;
   onMenu: (paneId: string, x: number, y: number) => void;
   /** Split the active pane: how a new pane is made. */
@@ -19,14 +24,22 @@ type Props = {
  * pane's own name (label, then title, then terminal title) with the id beside
  * it, and doubles as the right-click and long-press target for the pane menu.
  */
-export function PaneTabs({ panes, workspaceName, activeId, onSelect, onMenu, onNewPane, canSplit }: Props) {
+export function PaneTabs({
+  panes,
+  workspaceName,
+  activeTabId,
+  onSelect,
+  onMenu,
+  onNewPane,
+  canSplit,
+}: Props) {
   if (panes.length === 0) {
     return null;
   }
   return (
     <div className="strip" role="tablist" aria-label="Panes">
       {panes.map((pane, index) => {
-        const active = pane.id === activeId;
+        const active = pane.tabId === activeTabId;
         const tone = toneOf(pane.agentStatus);
         const name = paneListName(pane, workspaceName);
         const named = paneOwnHasName(pane);
