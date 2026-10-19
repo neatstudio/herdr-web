@@ -144,13 +144,63 @@ is world-writable, the directory is checked before every write — it must not
 be a symlink, must be a directory, must belong to this user, and is tightened
 to `0700`. `HERDR_WEB_UPLOAD_DIR` overrides the location.
 
-## Running as a service (macOS)
+## Installing on a machine
+
+One command installs the binary and registers the service, so the console comes
+back after a reboot without anyone logging in:
 
 ```
-make install-service     # launchd unit dev.herdr-web, starts at login
+curl -fsSL https://github.com/neatstudio/herdr-web/releases/latest/download/install.sh | sh
+```
+
+The binary is self-contained: the frontend is embedded, so nothing else is
+downloaded and the target needs no Go, Node or network.
+
+**When GitHub is out of reach** — a private network, a locked-down host — copy
+the release binary over and install from the file instead:
+
+```
+sh install.sh --from ./herdr-web-linux-amd64
+sh install.sh --url https://your-mirror/herdr-web-linux-amd64
+```
+
+The installer says this in its own error message, so a failed download is a
+pointer to the offline path rather than a dead end. It also refuses to replace
+a `dev.herdr-web` service that points somewhere else, so installing over a
+machine that already runs the console from a checkout cannot silently steal the
+service.
+
+### Deploying to other machines
+
+`scripts/deploy-remote.sh` copies the binary to hosts that are already reachable
+by `ssh`, and registers the service there. Targets are `host` or `host:path`
+names — an entry in `~/.ssh/config`, or a Tailscale/MagicDNS name. It does not
+talk to the Tailscale API: a machine is a target because `ssh` already works on
+it.
+
+```
+./scripts/deploy-remote.sh --list                 # ssh config hosts + tailnet peers
+./scripts/deploy-remote.sh nas                    # install and register there
+./scripts/deploy-remote.sh --dry-run desktop-7    # say what it would do
+make deploy-remote TARGETS="nas desktop-7"
+```
+
+Each target gets the same guard the installer applies: a service pointing at
+another path is left alone instead of being silently replaced.
+
+## Running as a service
+
+The service is registered by the installer, or by hand on a checkout:
+
+```
+make install-service     # launchd on macOS, a systemd user unit on Linux
 make service-status
 make uninstall-service
 ```
+
+It comes back after a reboot: launchd runs it at load (`RunAtLoad`), and the
+systemd user unit is enabled plus `loginctl enable-linger`, which is what makes
+a user unit start at boot rather than at login.
 
 The unit logs to `~/.local/share/herdr-web/herdr-web.log`. It runs the binary
 from this directory, so rebuild before restarting:
@@ -213,6 +263,14 @@ it was built without a bundle, and the API still serves.
 Nothing in the tests depends on the wall clock, and no test touches a real
 herdr session: anything that would mutate panes is either mocked or run
 against a throwaway `herdr --session`.
+
+## Releasing
+
+`make release-archives` cross-compiles the four supported platforms into
+`dist/release` with a `.sha256` beside each one. Pushing a `v*` tag runs
+`.github/workflows/release.yml`, which builds the frontend, builds every
+platform, runs the tests, publishes the tag and attaches `install.sh` — which is
+the URL the curl line above points at.
 
 ## Requirements
 

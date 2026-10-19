@@ -7,6 +7,8 @@
   <key>ProgramArguments</key>
   <array>
     <string>__BIN__</string>
+    <!-- herdr-bin and the listen addresses, when the installer set them. -->
+    <string>__ARGS__</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
@@ -14,7 +16,7 @@
     <string>__HOME__</string>
     <!-- launchd does not inherit the shell PATH. -->
     <key>PATH</key>
-    <string>/opt/homebrew/bin:__HOME__/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <string>__PATH__</string>
   </dict>
   <key>WorkingDirectory</key>
   <string>__HOME__</string>

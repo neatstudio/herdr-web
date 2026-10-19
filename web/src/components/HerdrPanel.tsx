@@ -91,8 +91,10 @@ export function HerdrPanel({ open, onClose }: Props) {
                   <dd>
                     {host.clientVersion || "unknown"}
                     {host.channel !== "" && <span className="hostpanel__dim"> · {host.channel}</span>}
-                    {host.latestVersion !== "" && (
+                    {host.latestVersion !== "" ? (
                       <span className="hostpanel__dim"> · latest {host.latestVersion}</span>
+                    ) : (
+                      <span className="hostpanel__dim"> · latest unknown</span>
                     )}
                   </dd>
                   <dt>daemon</dt>
@@ -110,6 +112,14 @@ export function HerdrPanel({ open, onClose }: Props) {
             </dl>
 
             {host.error !== "" && <p className="hostpanel__note hostpanel__note--bad">{host.error}</p>}
+            {host.installed && host.latestVersion === "" && (
+              // No network is a normal state for a machine behind a private
+              // link: say what still works instead of leaving a silent gap.
+              <p className="hostpanel__note">
+                the release feed could not be read, so an update cannot be checked here. The
+                version above and the daemon state come from this machine and are still good.
+              </p>
+            )}
 
             <div className="hostpanel__actions">
               {!host.installed && (

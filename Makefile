@@ -8,9 +8,13 @@
 
 SHELL := /bin/bash
 BIN := herdr-web
+GO ?= go
+GOFLAGS ?= -trimpath
+LDFLAGS ?= -s -w
 
 .PHONY: all build web go-build run test test-go test-web e2e fmt vet clean \
-	install-service uninstall-service service-status service-restart
+	install-service uninstall-service service-status service-restart \
+	release-archives deploy-remote
 
 all: build
 
@@ -29,7 +33,7 @@ web:
 
 ## go-build: compile the bridge with the bundle embedded
 go-build:
-	go build -trimpath -o $(BIN) .
+	$(GO) build $(GOFLAGS) -o $(BIN) .
 	@echo "built ./$(BIN) ($$(du -h $(BIN) | cut -f1))"
 
 ## run: run the bridge from source; needs web/dist to exist for a real UI
@@ -70,3 +74,24 @@ service-status:
 
 service-restart:
 	./scripts/install-service.sh restart
+
+## release-archives: the per-platform binaries install.sh downloads
+# Deliberately does not depend on `clean`: cleaning removes web/dist, and these
+# binaries must embed the frontend built just before.
+release-archives: go-build web
+	mkdir -p dist/release
+	@for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64; do \
+		os=$${target%/*}; arch=$${target#*/}; \
+		echo "building $$os/$$arch"; \
+		GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 $(GO) build $(GOFLAGS) -trimpath \
+			-ldflags="$(LDFLAGS)" -o dist/release/herdr-web-$$os-$$arch . || exit 1; \
+		( cd dist/release && shasum -a 256 herdr-web-$$os-$$arch > herdr-web-$$os-$$arch.sha256 2>/dev/null \
+			|| sha256sum herdr-web-$$os-$$arch > herdr-web-$$os-$$arch.sha256 ); \
+	done
+	@echo "archives in dist/release"
+
+## deploy-remote: copy to other hosts and register the service there
+##   make deploy-remote TARGETS="nas desktop-7"
+deploy-remote: build
+	@test -n "$(TARGETS)" || { echo "usage: make deploy-remote TARGETS=\"host [host:path ...]\"" >&2; exit 64; }
+	./scripts/deploy-remote.sh $(TARGETS)

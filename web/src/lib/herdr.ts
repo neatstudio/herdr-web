@@ -413,7 +413,30 @@ export async function fetchHerdrHost(): Promise<HerdrHost | null> {
   if (raw === null || typeof raw !== "object") {
     return null;
   }
-  return raw as HerdrHost;
+  // The bridge omits fields it has nothing to say about (an empty error, a
+  // version it could not read), so fill them in rather than rendering
+  // "undefined" in the panel.
+  const record = raw as Record<string, unknown>;
+  const text = (key: string): string => (typeof record[key] === "string" ? (record[key] as string) : "");
+  const flag = (key: string): boolean => record[key] === true;
+  return {
+    installed: flag("installed"),
+    binary: text("binary"),
+    clientVersion: text("clientVersion"),
+    channel: text("channel"),
+    serverRunning: flag("serverRunning"),
+    serverVersion: text("serverVersion"),
+    serverStatus: text("serverStatus"),
+    compatible: flag("compatible"),
+    socket: text("socket"),
+    restartNeeded: flag("restartNeeded"),
+    serverBinaryStale: flag("serverBinaryStale"),
+    installMethod: (text("installMethod") || "unknown") as HerdrHost["installMethod"],
+    latestVersion: text("latestVersion"),
+    updateAvailable: flag("updateAvailable"),
+    canUpdate: flag("canUpdate"),
+    error: text("error"),
+  };
 }
 
 /** Install herdr on this host, or update it. Both run a fixed command. */
