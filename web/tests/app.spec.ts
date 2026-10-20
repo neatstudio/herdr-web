@@ -1314,12 +1314,20 @@ test("raw mode forwards every key to the pane, so completion and Ctrl work", asy
       JSON.stringify({ keys: ["Tab"] }),
       JSON.stringify({ keys: ["ctrl+c"] }),
     ]);
+
+  // Escape belongs to the pane: it cancels a menu or leaves insert mode, and
+  // taking it here is what made an agent's "/model" impossible to back out of.
+  await input.press("Escape");
+  await expect.poll(() => keyPosts.length).toBe(5);
+  expect(JSON.parse(keyPosts[4])).toEqual({ keys: ["esc"] });
+  await expect(page.locator(".prompt")).toHaveAttribute("data-raw", "on");
   // Nothing is typed into the box, and the textarea keeps the focus so the
   // keyboard stays where the operator put it.
   await expect(input).toHaveValue("");
   await expect(input).toBeFocused();
 
-  await input.press("Escape");
+  // Shift+Escape is the way out, because a TUI does not want that chord.
+  await input.press("Shift+Escape");
   await expect(page.locator(".prompt")).not.toHaveAttribute("data-raw", "on");
 });
 

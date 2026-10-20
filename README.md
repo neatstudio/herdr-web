@@ -80,7 +80,9 @@ and the design leans on two things to pay them:
   was ever seen.
 - **Raw mode is one key away.** Press `Esc` and every key goes to the pane
   instead: Tab completes, arrows walk the shell's history, Ctrl-C interrupts, and
-  a TUI's own menus are driven from there. `Esc` again leaves raw mode.
+  a TUI's own menus are driven from there. `Shift+Esc` leaves raw mode — plain
+  `Esc` is forwarded, because it is how a menu is cancelled and how insert mode
+  is left, and taking it here made a slash command impossible to back out of.
 
 Enter sends, Shift+Enter writes a newline, and the box wraps and grows, so a
 long message is readable before it goes out.

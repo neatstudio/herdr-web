@@ -254,8 +254,10 @@ export function PromptBar({ paneId }: { paneId: string }) {
   }
 
   function onRawKey(event: React.KeyboardEvent<HTMLTextAreaElement>): void {
-    // Escape leaves raw mode, so there is a way back with the keyboard.
-    if (event.key === "Escape" && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    // Escape belongs to the pane: it cancels a menu, leaves insert mode, closes
+    // a dialog. Taking it to leave raw mode is what made "/model" impossible to
+    // back out of, so the way out is Shift+Esc, which a TUI does not want.
+    if (event.key === "Escape" && event.shiftKey) {
       event.preventDefault();
       setRaw(false);
       return;
@@ -394,13 +396,13 @@ export function PromptBar({ paneId }: { paneId: string }) {
             type="button"
             id="herdr-raw-off"
             className="prompt__keys prompt__keys--on"
-            title="leave raw keyboard mode"
+            title="leave raw keyboard mode (shift+esc)"
             onClick={() => {
               setRaw(false);
               inputRef.current?.focus();
             }}
           >
-            keys on · esc
+            keys on · ⇧esc
           </button>
         )}
         <input
@@ -432,7 +434,7 @@ export function PromptBar({ paneId }: { paneId: string }) {
         <div className="prompt__hints" aria-hidden>
           {raw ? (
             <span>
-              <kbd>esc</kbd> back
+              <kbd>⇧esc</kbd> back
             </span>
           ) : (
             <>
