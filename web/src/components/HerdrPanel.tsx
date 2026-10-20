@@ -123,10 +123,19 @@ export function HerdrPanel({ open, onClose, consoleVersion }: Props) {
               // An update stops an old server on purpose rather than killing the
               // sessions in it, so a stopped daemon is a step, not a fault: say
               // what to run next instead of leaving it at "not running".
-              <p className="hostpanel__note" id="herdr-daemon-hint">
-                no daemon is running here. Start one with <code>herdr</code>, or finish an update
-                that stopped an old server by running <code>herdr update</code> again.
-              </p>
+              <div className="hostpanel__note" id="herdr-daemon-hint">
+                <p>
+                  no daemon is running here. herdr is a terminal application, so it has to be
+                  started from a terminal — over ssh that usually means inside tmux:
+                </p>
+                <pre className="hostpanel__output">
+                  tmux new-session -d -s herdr -x 200 -y 50 'herdr'
+                </pre>
+                <p>
+                  if an update just stopped an old server, run <code>herdr update</code> once more
+                  first to finish the swap.
+                </p>
+              </div>
             )}
             {host.serverRunning && (host.restartNeeded || host.serverBinaryStale) && (
               <p className="hostpanel__note" id="herdr-restart-hint">

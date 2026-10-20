@@ -1043,7 +1043,10 @@ test("a stopped daemon says what to run, instead of leaving it at not running", 
   // the panel has to say which command finishes it.
   const hint = page.locator("#herdr-daemon-hint");
   await expect(hint).toBeVisible();
-  await expect(hint).toContainText("herdr");
+  // herdr is a terminal application: the hint has to give a command that works
+  // over ssh, not just say "run herdr".
+  await expect(hint).toContainText("tmux new-session");
+  await expect(hint).toContainText("herdr update");
   await expect(page.locator("#herdr-restart-hint")).toHaveCount(0);
 });
 

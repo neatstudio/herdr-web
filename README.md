@@ -61,6 +61,36 @@ The window is three things: a sidebar, a transcript, and a prompt.
 On a phone the sidebar becomes one menu with a switch between its two lists,
 and the transcript reflows to the screen width.
 
+## herdr must be running, and it needs a terminal
+
+This console talks to a herdr daemon; it cannot start one. herdr is a TUI
+application, so its session starts from a terminal and the daemon lives inside
+it — `herdr` cannot be started by a service unit of its own, and running it with
+no tty reports `cannot attach without a usable terminal`.
+
+On a server that means starting it inside a terminal multiplexer:
+
+```
+tmux new-session -d -s herdr -x 200 -y 50 'herdr'   # start
+tmux attach -t herdr                                 # look at it
+```
+
+An update is a two-step operation for older servers. `herdr update` installs
+the new binary but will not kill the sessions running in the old server; for a
+server from before endpoint generation 1 it asks you to stop it and run the
+update again:
+
+```
+herdr server stop     # ends the panes in that server
+herdr update          # finishes the swap
+tmux new-session -d -s herdr -x 200 -y 50 'herdr'   # start the new server
+```
+
+The console notices the daemon going away and keeps showing the last state; it
+reconnects on its own when herdr comes back, so there is no need to reload the
+page. The status panel spells out which command is next when a daemon is
+stopped or still on an older build.
+
 ## Running without herdr
 
 The console does not need herdr to start: it serves the UI, reports that the
