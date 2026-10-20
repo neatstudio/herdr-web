@@ -71,10 +71,16 @@ and the design leans on two things to pay them:
   TUI, `/model` pasted does nothing while the same characters typed open the
   model picker. Plain ASCII therefore goes out key by key; anything a key
   cannot carry — non-ASCII, a multi-line block — goes out as text.
-- **Raw mode is one key away.** Press `Esc` in the composer and every key goes
-  to the pane instead: Tab completes, arrows walk the shell's history, Ctrl-C
-  interrupts, and a TUI's own menus appear. Those belong to the pane's line
-  editor and a text box cannot stand in for them; `Esc` again leaves raw mode.
+- **Completion and slash commands hand the line over.** `Tab` types the line
+  into the pane and presses Tab there, then gives the keyboard to the pane: the
+  completion belongs to the shell's line editor, and keeping a second copy in
+  the box would make Enter send the stale one. A line starting with `/` is typed
+  the same way but *without* Enter, because an agent's slash command opens a menu
+  for the rest of the line — an Enter here would pick the first entry before it
+  was ever seen.
+- **Raw mode is one key away.** Press `Esc` and every key goes to the pane
+  instead: Tab completes, arrows walk the shell's history, Ctrl-C interrupts, and
+  a TUI's own menus are driven from there. `Esc` again leaves raw mode.
 
 Enter sends, Shift+Enter writes a newline, and the box wraps and grows, so a
 long message is readable before it goes out.

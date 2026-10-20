@@ -172,9 +172,47 @@ export function PromptBar({ paneId }: { paneId: string }) {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  /**
+   * Type the line into the pane, then hand the keyboard to it.
+   *
+   * Completion, history and a TUI's menus belong to the pane's line editor.
+   * Continuing to hold the text in this box after a Tab would leave two copies
+   * of the same line, and an Enter here would send the stale one; so the line
+   * leaves the box and raw mode takes over.
+   */
+  async function handOff(text: string, keys: string[]): Promise<void> {
+    const line = text.replace(/\n+$/, "");
+    if (busy) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const delivered = canType(line)
+        ? await typePaneText(paneId, line, false)
+        : await sendPaneText(paneId, line, false);
+      if (!delivered) {
+        return;
+      }
+      if (keys.length > 0) {
+        await sendPaneKeys(paneId, keys);
+      }
+      setValue("");
+      setRaw(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function send(text: string): Promise<void> {
     const line = text.replace(/\n+$/, "");
     if (line.trim() === "" || busy) {
+      return;
+    }
+    // An agent's slash command opens a menu for the rest of the line; sending
+    // Enter here would pick the first entry before the operator saw it. The
+    // characters go in, the menu stays open, and raw mode takes the next keys.
+    if (line.startsWith("/") && canType(line)) {
+      await handOff(line, []);
       return;
     }
     setBusy(true);
@@ -206,20 +244,9 @@ export function PromptBar({ paneId }: { paneId: string }) {
     if (value.trim() === "" || busy) {
       return;
     }
-    setBusy(true);
-    try {
-      // The line goes out without a newline, then Tab asks the shell to
-      // complete it; the box keeps the text so the result stays editable.
-      const line = value.replace(/\n+$/, "");
-      const delivered = canType(line)
-        ? await typePaneText(paneId, line, false)
-        : await sendPaneText(paneId, line, false);
-      if (delivered) {
-        await sendPaneKeys(paneId, ["Tab"]);
-      }
-    } finally {
-      setBusy(false);
-    }
+    // Tab is completion, and completion happens in the pane: the line moves
+    // there and the next keys belong to it, so Tab can be pressed again.
+    await handOff(value, ["Tab"]);
   }
 
   function onRawKey(event: React.KeyboardEvent<HTMLTextAreaElement>): void {
@@ -257,8 +284,14 @@ export function PromptBar({ paneId }: { paneId: string }) {
       return;
     }
     if (event.key === "Escape") {
-      // Raw mode is how completion, history and a TUI's menus work: they are
-      // the pane's line editor, and a text box cannot stand in for them.
+      // Escape closes whatever is open before it changes the keyboard: a viewer
+      // or a sheet also listens for it, and swallowing it here would leave the
+      // overlay open with no way out.
+      if (document.querySelector(".viewer, .sheet, .hostpanel, [role='dialog']") !== null) {
+        return;
+      }
+      // Otherwise raw mode is how completion, history and a TUI's menus work:
+      // they are the pane's line editor, and a text box cannot stand in for them.
       event.preventDefault();
       setRaw(true);
       return;
@@ -398,9 +431,14 @@ export function PromptBar({ paneId }: { paneId: string }) {
               <kbd>esc</kbd> back
             </span>
           ) : (
-            <span>
-              <kbd>⇧⏎</kbd> newline
-            </span>
+            <>
+              <span>
+                <kbd>⇥</kbd> complete
+              </span>
+              <span>
+                <kbd>⇧⏎</kbd> newline
+              </span>
+            </>
           )}
         </div>
         <button

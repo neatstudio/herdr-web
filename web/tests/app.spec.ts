@@ -820,8 +820,13 @@ test("a path in the output opens its preview, and Escape closes it", async ({ pa
     /^\/api\/v1\/herdr\/file\/raw\?path=%2Ftmp%2Fchart.png$/,
   );
 
+  // The prompt holds the caret, so Escape reaches the composer first. It must
+  // close the viewer rather than switch the keyboard to raw mode, or the
+  // overlay would be left open with no way out.
+  await page.locator("#herdr-input").focus();
   await page.keyboard.press("Escape");
   await expect(viewer).toHaveCount(0);
+  await expect(page.locator(".prompt")).not.toHaveAttribute("data-raw", "on");
 
   // A text file shows its contents in place.
   await links.nth(1).click();
@@ -1215,7 +1220,7 @@ test("shift+enter writes a newline instead of sending", async ({ page }) => {
   expect(keyPosts).toEqual([]);
 });
 
-test("tab flushes the line without a newline then sends a real Tab", async ({ page }) => {
+test("tab hands the line to the pane so completion continues there", async ({ page }) => {
   const inputPosts: string[] = [];
   const keyPosts: string[] = [];
   await installBridge(page);
@@ -1232,8 +1237,9 @@ test("tab flushes the line without a newline then sends a real Tab", async ({ pa
   const input = page.locator("#herdr-input");
   await input.fill("git ch");
   await input.press("Tab");
-  // The line is typed without Enter, then a real Tab asks the shell to complete
-  // it; the box keeps the text so the result stays editable.
+  // The line is typed without Enter, then a real Tab completes it in the pane.
+  // Completion is the pane's line editor doing the work, so the box gives the
+  // line up rather than keeping a second copy that Enter would resend.
   await expect
     .poll(() => keyPosts)
     .toEqual([
@@ -1241,7 +1247,42 @@ test("tab flushes the line without a newline then sends a real Tab", async ({ pa
       JSON.stringify({ keys: ["Tab"] }),
     ]);
   expect(inputPosts).toEqual([]);
-  await expect(input).toHaveValue("git ch");
+  await expect(input).toHaveValue("");
+  await expect(page.locator(".prompt")).toHaveAttribute("data-raw", "on");
+
+  // And the next Tab goes straight to the pane, which is the point.
+  await input.press("Tab");
+  await expect.poll(() => keyPosts).toHaveLength(3);
+  expect(JSON.parse(keyPosts[2])).toEqual({ keys: ["Tab"] });
+});
+
+test("a slash command types its characters and leaves the menu open", async ({ page }) => {
+  const keyPosts: string[] = [];
+  await installBridge(page);
+  await page.route("**/api/v1/herdr/panes/*/keys", async (route) => {
+    keyPosts.push(route.request().postData() ?? "");
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+  });
+  await page.goto("/");
+
+  const input = page.locator("#herdr-input");
+  await input.fill("/model");
+  await input.press("Enter");
+  // Enter must not arrive with the characters: an agent's slash command opens a
+  // menu for the rest of the line, and an Enter here would pick the first entry
+  // before the operator saw it.
+  await expect
+    .poll(() => keyPosts)
+    .toEqual([JSON.stringify({ keys: ["/", "m", "o", "d", "e", "l"] })]);
+  await expect(page.locator(".prompt")).toHaveAttribute("data-raw", "on");
+  await expect(input).toHaveValue("");
+
+  // The menu is driven from here now: arrows and Enter are the pane's.
+  await input.press("ArrowDown");
+  await input.press("Enter");
+  await expect.poll(() => keyPosts).toHaveLength(3);
+  expect(JSON.parse(keyPosts[1])).toEqual({ keys: ["Down"] });
+  expect(JSON.parse(keyPosts[2])).toEqual({ keys: ["Enter"] });
 });
 
 test("raw mode forwards every key to the pane, so completion and Ctrl work", async ({ page }) => {
@@ -1484,3 +1525,4 @@ test("plain output rewraps to a phone-sized viewport", async ({ page }) => {
   const overflow = await feed.evaluate((node) => node.scrollWidth > node.clientWidth + 1);
   expect(overflow, "plain output must not overflow sideways on a phone").toBe(false);
 });
+
