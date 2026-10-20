@@ -264,6 +264,19 @@ export async function readPane(paneId: string, lines = READ_LINES): Promise<Herd
 }
 
 /**
+ * Ask the visible transcript to re-read now.
+ *
+ * Typing is written to the daemon and the daemon draws it; waiting for the next
+ * event would put that on the wire a round trip later than it needs to be. The
+ * scope listens for this and reads immediately.
+ */
+export function pokeTranscript(): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("herdr:poke"));
+  }
+}
+
+/**
  * Send text to a pane. A newline is appended by default so the shell runs it;
  * pass newline=false to type without executing (shell completion).
  */
@@ -273,7 +286,9 @@ export async function sendPaneText(
   newline = true,
 ): Promise<boolean> {
   const body = !newline || text.endsWith("\n") ? text : `${text}\n`;
-  return postJSON(`${panePath(paneId)}/input`, { text: body });
+  const ok = await postJSON(`${panePath(paneId)}/input`, { text: body });
+  pokeTranscript();
+  return ok;
 }
 
 import type { PaneLayout } from "./layout";
@@ -479,7 +494,20 @@ export async function renamePane(paneId: string, label: string | null): Promise<
 
 /** Send raw keys, e.g. ["Tab"] for shell completion. */
 export async function sendPaneKeys(paneId: string, keys: string[]): Promise<boolean> {
-  return postJSON(`${panePath(paneId)}/keys`, { keys });
+  const ok = await postJSON(`${panePath(paneId)}/keys`, { keys });
+  pokeTranscript();
+  return ok;
+}
+
+/**
+ * herdr's name for one typed character.
+ *
+ * The daemon rejects " " as a key — measured against a live session it answers
+ * `invalid_key: unsupported key` — while "space" is the name it takes. Every
+ * other printable character is accepted as itself.
+ */
+export function keyForChar(char: string): string {
+  return char === " " ? "space" : char;
 }
 
 /**
@@ -496,7 +524,7 @@ export async function typePaneText(
   text: string,
   enter = true,
 ): Promise<boolean> {
-  const keys = Array.from(text);
+  const keys = Array.from(text, keyForChar);
   if (enter) {
     keys.push("Enter");
   }

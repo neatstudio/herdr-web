@@ -1162,7 +1162,8 @@ test("enter types the line key by key and keeps history", async ({ page }) => {
   // key cannot carry.
   await expect
     .poll(() => keyPosts)
-    .toEqual([JSON.stringify({ keys: ["e", "c", "h", "o", " ", "h", "i", "Enter"] })]);
+    // A space is "space" to the daemon: it rejects " " as a key.
+    .toEqual([JSON.stringify({ keys: ["e", "c", "h", "o", "space", "h", "i", "Enter"] })]);
   expect(inputPosts).toEqual([]);
   await expect(input).toHaveValue("");
 
@@ -1243,7 +1244,7 @@ test("tab hands the line to the pane so completion continues there", async ({ pa
   await expect
     .poll(() => keyPosts)
     .toEqual([
-      JSON.stringify({ keys: ["g", "i", "t", " ", "c", "h"] }),
+      JSON.stringify({ keys: ["g", "i", "t", "space", "c", "h"] }),
       JSON.stringify({ keys: ["Tab"] }),
     ]);
   expect(inputPosts).toEqual([]);

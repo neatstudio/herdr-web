@@ -1,10 +1,24 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ansiLineToHtml, canvasBackdrop, canvasTone } from "@/lib/ansi";
 import { READ_LINES, readPane } from "@/lib/herdr";
 import { canvasModeFor, splitLines, type PageTheme } from "@/lib/fleet";
 import { DISPLAY_MODES, type DisplayMode } from "@/lib/theme";
 
-const POLL_MS = 1500;
+/**
+ * How often to look for new output. A read costs a few milliseconds against the
+ * local socket, so a fast tick is affordable and is what makes typing feel like
+ * a terminal rather than a poll behind one. herdr reports revision 0 ("unknown")
+ * for panes, so the cheap comparison has to be the text itself: an unchanged
+ * read skips the ANSI conversion and the React render entirely, which is where
+ * the cost actually is.
+ */
+const FAST_MS = 150;
+/** Idle backoff: nobody is typing, so stop asking five times a second. */
+const IDLE_MS = 600;
+/** Ticks without a change before the slow interval takes over. */
+const IDLE_TICKS = 8;
+/** The tab is in the background: freshen occasionally, not constantly. */
+const HIDDEN_MS = 2500;
 const TAIL_SLOP_PX = 48;
 /** Monospace advance as a fraction of the font size, for fit-to-width. */
 const MONO_ADVANCE = 0.6;
@@ -15,6 +29,10 @@ const BASE_FONT_PX = 12.5;
  * would be a grey smear, so those panes scroll instead of pretending to fit.
  */
 const MIN_FIT_PX = 4;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /**
  * Past this share, a background is worth mirroring for the page theme. The bar
@@ -50,7 +68,7 @@ type Props = {
   onOpenPath?: (path: string) => void;
 };
 
-export function Scope({ paneId, theme, display, onDisplay, onOpenPath }: Props) {
+function ScopeView({ paneId, theme, display, onDisplay, onOpenPath }: Props) {
   const [lines, setLines] = useState<string[]>([]);
   const [truncated, setTruncated] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -58,16 +76,19 @@ export function Scope({ paneId, theme, display, onDisplay, onOpenPath }: Props) 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const followRef = useRef(true);
   const revisionRef = useRef(-1);
+  const lastTextRef = useRef("");
+  const truncatedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
     followRef.current = true;
     revisionRef.current = -1;
+    lastTextRef.current = "";
     setLines([]);
     setTruncated(false);
     setFailed(false);
 
-    async function poll(): Promise<void> {
+    async function readOnce(): Promise<void> {
       const read = await readPane(paneId, READ_LINES).catch(() => null);
       if (cancelled) {
         return;
@@ -77,21 +98,46 @@ export function Scope({ paneId, theme, display, onDisplay, onOpenPath }: Props) 
         return;
       }
       setFailed(false);
-      if (read.revision !== 0 && read.revision === revisionRef.current) {
+      // Repainting 200 lines of ANSI is the expensive part, far more than the
+      // read itself, so an unchanged pane costs nothing here.
+      if (read.text === lastTextRef.current && read.truncated === truncatedRef.current) {
         return;
       }
-      revisionRef.current = read.revision;
+      lastTextRef.current = read.text;
+      truncatedRef.current = read.truncated;
       setLines(splitLines(read.text));
       setTruncated(read.truncated);
     }
 
-    void poll();
-    const timer = setInterval(() => {
-      void poll();
-    }, POLL_MS);
+    async function watch(): Promise<void> {
+      let idle = 0;
+      while (!cancelled) {
+        const before = lastTextRef.current;
+        await readOnce();
+        if (cancelled) {
+          return;
+        }
+        idle = lastTextRef.current === before ? idle + 1 : 0;
+        const interval = document.visibilityState === "hidden"
+          ? HIDDEN_MS
+          : idle > IDLE_TICKS
+            ? IDLE_MS
+            : FAST_MS;
+        await sleep(interval);
+      }
+    }
+
+    // A keystroke is written to the daemon and drawn by it; waiting for the next
+    // tick would show it up to a tick late. The write pokes this scope instead.
+    function onPoke(): void {
+      void readOnce();
+    }
+    window.addEventListener("herdr:poke", onPoke);
+    void watch();
+
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      window.removeEventListener("herdr:poke", onPoke);
     };
   }, [paneId]);
 
@@ -134,6 +180,10 @@ export function Scope({ paneId, theme, display, onDisplay, onOpenPath }: Props) 
   const rawCanvas = tone.share >= MIRROR_SHARE ? tone.colour : null;
   const paintCanvas = tone.share >= CANVAS_SHARE ? tone.colour : null;
   const mode = canvasModeFor(rawCanvas, theme);
+  // Converting 200 lines of ANSI is the expensive half of a repaint, and the
+  // page re-renders for reasons that have nothing to do with this pane (a fleet
+  // poll, a theme switch). Memoised on exactly what the output depends on.
+  const rendered = useMemo(() => lines.map((line) => ansiLineToHtml(line, mode)), [lines, mode]);
   // A wrapped transcript needs the canvas behind every row, so the backdrop is
   // the pane's own canvas, mirrored when the page theme disagrees with it.
   const backdrop = canvasBackdrop(paintCanvas, mode);
@@ -190,13 +240,13 @@ export function Scope({ paneId, theme, display, onDisplay, onOpenPath }: Props) 
             element.scrollHeight - element.scrollTop - element.clientHeight < TAIL_SLOP_PX;
         }}
       >
-        {lines.map((line, index) => (
+        {rendered.map((html, index) => (
           <div
             key={index}
             className="scope__line"
             // Renderer output only: ANSI escape sequences become spans, and
             // text is HTML-escaped before any markup is added.
-            dangerouslySetInnerHTML={{ __html: ansiLineToHtml(line, mode) }}
+            dangerouslySetInnerHTML={{ __html: html }}
           />
         ))}
       </div>
@@ -239,3 +289,10 @@ function stripLength(line: string): number {
   // eslint-disable-next-line no-control-regex
   return line.replace(/\u001b\[[0-9;?]*[A-Za-z]/g, "").length;
 }
+
+/**
+ * The transcript is the most expensive thing on the page and the fleet poll
+ * re-renders the tree every few seconds; memo keeps an unchanged pane from
+ * paying for ANSI conversion again.
+ */
+export const Scope = memo(ScopeView);

@@ -34,6 +34,10 @@ function terminalKey(event: React.KeyboardEvent): string | null {
   if (event.metaKey || event.altKey) {
     return null;
   }
+  if (event.key === " ") {
+    // The daemon rejects " " and takes "space" for it.
+    return "space";
+  }
   if (event.key.length === 1) {
     return event.key;
   }

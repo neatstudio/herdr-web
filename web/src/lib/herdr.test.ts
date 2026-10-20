@@ -119,3 +119,11 @@ test("pane paths are URL-encoded so the colon survives", () => {
   assert.equal(encoded, "w1%3Ap1");
   assert.equal(decodeURIComponent(encoded), "w1:p1");
 });
+
+test("a space is a named key, not a character", () => {
+  // herdr answers invalid_key for " " and takes "space"; typing "echo hi" with a
+  // literal space would otherwise arrive as "echohi".
+  assert.equal(herdr.keyForChar(" "), "space");
+  assert.equal(herdr.keyForChar("a"), "a");
+  assert.equal(herdr.keyForChar("|"), "|");
+});
