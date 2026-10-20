@@ -84,6 +84,7 @@ test("parseHerdrStatus defaults to unknown rather than throwing", () => {
     version: undefined,
     protocol: undefined,
     protocolTested: false,
+    consoleVersion: undefined,
     error: undefined,
   });
   const ok = herdr.parseHerdrStatus({
@@ -97,6 +98,18 @@ test("parseHerdrStatus defaults to unknown rather than throwing", () => {
   assert.equal(ok.status, "ok");
   assert.equal(ok.protocol, 22);
   assert.equal(ok.protocolTested, true);
+});
+
+test("the console's own version survives parsing", () => {
+  // Two copies of the console on two hosts are told apart by this field, so
+  // dropping it while parsing hid which build was answering.
+  const parsed = herdr.parseHerdrStatus({
+    enabled: true,
+    status: "ok",
+    consoleVersion: "v0.2.0",
+  });
+  assert.equal(parsed.consoleVersion, "v0.2.0");
+  assert.equal(herdr.parseHerdrStatus({}).consoleVersion, undefined);
 });
 
 test("pane paths are URL-encoded so the colon survives", () => {
