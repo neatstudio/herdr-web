@@ -410,7 +410,24 @@ export type HerdrHost = {
   error: string;
 };
 
-export type HostAction = { ok: boolean; command: string; output: string; exitCode: number };
+/** One command of a stop-update-start sequence, as the panel shows it. */
+export type HostStep = {
+  step: string;
+  command: string;
+  ok: boolean;
+  output: string;
+  exitCode: number;
+  skipped?: string;
+};
+
+export type HostAction = {
+  ok: boolean;
+  command: string;
+  output: string;
+  exitCode: number;
+  /** Present for update and restart: the daemon is stopped and started for you. */
+  steps?: HostStep[];
+};
 
 /** The state of herdr on this host, for the console's status panel. */
 export async function fetchHerdrHost(): Promise<HerdrHost | null> {
@@ -445,7 +462,9 @@ export async function fetchHerdrHost(): Promise<HerdrHost | null> {
 }
 
 /** Install herdr on this host, or update it. Both run a fixed command. */
-export async function runHostAction(action: "install" | "update"): Promise<HostAction | null> {
+export async function runHostAction(
+  action: "install" | "update" | "restart",
+): Promise<HostAction | null> {
   const raw = await postJSONResult(`/api/v1/herdr/host/${action}`, {});
   if (raw === null || typeof raw !== "object") {
     return null;
@@ -461,4 +480,25 @@ export async function renamePane(paneId: string, label: string | null): Promise<
 /** Send raw keys, e.g. ["Tab"] for shell completion. */
 export async function sendPaneKeys(paneId: string, keys: string[]): Promise<boolean> {
   return postJSON(`${panePath(paneId)}/keys`, { keys });
+}
+
+/**
+ * Type text into a pane one key at a time, then Enter.
+ *
+ * `pane.send_text` is a paste, and a TUI that reads pasted text as literal
+ * input does not open its own menus for it: measured against an agent TUI,
+ * "/model" pasted does nothing while the same characters typed open the model
+ * picker. Only plain ASCII is typed — a key cannot carry anything else — and
+ * callers fall back to a paste for the rest.
+ */
+export async function typePaneText(
+  paneId: string,
+  text: string,
+  enter = true,
+): Promise<boolean> {
+  const keys = Array.from(text);
+  if (enter) {
+    keys.push("Enter");
+  }
+  return sendPaneKeys(paneId, keys);
 }

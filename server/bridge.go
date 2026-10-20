@@ -722,6 +722,7 @@ func (s *Server) Handler() http.Handler {
 	// without herdr installed at all: that is exactly when they matter.
 	mux.HandleFunc("/api/v1/herdr/host", handleHostStatus)
 	mux.HandleFunc("/api/v1/herdr/host/update", handleHostUpdate)
+	mux.HandleFunc("/api/v1/herdr/host/restart", handleHostRestart)
 	mux.HandleFunc("/api/v1/herdr/host/install", handleHostInstall)
 	mux.HandleFunc("/api/v1/herdr/host/stat", handleHostStat)
 	mux.HandleFunc("/api/v1/herdr/file", handleFileRead)

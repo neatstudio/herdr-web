@@ -46,7 +46,7 @@ export function HerdrPanel({ open, onClose, consoleVersion }: Props) {
     return null;
   }
 
-  async function act(action: "install" | "update"): Promise<void> {
+  async function act(action: "install" | "update" | "restart"): Promise<void> {
     setBusy(true);
     setResult(null);
     try {
@@ -176,12 +176,38 @@ export function HerdrPanel({ open, onClose, consoleVersion }: Props) {
                   disabled={busy}
                   data-available={host.updateAvailable ? "true" : undefined}
                   onClick={() => {
-                    if (window.confirm("Update herdr on this host now?")) {
+                    if (
+                      window.confirm(
+                        "Update herdr on this host now?\n\n" +
+                          "The daemon is stopped first (that ends its panes), then updated, " +
+                          "then started again so this console can reconnect.",
+                      )
+                    ) {
                       void act("update");
                     }
                   }}
                 >
                   {host.updateAvailable ? `update to ${host.latestVersion}` : "update"}
+                </button>
+              )}
+              {host.installed && (
+                <button
+                  type="button"
+                  id="herdr-host-restart"
+                  className="hostpanel__act"
+                  disabled={busy}
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        "Restart the herdr daemon on this host?\n\n" +
+                          "Its panes end with it; the console reconnects when it answers.",
+                      )
+                    ) {
+                      void act("restart");
+                    }
+                  }}
+                >
+                  restart daemon
                 </button>
               )}
               {host.installed && !host.canUpdate && (

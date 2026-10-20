@@ -70,6 +70,7 @@ func main() {
 	if socketPath == "" {
 		socketPath = server.DefaultSocketPath()
 	}
+	server.SetHerdrSocket(socketPath)
 
 	fmt.Fprintf(os.Stderr, "herdr-web: socket %s\n", socketPath)
 	if err := server.Run([]string{*addr, *localAddr}, socketPath, webFS()); err != nil {

@@ -1135,11 +1135,16 @@ test("a missing herdr offers install, and a nix copy is left to nix", async ({ p
 
 /* ----------------------------------------------------------------- prompt */
 
-test("enter sends the line with a trailing newline and keeps history", async ({ page }) => {
-  const posted: string[] = [];
+test("enter types the line key by key and keeps history", async ({ page }) => {
+  const keyPosts: string[] = [];
+  const inputPosts: string[] = [];
   await installBridge(page);
+  await page.route("**/api/v1/herdr/panes/*/keys", async (route) => {
+    keyPosts.push(route.request().postData() ?? "");
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+  });
   await page.route("**/api/v1/herdr/panes/*/input", async (route) => {
-    posted.push(route.request().postData() ?? "");
+    inputPosts.push(route.request().postData() ?? "");
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
   });
   await page.goto("/");
@@ -1147,12 +1152,18 @@ test("enter sends the line with a trailing newline and keeps history", async ({ 
   const input = page.locator("#herdr-input");
   await input.fill("echo hi");
   await input.press("Enter");
-  await expect.poll(() => posted).toEqual([JSON.stringify({ text: "echo hi\n" })]);
+  // Typed, not pasted: a TUI treats pasted text literally and opens no menus
+  // for it, so the composer types plain ASCII and reserves a paste for what a
+  // key cannot carry.
+  await expect
+    .poll(() => keyPosts)
+    .toEqual([JSON.stringify({ keys: ["e", "c", "h", "o", " ", "h", "i", "Enter"] })]);
+  expect(inputPosts).toEqual([]);
   await expect(input).toHaveValue("");
 
   await input.fill("echo again");
   await input.press("Enter");
-  await expect.poll(() => posted).toHaveLength(2);
+  await expect.poll(() => keyPosts).toHaveLength(2);
   await expect(input).toHaveValue("");
 
   await input.press("ArrowUp");
@@ -1163,6 +1174,45 @@ test("enter sends the line with a trailing newline and keeps history", async ({ 
   await expect(input).toHaveValue("echo again");
   await input.press("ArrowDown");
   await expect(input).toHaveValue("");
+});
+
+test("text a key cannot carry is sent as text", async ({ page }) => {
+  const keyPosts: string[] = [];
+  const inputPosts: string[] = [];
+  await installBridge(page);
+  await page.route("**/api/v1/herdr/panes/*/keys", async (route) => {
+    keyPosts.push(route.request().postData() ?? "");
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+  });
+  await page.route("**/api/v1/herdr/panes/*/input", async (route) => {
+    inputPosts.push(route.request().postData() ?? "");
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+  });
+  await page.goto("/");
+
+  const input = page.locator("#herdr-input");
+  await input.fill("检查一下这个目录");
+  await input.press("Enter");
+  await expect.poll(() => inputPosts).toEqual([JSON.stringify({ text: "检查一下这个目录\n" })]);
+  expect(keyPosts).toEqual([]);
+});
+
+test("shift+enter writes a newline instead of sending", async ({ page }) => {
+  const keyPosts: string[] = [];
+  await installBridge(page);
+  await page.route("**/api/v1/herdr/panes/*/keys", async (route) => {
+    keyPosts.push(route.request().postData() ?? "");
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+  });
+  await page.goto("/");
+
+  const input = page.locator("#herdr-input");
+  await input.fill("first line");
+  await input.press("Shift+Enter");
+  await input.pressSequentially("second line");
+  await expect(input).toHaveValue("first line\nsecond line");
+  // Nothing went out: the box is a place to write a message, not a terminal.
+  expect(keyPosts).toEqual([]);
 });
 
 test("tab flushes the line without a newline then sends a real Tab", async ({ page }) => {
@@ -1182,9 +1232,53 @@ test("tab flushes the line without a newline then sends a real Tab", async ({ pa
   const input = page.locator("#herdr-input");
   await input.fill("git ch");
   await input.press("Tab");
-  await expect.poll(() => keyPosts).toEqual([JSON.stringify({ keys: ["Tab"] })]);
-  expect(inputPosts).toEqual([JSON.stringify({ text: "git ch" })]);
+  // The line is typed without Enter, then a real Tab asks the shell to complete
+  // it; the box keeps the text so the result stays editable.
+  await expect
+    .poll(() => keyPosts)
+    .toEqual([
+      JSON.stringify({ keys: ["g", "i", "t", " ", "c", "h"] }),
+      JSON.stringify({ keys: ["Tab"] }),
+    ]);
+  expect(inputPosts).toEqual([]);
   await expect(input).toHaveValue("git ch");
+});
+
+test("raw mode forwards every key to the pane, so completion and Ctrl work", async ({ page }) => {
+  const keyPosts: string[] = [];
+  await installBridge(page);
+  await page.route("**/api/v1/herdr/panes/*/keys", async (route) => {
+    keyPosts.push(route.request().postData() ?? "");
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+  });
+  await page.goto("/");
+
+  const input = page.locator("#herdr-input");
+  await input.click();
+  await input.press("Escape");
+  // The composer becomes a keyboard for the pane: this is the only way the
+  // shell's own line editor — completion, history, Ctrl-C — stays reachable.
+  await expect(page.locator(".prompt")).toHaveAttribute("data-raw", "on");
+  await expect(page.locator("#herdr-raw-off")).toBeVisible();
+
+  await input.pressSequentially("ec");
+  await input.press("Tab");
+  await input.press("Control+c");
+  await expect
+    .poll(() => keyPosts)
+    .toEqual([
+      JSON.stringify({ keys: ["e"] }),
+      JSON.stringify({ keys: ["c"] }),
+      JSON.stringify({ keys: ["Tab"] }),
+      JSON.stringify({ keys: ["ctrl+c"] }),
+    ]);
+  // Nothing is typed into the box, and the textarea keeps the focus so the
+  // keyboard stays where the operator put it.
+  await expect(input).toHaveValue("");
+  await expect(input).toBeFocused();
+
+  await input.press("Escape");
+  await expect(page.locator(".prompt")).not.toHaveAttribute("data-raw", "on");
 });
 
 test("opening a pane puts the caret in the prompt", async ({ page }) => {

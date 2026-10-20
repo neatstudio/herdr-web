@@ -52,6 +52,11 @@ const (
 
 	// hostFetchLimit keeps a surprising feed from being read into memory.
 	hostFetchLimit = 1 << 20
+
+	// hostDaemonSession is the tmux session the console starts herdr in when it
+	// has to start the daemon itself. herdr is a TUI and refuses to run without
+	// a terminal, so a session manager is the only way to start one unattended.
+	hostDaemonSession = "herdr-daemon"
 )
 
 // hostRunner runs one command with a fixed argv and returns its combined
@@ -69,11 +74,43 @@ var (
 	hostBinOverride string
 	hostRun         hostRunner  = defaultHostRun
 	hostFetch       hostFetcher = defaultHostFetch
+	// hostStartTimeout bounds the wait for a started daemon to answer. A
+	// variable so tests do not sit through the real budget.
+	hostStartTimeout = 20 * time.Second
+	// hostSocketPath is the socket the console talks to. herdr's CLI resolves a
+	// session from the socket path, and a stop or start must act on the daemon
+	// this console uses rather than on the default one.
+	hostSocketPath string
 	// hostResolve is a seam for tests: they cannot create /opt/homebrew or
 	// /nix/store, so the machine lookup itself is replaceable. Production
 	// always uses findHerdrBinary.
 	hostResolve = findHerdrBinary
 )
+
+// SetHerdrSocket records the socket the console talks to, so a restart targets
+// that daemon.
+func SetHerdrSocket(path string) {
+	hostMu.Lock()
+	hostSocketPath = strings.TrimSpace(path)
+	hostMu.Unlock()
+}
+
+// sessionArgs names the herdr session the CLI should act on, derived from the
+// socket path: named sessions live in <config>/sessions/<name>/herdr.sock, and
+// the default one is <config>/herdr.sock with no flag.
+func sessionArgs() []string {
+	hostMu.RLock()
+	socket := hostSocketPath
+	hostMu.RUnlock()
+	if socket == "" {
+		return nil
+	}
+	dir := filepath.Dir(socket)
+	if filepath.Base(dir) != "herdr" && filepath.Base(filepath.Dir(dir)) == "sessions" {
+		return []string{"--session", filepath.Base(dir)}
+	}
+	return nil
+}
 
 // SetHerdrBin sets the herdr binary to inspect and run. Empty means "find it"
 // on PATH.
@@ -435,17 +472,49 @@ func handleHostUpdate(w http.ResponseWriter, r *http.Request) {
 			"herdr is not installed on this machine")
 		return
 	}
-	switch method := installMethodFor(binary); method {
+	method := installMethodFor(binary)
+	var display, name string
+	var args []string
+	switch method {
 	case "direct":
 		// A fixed argv, never a shell string: no request data can reach this.
-		runHostCommand(w, r, deps, "herdr update", binary, "update")
+		display, name, args = "herdr update", binary, append(sessionArgs(), "update")
 	case "homebrew":
-		runHostCommand(w, r, deps, "brew upgrade herdr", "brew", "upgrade", "herdr")
+		display, name, args = "brew upgrade herdr", "brew", []string{"upgrade", "herdr"}
 	default:
 		writeError(w, http.StatusConflict, "herdr_update_unavailable",
 			fmt.Sprintf("herdr is managed by %s; update it with %s instead of herdr update",
 				method, method))
+		return
 	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), hostCommandTimeout)
+	defer cancel()
+
+	// An update on a server from before endpoint generation 1 needs one final
+	// stop, and the console is talking to that server: stopping first is what
+	// makes the update finish, and starting again is what makes the console
+	// connect afterwards. Leaving the daemon down after an update is what the
+	// operator reported on a deployed host.
+	steps := make([]hostStep, 0, 3)
+	stopped := false
+	if probe, ok := probeHerdrStatus(ctx, deps, binary); ok && probe.Server.Running {
+		stop := stopHostDaemon(ctx, deps, binary)
+		steps = append(steps, stop)
+		stopped = stop.OK
+	} else {
+		steps = append(steps, hostStep{Step: "stop", Command: "herdr server stop",
+			OK: true, Skipped: "no daemon was running"})
+	}
+
+	update := runHostStep(ctx, deps, "update", display, name, args...)
+	steps = append(steps, update)
+
+	// A failed update leaves the binary as it was, so starting the old one again
+	// keeps the console usable instead of leaving nothing to talk to.
+	steps = append(steps, startHostDaemon(ctx, deps, binary))
+	_ = stopped
+	writeHostSteps(w, display, steps)
 }
 
 func handleHostInstall(w http.ResponseWriter, r *http.Request) {
@@ -524,4 +593,197 @@ func hostExitCode(err error) (int, bool) {
 		return process.ExitCode(), true
 	}
 	return 0, false
+}
+
+// hostStep is one command of a stop-update-start sequence. The panel shows each
+// step, because "herdr update" on an old server is several operations and the
+// operator needs to see which one failed.
+type hostStep struct {
+	Step     string `json:"step"`
+	Command  string `json:"command"`
+	OK       bool   `json:"ok"`
+	Output   string `json:"output"`
+	ExitCode int    `json:"exitCode"`
+	Skipped  string `json:"skipped,omitempty"`
+}
+
+// herdrStatusProbe is the part of `herdr status --json` a restart decision needs.
+type herdrStatusProbe struct {
+	Client struct {
+		Version string `json:"version"`
+	} `json:"client"`
+	Server struct {
+		Running bool   `json:"running"`
+		Version string `json:"version"`
+	} `json:"server"`
+}
+
+func probeHerdrStatus(ctx context.Context, deps hostDeps, binary string) (herdrStatusProbe, bool) {
+	ctx, cancel := context.WithTimeout(ctx, hostStatusTimeout)
+	defer cancel()
+	raw, err := deps.run(ctx, binary, append(sessionArgs(), "status", "--json")...)
+	if err != nil {
+		return herdrStatusProbe{}, false
+	}
+	var probe herdrStatusProbe
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return herdrStatusProbe{}, false
+	}
+	return probe, true
+}
+
+// runHostStep runs one fixed command and reports it as a step.
+func runHostStep(ctx context.Context, deps hostDeps, step, display, name string, args ...string) hostStep {
+	out := hostStep{Step: step, Command: display}
+	output, err := deps.run(ctx, name, args...)
+	out.Output = string(output)
+	if err == nil {
+		out.OK = true
+		return out
+	}
+	// exec.CommandContext kills the process on deadline, which surfaces as an
+	// exit signal rather than a context error, so check both. 124 is what
+	// timeout(1) uses for the same outcome.
+	if errors.Is(err, context.DeadlineExceeded) || ctx.Err() == context.DeadlineExceeded {
+		message := "command timed out after " + hostCommandTimeout.String()
+		if text := strings.TrimSpace(out.Output); text != "" {
+			out.Output = text + "\n" + message
+		} else {
+			out.Output = message
+		}
+		out.ExitCode = 124
+		return out
+	}
+	if code, ok := hostExitCode(err); ok {
+		out.ExitCode = code
+		return out
+	}
+	out.Output = strings.TrimSpace(out.Output + "\n" + err.Error())
+	out.ExitCode = -1
+	return out
+}
+
+// stopHostDaemon stops the running server. It ends the panes in it, which is
+// why it only ever runs as part of a sequence the operator asked for.
+func stopHostDaemon(ctx context.Context, deps hostDeps, binary string) hostStep {
+	return runHostStep(ctx, deps, "stop", displayWithSession("herdr server stop"),
+		binary, append(sessionArgs(), "server", "stop")...)
+}
+
+// startHostDaemon starts herdr in a detached tmux session and waits until the
+// daemon answers. herdr cannot be started without a terminal: measured here,
+// running it with no tty reports "cannot attach without a usable terminal".
+func startHostDaemon(ctx context.Context, deps hostDeps, binary string) hostStep {
+	out := hostStep{
+		Step:    "start",
+		Command: "tmux new-session -d -s " + hostDaemonSession + " " + displayWithSession(binary),
+	}
+	// A session left over from an earlier start would make new-session fail, and
+	// herdr is not running at this point, so the session is ours to clear.
+	_, _ = deps.run(ctx, "tmux", "kill-session", "-t", hostDaemonSession)
+	start := append([]string{"new-session", "-d", "-s", hostDaemonSession, "-x", "200", "-y", "50", binary},
+		sessionArgs()...)
+	output, err := deps.run(ctx, "tmux", start...)
+	out.Output = string(output)
+	if err != nil {
+		out.Output = strings.TrimSpace(out.Output + "\ntmux is needed to start herdr without a terminal; " +
+			"start it in a terminal instead")
+		out.ExitCode = -1
+		return out
+	}
+
+	deadline := time.Now().Add(hostStartTimeout)
+	for time.Now().Before(deadline) {
+		if probe, ok := probeHerdrStatus(ctx, deps, binary); ok && probe.Server.Running {
+			out.OK = true
+			out.Output = strings.TrimSpace(out.Output + "\ndaemon is running " + probe.Server.Version)
+			return out
+		}
+		select {
+		case <-ctx.Done():
+			out.ExitCode = -1
+			return out
+		case <-time.After(300 * time.Millisecond):
+		}
+	}
+	out.Output = strings.TrimSpace(out.Output + "\nherdr did not answer after " +
+		hostStartTimeout.String() + "; start it in a terminal")
+	out.ExitCode = -1
+	return out
+}
+
+// hostStepResponse is what the panel renders for a sequence.
+type hostStepResponse struct {
+	OK       bool       `json:"ok"`
+	Command  string     `json:"command"`
+	Output   string     `json:"output"`
+	ExitCode int        `json:"exitCode"`
+	Steps    []hostStep `json:"steps"`
+}
+
+func writeHostSteps(w http.ResponseWriter, display string, steps []hostStep) {
+	ok := true
+	exitCode := 0
+	lines := make([]string, 0, len(steps))
+	for _, step := range steps {
+		lines = append(lines, step.Command)
+		if step.Skipped != "" {
+			lines = append(lines, "  skipped: "+step.Skipped)
+		}
+		if text := strings.TrimSpace(step.Output); text != "" {
+			for _, line := range strings.Split(text, "\n") {
+				lines = append(lines, "  "+line)
+			}
+		}
+		if !step.OK {
+			ok = false
+			if step.ExitCode != 0 {
+				exitCode = step.ExitCode
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, hostStepResponse{
+		OK:       ok,
+		Command:  display,
+		Output:   strings.Join(lines, "\n"),
+		ExitCode: exitCode,
+		Steps:    steps,
+	})
+}
+
+// handleHostRestart stops the daemon and starts it again. The console talks to
+// that daemon, so a restart it performs has to leave something answering.
+func handleHostRestart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, "POST")
+		return
+	}
+	deps := currentHostDeps()
+	binary, found := deps.find()
+	if !found {
+		writeError(w, http.StatusConflict, "herdr_restart_unavailable",
+			"herdr is not installed on this machine")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), hostCommandTimeout)
+	defer cancel()
+
+	steps := make([]hostStep, 0, 2)
+	if probe, ok := probeHerdrStatus(ctx, deps, binary); ok && probe.Server.Running {
+		steps = append(steps, stopHostDaemon(ctx, deps, binary))
+	} else {
+		steps = append(steps, hostStep{Step: "stop", Command: "herdr server stop",
+			OK: true, Skipped: "no daemon was running"})
+	}
+	steps = append(steps, startHostDaemon(ctx, deps, binary))
+	writeHostSteps(w, "herdr server stop && start", steps)
+}
+
+// displayWithSession is how a command is shown in the panel: the session flag
+// is part of what ran, so it is part of what the operator reads.
+func displayWithSession(base string) string {
+	if args := sessionArgs(); len(args) == 2 {
+		return base + " " + args[0] + " " + args[1]
+	}
+	return base
 }

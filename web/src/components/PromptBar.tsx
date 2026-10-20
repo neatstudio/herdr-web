@@ -1,24 +1,95 @@
 import { useEffect, useRef, useState } from "react";
-import { quotePath, sendPaneKeys, sendPaneText, uploadFile } from "@/lib/herdr";
+import {
+  quotePath,
+  sendPaneKeys,
+  sendPaneText,
+  typePaneText,
+  uploadFile,
+} from "@/lib/herdr";
 import { PROMPT_ID, keyboardIsPrimary, shouldClaimKey } from "@/lib/focus";
 
 const HISTORY_MAX = 50;
+/** Longest line that is typed key by key before it becomes a paste. */
+const TYPE_LIMIT = 400;
+/** The box grows to this many lines, then scrolls. */
+const MAX_ROWS = 8;
 
 /**
- * Prompt line for one pane. Enter sends the line, Tab flushes the line and
- * then sends a real Tab so the shell completes instead of executing, and
- * ArrowUp/Down walks the send history.
+ * Whether a line can be typed instead of pasted: a key carries one ASCII
+ * character, and a multi-line line is a pasted block by definition.
+ */
+function canType(text: string): boolean {
+  return text.length > 0 && text.length <= TYPE_LIMIT && /^[\x20-\x7e]+$/.test(text);
+}
+
+/**
+ * herdr's name for one browser key, or null when the key means nothing to a
+ * terminal. Raw mode forwards these one by one, which is how completion,
+ * history and a TUI's own menus keep working.
+ */
+function terminalKey(event: React.KeyboardEvent): string | null {
+  if (event.ctrlKey && !event.altKey && !event.metaKey && event.key.length === 1) {
+    return `ctrl+${event.key.toLowerCase()}`;
+  }
+  if (event.metaKey || event.altKey) {
+    return null;
+  }
+  if (event.key.length === 1) {
+    return event.key;
+  }
+  switch (event.key) {
+    case "Enter":
+      return "Enter";
+    case "Tab":
+      return "Tab";
+    case "Backspace":
+      return "Backspace";
+    case "Delete":
+      return "Delete";
+    case "Escape":
+      return "esc";
+    case "ArrowUp":
+      return "Up";
+    case "ArrowDown":
+      return "Down";
+    case "ArrowLeft":
+      return "Left";
+    case "ArrowRight":
+      return "Right";
+    case "Home":
+      return "Home";
+    case "End":
+      return "End";
+    case "PageUp":
+      return "PageUp";
+    case "PageDown":
+      return "PageDown";
+    default:
+      return null;
+  }
+}
+
+/**
+ * Composer for one pane.
  *
- * Focus is part of the contract: opening a pane puts the caret here, and a
- * Tab or Enter pressed while nothing on the page has focus brings it back, so
- * typing never needs the mouse first.
+ * Enter sends, Shift+Enter makes a newline, and the box wraps and grows, so a
+ * long message is readable before it goes out. Two things follow from the fact
+ * that the terminal — not this box — owns the real line editor:
+ *
+ *   - A line is *typed* rather than pasted when it is plain ASCII. A TUI reads
+ *     pasted text literally and opens no menus for it, so "/model" pasted does
+ *     nothing while the same characters typed open the agent's picker.
+ *   - Raw mode forwards every key to the pane, which is the only way shell
+ *     completion, arrow-key history and Ctrl-C can work: they belong to the
+ *     pane's line editor, not to a text box.
  */
 export function PromptBar({ paneId }: { paneId: string }) {
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
+  const [raw, setRaw] = useState(false);
   const history = useRef<string[]>([]);
   const historyIndex = useRef(-1);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [dropping, setDropping] = useState(false);
   const [uploading, setUploading] = useState(0);
@@ -62,6 +133,24 @@ export function PromptBar({ paneId }: { paneId: string }) {
     }
   }, [paneId]);
 
+  // Leave raw mode when the pane changes: those keys belong to the pane that
+  // was focused when the operator turned it on.
+  useEffect(() => {
+    setRaw(false);
+    setValue("");
+  }, [paneId]);
+
+  // Grow with the content, up to MAX_ROWS lines, then scroll.
+  useEffect(() => {
+    const box = inputRef.current;
+    if (box === null) {
+      return;
+    }
+    box.style.height = "auto";
+    const line = parseFloat(getComputedStyle(box).lineHeight) || 17;
+    box.style.height = `${Math.min(box.scrollHeight, line * MAX_ROWS)}px`;
+  }, [value, raw]);
+
   // Reaching for the prompt from anywhere on the page. Keys that belong to a
   // focused control are left alone, so the page stays keyboard navigable.
   useEffect(() => {
@@ -77,23 +166,29 @@ export function PromptBar({ paneId }: { paneId: string }) {
         return;
       }
       event.preventDefault();
-      input.focus();
+      (input as HTMLTextAreaElement).focus();
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
 
   async function send(text: string): Promise<void> {
-    if (text.trim() === "" || busy) {
+    const line = text.replace(/\n+$/, "");
+    if (line.trim() === "" || busy) {
       return;
     }
     setBusy(true);
     try {
-      if (!(await sendPaneText(paneId, text))) {
+      // Typed input keeps a TUI's own menus alive; anything a key cannot carry
+      // (non-ASCII, a pasted block) goes out as text.
+      const delivered = canType(line)
+        ? await typePaneText(paneId, line)
+        : await sendPaneText(paneId, line);
+      if (!delivered) {
         return;
       }
-      if (history.current[history.current.length - 1] !== text) {
-        history.current.push(text);
+      if (history.current[history.current.length - 1] !== line) {
+        history.current.push(line);
         if (history.current.length > HISTORY_MAX) {
           history.current.shift();
         }
@@ -115,7 +210,11 @@ export function PromptBar({ paneId }: { paneId: string }) {
     try {
       // The line goes out without a newline, then Tab asks the shell to
       // complete it; the box keeps the text so the result stays editable.
-      if (await sendPaneText(paneId, value.replace(/\n$/, ""), false)) {
+      const line = value.replace(/\n+$/, "");
+      const delivered = canType(line)
+        ? await typePaneText(paneId, line, false)
+        : await sendPaneText(paneId, line, false);
+      if (delivered) {
         await sendPaneKeys(paneId, ["Tab"]);
       }
     } finally {
@@ -123,10 +222,33 @@ export function PromptBar({ paneId }: { paneId: string }) {
     }
   }
 
-  function onKeyDown(event: React.KeyboardEvent<HTMLInputElement>): void {
+  function onRawKey(event: React.KeyboardEvent<HTMLTextAreaElement>): void {
+    // Escape leaves raw mode, so there is a way back with the keyboard.
+    if (event.key === "Escape" && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      event.preventDefault();
+      setRaw(false);
+      return;
+    }
+    const key = terminalKey(event);
+    if (key === null) {
+      return;
+    }
+    event.preventDefault();
+    void sendPaneKeys(paneId, [key]);
+  }
+
+  function onKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>): void {
+    if (raw) {
+      onRawKey(event);
+      return;
+    }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       void send(value);
+      return;
+    }
+    if (event.key === "Enter" && event.shiftKey) {
+      // A newline in the box, not a send.
       return;
     }
     if (event.key === "Tab") {
@@ -134,7 +256,14 @@ export function PromptBar({ paneId }: { paneId: string }) {
       void complete();
       return;
     }
-    if (event.key === "ArrowUp") {
+    if (event.key === "Escape") {
+      // Raw mode is how completion, history and a TUI's menus work: they are
+      // the pane's line editor, and a text box cannot stand in for them.
+      event.preventDefault();
+      setRaw(true);
+      return;
+    }
+    if (event.key === "ArrowUp" && !event.shiftKey) {
       event.preventDefault();
       if (history.current.length === 0) {
         return;
@@ -146,7 +275,7 @@ export function PromptBar({ paneId }: { paneId: string }) {
       setValue(history.current[historyIndex.current] ?? "");
       return;
     }
-    if (event.key === "ArrowDown") {
+    if (event.key === "ArrowDown" && !event.shiftKey) {
       event.preventDefault();
       if (historyIndex.current < 0) {
         return;
@@ -164,6 +293,7 @@ export function PromptBar({ paneId }: { paneId: string }) {
   return (
     <div
       className="prompt"
+      data-raw={raw ? "on" : undefined}
       data-drop={dropping ? "on" : undefined}
       onDragOver={(event) => {
         if (event.dataTransfer.types.includes("Files")) {
@@ -182,20 +312,21 @@ export function PromptBar({ paneId }: { paneId: string }) {
       }}
     >
       <span className="prompt__glyph" aria-hidden>
-        ❯
+        {raw ? "⌨" : "❯"}
       </span>
-      <input
+      <textarea
         ref={inputRef}
         id={PROMPT_ID}
         className="prompt__input"
-        type="text"
+        rows={1}
         autoComplete="off"
         autoCapitalize="off"
         spellCheck={false}
-        placeholder={`send to ${paneId}`}
+        placeholder={raw ? `keys go to ${paneId} — esc leaves raw mode` : `send to ${paneId}`}
         aria-label={`Send input to ${paneId}`}
-        value={value}
+        value={raw ? "" : value}
         disabled={busy}
+        readOnly={raw}
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={onKeyDown}
         onPaste={(event) => {
@@ -220,6 +351,20 @@ export function PromptBar({ paneId }: { paneId: string }) {
           <span className="prompt__problem" role="status">
             {problem}
           </span>
+        )}
+        {raw && (
+          <button
+            type="button"
+            id="herdr-raw-off"
+            className="prompt__keys prompt__keys--on"
+            title="leave raw keyboard mode"
+            onClick={() => {
+              setRaw(false);
+              inputRef.current?.focus();
+            }}
+          >
+            keys on · esc
+          </button>
         )}
         <input
           ref={fileRef}
@@ -248,18 +393,21 @@ export function PromptBar({ paneId }: { paneId: string }) {
           {uploading > 0 ? "…" : "＋"}
         </button>
         <div className="prompt__hints" aria-hidden>
-          <span>
-            <kbd>↑↓</kbd> history
-          </span>
-          <span>
-            <kbd>⇥</kbd> complete
-          </span>
+          {raw ? (
+            <span>
+              <kbd>esc</kbd> back
+            </span>
+          ) : (
+            <span>
+              <kbd>⇧⏎</kbd> newline
+            </span>
+          )}
         </div>
         <button
           type="button"
           id="herdr-send"
           className="prompt__send"
-          disabled={busy || value.trim() === ""}
+          disabled={busy || raw || value.trim() === ""}
           onClick={() => void send(value)}
         >
           send

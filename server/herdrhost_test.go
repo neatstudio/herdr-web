@@ -2,13 +2,23 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
+
+// A started daemon is waited for in production; the tests must not sit through
+// that budget, and they never run a real daemon.
+func init() {
+	hostStartTimeout = 400 * time.Millisecond
+}
 
 // liveHerdrStatus is `herdr status --json` captured verbatim from this machine,
 // so the parser is exercised against the real shape rather than a guess. The
@@ -264,10 +274,9 @@ func TestHostUpdateRunsHerdrUpdateForADirectInstall(t *testing.T) {
 	binary := writeFakeHerdrBinary(t)
 	SetHerdrBin(binary)
 	defer SetHerdrBin("")
-	var gotName string
-	var gotArgs []string
+	var ran []string
 	SetHostDeps(func(_ context.Context, name string, args ...string) ([]byte, error) {
-		gotName, gotArgs = name, append([]string(nil), args...)
+		ran = append(ran, strings.Join(append([]string{name}, args...), " "))
 		return []byte("updated herdr to 0.9.5\n"), nil
 	}, nil)
 	defer SetHostDeps(nil, nil)
@@ -277,23 +286,29 @@ func TestHostUpdateRunsHerdrUpdateForADirectInstall(t *testing.T) {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 	body := decodeMap(t, response)
-	if body["ok"] != true || body["command"] != "herdr update" || body["output"] != "updated herdr to 0.9.5\n" || body["exitCode"] != float64(0) {
+	if body["command"] != "herdr update" {
 		t.Fatalf("body=%v", body)
 	}
-	if gotName != binary {
-		t.Fatalf("runner name=%q want %q", gotName, binary)
+	update := hostStepByName(t, body, "update")
+	if update["ok"] != true || update["command"] != "herdr update" ||
+		update["output"] != "updated herdr to 0.9.5\n" || update["exitCode"] != float64(0) {
+		t.Fatalf("update step=%v", update)
 	}
-	if len(gotArgs) != 1 || gotArgs[0] != "update" {
-		t.Fatalf("runner args=%q", gotArgs)
+	// The binary itself runs `update`, with no shell in between.
+	if !strings.Contains(strings.Join(ran, "\n"), binary+" update") {
+		t.Fatalf("herdr update was never run:\n%s", strings.Join(ran, "\n"))
+	}
+	// The daemon is started afterwards, or the console has nothing to talk to.
+	if hostStepByName(t, body, "start")["step"] != "start" {
+		t.Fatalf("body=%v", body)
 	}
 }
 
 func TestHostUpdateRunsBrewForAHomebrewInstall(t *testing.T) {
 	stubHostResolver(t, "/opt/homebrew/bin/herdr", true)
-	var gotName string
-	var gotArgs []string
+	var ran []string
 	SetHostDeps(func(_ context.Context, name string, args ...string) ([]byte, error) {
-		gotName, gotArgs = name, append([]string(nil), args...)
+		ran = append(ran, strings.Join(append([]string{name}, args...), " "))
 		return []byte("==> Upgrading herdr\n"), nil
 	}, nil)
 	defer SetHostDeps(nil, nil)
@@ -303,14 +318,17 @@ func TestHostUpdateRunsBrewForAHomebrewInstall(t *testing.T) {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 	body := decodeMap(t, response)
-	if body["ok"] != true || body["command"] != "brew upgrade herdr" {
+	if body["command"] != "brew upgrade herdr" {
 		t.Fatalf("body=%v", body)
 	}
-	if gotName != "brew" {
-		t.Fatalf("runner name=%q", gotName)
+	update := hostStepByName(t, body, "update")
+	if update["ok"] != true || update["command"] != "brew upgrade herdr" {
+		t.Fatalf("update step=%v", update)
 	}
-	if len(gotArgs) != 2 || gotArgs[0] != "upgrade" || gotArgs[1] != "herdr" {
-		t.Fatalf("runner args=%q", gotArgs)
+	// The package manager is the updater for a Homebrew copy; herdr update would
+	// fight it over the same binary.
+	if !strings.Contains(strings.Join(ran, "\n"), "brew upgrade herdr") {
+		t.Fatalf("brew was never asked to upgrade:\n%s", strings.Join(ran, "\n"))
 	}
 }
 
@@ -331,19 +349,32 @@ func TestHostUpdateReportsANonZeroExitWithoutFailingTheRequest(t *testing.T) {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 	body := decodeMap(t, response)
-	if body["ok"] != false || body["exitCode"] != float64(2) {
+	if body["ok"] != false {
 		t.Fatalf("body=%v", body)
 	}
-	if body["output"] != "error: could not replace binary: permission denied\n" {
-		t.Fatalf("output=%v", body["output"])
+	update := hostStepByName(t, body, "update")
+	if update["exitCode"] != float64(2) {
+		t.Fatalf("update step=%v", update)
+	}
+	if update["output"] != "error: could not replace binary: permission denied\n" {
+		t.Fatalf("output=%v", update["output"])
+	}
+	// The old binary is still on disk, so the daemon is started again: leaving
+	// nothing running is worse than leaving the old version running.
+	if started := hostStepByName(t, body, "start"); started["step"] != "start" {
+		t.Fatalf("body=%v", body)
 	}
 }
 
-func TestHostUpdateReportsATimeoutAsAFailedResult(t *testing.T) {
+func TestHostUpdateReportsATimeoutOnTheUpdateStep(t *testing.T) {
 	binary := writeFakeHerdrBinary(t)
 	SetHerdrBin(binary)
 	defer SetHerdrBin("")
-	SetHostDeps(func(context.Context, string, ...string) ([]byte, error) {
+	// The status probe answers first, so the sequence gets as far as the update.
+	SetHostDeps(func(_ context.Context, name string, args ...string) ([]byte, error) {
+		if strings.HasSuffix(strings.Join(args, " "), "status --json") {
+			return []byte(`{"server":{"running":true,"version":"0.9.0"}}`), nil
+		}
 		return nil, context.DeadlineExceeded
 	}, nil)
 	defer SetHostDeps(nil, nil)
@@ -353,16 +384,20 @@ func TestHostUpdateReportsATimeoutAsAFailedResult(t *testing.T) {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 	body := decodeMap(t, response)
-	if body["ok"] != false || body["exitCode"] != float64(124) {
+	if body["ok"] != false {
 		t.Fatalf("body=%v", body)
 	}
-	output, _ := body["output"].(string)
+	update := hostStepByName(t, body, "update")
+	if update["exitCode"] != float64(124) {
+		t.Fatalf("update step=%v, want exit 124", update)
+	}
+	output, _ := update["output"].(string)
 	if !strings.Contains(output, "timed out") {
 		t.Fatalf("output=%q", output)
 	}
 }
 
-func TestHostUpdateReportsAnUnrunnableCommandAsBadGateway(t *testing.T) {
+func TestHostUpdateReportsAnUnrunnableCommandInItsStep(t *testing.T) {
 	binary := writeFakeHerdrBinary(t)
 	SetHerdrBin(binary)
 	defer SetHerdrBin("")
@@ -371,15 +406,34 @@ func TestHostUpdateReportsAnUnrunnableCommandAsBadGateway(t *testing.T) {
 	}, nil)
 	defer SetHostDeps(nil, nil)
 
+	// A sequence answers 200 with its steps: which command could not start is
+	// information for the operator, and the panel shows it next to the others.
 	response := do(t, http.HandlerFunc(handleHostUpdate), http.MethodPost, "/api/v1/herdr/host/update", "")
-	if response.Code != http.StatusBadGateway {
+	if response.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 	body := decodeMap(t, response)
-	errorBody, _ := body["error"].(map[string]any)
-	if errorBody["code"] != "herdr_command_failed" {
+	if body["ok"] != false {
 		t.Fatalf("body=%v", body)
 	}
+	update := hostStepByName(t, body, "update")
+	if output, _ := update["output"].(string); !strings.Contains(output, "executable file not found") {
+		t.Fatalf("update step=%v", update)
+	}
+}
+
+// hostStepByName reads one step out of a sequence response.
+func hostStepByName(t *testing.T, body map[string]any, name string) map[string]any {
+	t.Helper()
+	steps, _ := body["steps"].([]any)
+	for _, raw := range steps {
+		step, _ := raw.(map[string]any)
+		if step["step"] == name {
+			return step
+		}
+	}
+	t.Fatalf("no %q step in %v", name, body["steps"])
+	return nil
 }
 
 func TestHostInstallRefusesWhenHerdrIsAlreadyInstalled(t *testing.T) {
@@ -456,5 +510,246 @@ func TestHostHandlersRejectTheWrongMethod(t *testing.T) {
 		t.Fatalf("GET install=%d", got.Code)
 	} else if got.Header().Get("Allow") != "POST" {
 		t.Fatalf("Allow=%q", got.Header().Get("Allow"))
+	}
+}
+
+// hostSequence is a fake runner that records every command and answers by
+// command name, so a stop-update-start sequence can be checked without running
+// anything real.
+type hostSequence struct {
+	mu        sync.Mutex
+	ran       []string
+	running   *bool
+	failOn    string
+	startSets bool
+}
+
+func (h *hostSequence) run(_ context.Context, name string, args ...string) ([]byte, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	line := strings.Join(append([]string{name}, args...), " ")
+	h.ran = append(h.ran, line)
+
+	// herdr status --json is how the sequence decides whether to stop and start.
+	if strings.HasSuffix(line, "status --json") {
+		state := `"running":false,"version":null`
+		if h.running != nil && *h.running {
+			state = `"running":true,"version":"0.9.0"`
+		}
+		return []byte(`{"client":{"version":"0.9.0"},"server":{` + state + `}}`), nil
+	}
+	if strings.Contains(line, "new-session") {
+		if h.running != nil {
+			*h.running = true
+		}
+		return []byte(""), nil
+	}
+	if strings.Contains(line, "server stop") {
+		if h.running != nil {
+			*h.running = false
+		}
+		return []byte("stopped session default\n"), nil
+	}
+	if h.failOn != "" && strings.Contains(line, h.failOn) {
+		return []byte("boom\n"), &hostExitError{code: 1, err: errors.New("exit status 1")}
+	}
+	return []byte("done\n"), nil
+}
+
+func TestHostUpdateStopsTheDaemonAndStartsItAgain(t *testing.T) {
+	running := true
+	seq := &hostSequence{running: &running}
+	hostResolve = func(string) (string, bool) { return "/usr/local/bin/herdr", true }
+	SetHostDeps(seq.run, nil)
+	t.Cleanup(func() {
+		SetHostDeps(nil, nil)
+		hostResolve = findHerdrBinary
+	})
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/herdr/host/update", nil)
+	handleHostUpdate(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", recorder.Code, recorder.Body.String())
+	}
+	var body struct {
+		OK    bool `json:"ok"`
+		Steps []struct {
+			Step    string `json:"step"`
+			OK      bool   `json:"ok"`
+			Command string `json:"command"`
+		} `json:"steps"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v (%s)", err, recorder.Body.String())
+	}
+	if !body.OK {
+		t.Fatalf("sequence reported failure: %s", recorder.Body.String())
+	}
+	if len(body.Steps) != 3 {
+		t.Fatalf("steps = %d, want 3 (%s)", len(body.Steps), recorder.Body.String())
+	}
+	for i, want := range []string{"stop", "update", "start"} {
+		if body.Steps[i].Step != want {
+			t.Errorf("step %d = %q, want %q", i, body.Steps[i].Step, want)
+		}
+		if !body.Steps[i].OK {
+			t.Errorf("step %q reported failure: %s", want, recorder.Body.String())
+		}
+	}
+	// The order matters: an update on an old server needs the stop first, and
+	// the console is unusable until something answers again.
+	joined := strings.Join(seq.ran, "\n")
+	stopAt := strings.Index(joined, "server stop")
+	updateAt := strings.Index(joined, "/usr/local/bin/herdr update")
+	startAt := strings.Index(joined, "new-session")
+	if stopAt < 0 || updateAt < 0 || startAt < 0 {
+		t.Fatalf("missing a step:\n%s", joined)
+	}
+	if !(stopAt < updateAt && updateAt < startAt) {
+		t.Fatalf("wrong order:\n%s", joined)
+	}
+	if !running {
+		t.Error("the daemon was not started again, so the console has nothing to talk to")
+	}
+}
+
+func TestHostUpdateSkipsTheStopWhenNothingRuns(t *testing.T) {
+	running := false
+	seq := &hostSequence{running: &running}
+	hostResolve = func(string) (string, bool) { return "/usr/local/bin/herdr", true }
+	SetHostDeps(seq.run, nil)
+	t.Cleanup(func() {
+		SetHostDeps(nil, nil)
+		hostResolve = findHerdrBinary
+	})
+
+	recorder := httptest.NewRecorder()
+	handleHostUpdate(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/herdr/host/update", nil))
+
+	var body struct {
+		Steps []struct {
+			Step    string `json:"step"`
+			Skipped string `json:"skipped"`
+		} `json:"steps"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Steps) != 3 {
+		t.Fatalf("steps = %d, want 3", len(body.Steps))
+	}
+	if body.Steps[0].Step != "stop" || body.Steps[0].Skipped == "" {
+		t.Errorf("stop step = %+v, want it skipped", body.Steps[0])
+	}
+	if strings.Contains(strings.Join(seq.ran, "\n"), "server stop") {
+		t.Error("a stop was run although no daemon was up")
+	}
+	// Even so, the daemon is started: an update that leaves nothing running is
+	// what left the console disconnected on a deployed host.
+	if !running {
+		t.Error("the daemon was not started")
+	}
+}
+
+func TestHostUpdateStartsAgainEvenWhenTheUpdateFails(t *testing.T) {
+	running := true
+	seq := &hostSequence{running: &running, failOn: "herdr update"}
+	hostResolve = func(string) (string, bool) { return "/usr/local/bin/herdr", true }
+	SetHostDeps(seq.run, nil)
+	t.Cleanup(func() {
+		SetHostDeps(nil, nil)
+		hostResolve = findHerdrBinary
+	})
+
+	recorder := httptest.NewRecorder()
+	handleHostUpdate(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/herdr/host/update", nil))
+
+	var body struct {
+		OK    bool `json:"ok"`
+		Steps []struct {
+			Step string `json:"step"`
+			OK   bool   `json:"ok"`
+		} `json:"steps"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.OK {
+		t.Error("a failed update must not be reported as success")
+	}
+	if body.Steps[1].Step != "update" || body.Steps[1].OK {
+		t.Errorf("update step = %+v, want a failure", body.Steps[1])
+	}
+	if !body.Steps[2].OK {
+		t.Errorf("start step = %+v, want success: the old binary is still there and usable",
+			body.Steps[2])
+	}
+	if !running {
+		t.Error("the daemon was left down after a failed update")
+	}
+}
+
+func TestHostRestartStopsAndStarts(t *testing.T) {
+	running := true
+	seq := &hostSequence{running: &running}
+	hostResolve = func(string) (string, bool) { return "/usr/local/bin/herdr", true }
+	SetHostDeps(seq.run, nil)
+	t.Cleanup(func() {
+		SetHostDeps(nil, nil)
+		hostResolve = findHerdrBinary
+	})
+
+	recorder := httptest.NewRecorder()
+	handleHostRestart(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/herdr/host/restart", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", recorder.Code, recorder.Body.String())
+	}
+	joined := strings.Join(seq.ran, "\n")
+	if !strings.Contains(joined, "server stop") || !strings.Contains(joined, "new-session") {
+		t.Fatalf("restart did not stop and start:\n%s", joined)
+	}
+	if !running {
+		t.Error("restart left the daemon down")
+	}
+}
+
+func TestHostRestartRefusesWhenHerdrIsMissing(t *testing.T) {
+	hostResolve = func(string) (string, bool) { return "", false }
+	t.Cleanup(func() { hostResolve = findHerdrBinary })
+
+	recorder := httptest.NewRecorder()
+	handleHostRestart(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/herdr/host/restart", nil))
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", recorder.Code)
+	}
+}
+
+func TestSessionArgsNameTheSessionTheSocketBelongsTo(t *testing.T) {
+	// A stop or start must act on the daemon this console talks to. herdr's CLI
+	// resolves a named session from <config>/sessions/<name>/herdr.sock, so the
+	// flag is derived from the socket rather than assumed to be the default.
+	SetHerdrSocket("/home/op/.config/herdr/sessions/work/herdr.sock")
+	t.Cleanup(func() { SetHerdrSocket("") })
+	if got := sessionArgs(); len(got) != 2 || got[0] != "--session" || got[1] != "work" {
+		t.Fatalf("sessionArgs = %q, want --session work", got)
+	}
+	if got := displayWithSession("herdr server stop"); got != "herdr server stop --session work" {
+		t.Fatalf("display = %q", got)
+	}
+
+	// The default session has no flag.
+	SetHerdrSocket("/home/op/.config/herdr/herdr.sock")
+	if got := sessionArgs(); got != nil {
+		t.Fatalf("sessionArgs = %q, want none for the default socket", got)
+	}
+	if got := displayWithSession("herdr update"); got != "herdr update" {
+		t.Fatalf("display = %q", got)
+	}
+
+	SetHerdrSocket("")
+	if got := sessionArgs(); got != nil {
+		t.Fatalf("sessionArgs = %q, want none without a socket", got)
 	}
 }

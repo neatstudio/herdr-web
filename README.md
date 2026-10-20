@@ -61,6 +61,24 @@ The window is three things: a sidebar, a transcript, and a prompt.
 On a phone the sidebar becomes one menu with a switch between its two lists,
 and the transcript reflows to the screen width.
 
+## The composer
+
+The box at the bottom of a pane is a composer, not a terminal. That has costs,
+and the design leans on two things to pay them:
+
+- **A line is typed, not pasted.** `pane.send_text` is a paste, and a TUI that
+  reads pasted text literally opens no menus for it: measured against an agent
+  TUI, `/model` pasted does nothing while the same characters typed open the
+  model picker. Plain ASCII therefore goes out key by key; anything a key
+  cannot carry — non-ASCII, a multi-line block — goes out as text.
+- **Raw mode is one key away.** Press `Esc` in the composer and every key goes
+  to the pane instead: Tab completes, arrows walk the shell's history, Ctrl-C
+  interrupts, and a TUI's own menus appear. Those belong to the pane's line
+  editor and a text box cannot stand in for them; `Esc` again leaves raw mode.
+
+Enter sends, Shift+Enter writes a newline, and the box wraps and grows, so a
+long message is readable before it goes out.
+
 ## herdr must be running, and it needs a terminal
 
 This console talks to a herdr daemon; it cannot start one. herdr is a TUI
@@ -98,6 +116,14 @@ daemon is not reachable, and keeps the last state it saw. That last part
 matters — herdr restarting is not herdr empty, so a failed poll holds the view
 and an "herdr is not reachable" strip says why, instead of showing a console
 with nothing in it.
+
+Updating from the panel is a sequence, because one command is not enough on an
+older server: the daemon is stopped first (an update on a server from before
+endpoint generation 1 needs that final stop), then updated, then started again
+in a detached tmux session. Without the last step the console would be left
+talking to nothing — which is exactly what happened on a deployed host. A failed
+update still ends with the daemon running, on the version that is still on disk.
+The same panel can restart the daemon by itself.
 
 The masthead's daemon state opens a panel with what herdr is on this machine:
 the binary, its version and channel, whether the daemon is running, whether a
