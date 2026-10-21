@@ -100,3 +100,11 @@ release-archives: go-build web
 deploy-remote: release-archives
 	@test -n "$(TARGETS)" || { echo "usage: make deploy-remote TARGETS=\"host [host:path ...]\"" >&2; exit 64; }
 	./scripts/deploy-remote.sh $(TARGETS)
+
+## release-publish: keep the release files where the console serves them from
+##   makes this host a release source for every platform, not just its own
+release-publish: release-archives
+	@dir="$${HERDR_WEB_RELEASE_DIR:-$$HOME/.local/share/herdr-web/releases}"; \
+	mkdir -p "$$dir"; \
+	cp dist/release/herdr-web-* "$$dir/"; \
+	echo "published to $$dir:"; ls "$$dir" | head -10

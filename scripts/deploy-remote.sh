@@ -68,6 +68,9 @@ Options:
   --addr HOST:PORT  Tailscale address the remote service should listen on
   --local-addr H:P  loopback address for the remote service
   --herdr-bin PATH  herdr binary on the target, for the status panel
+  --via URL        install from a release source instead of copying from here
+                    (any running console serves one: http://host:5000/release)
+  --jump HOST      reach every target through this host (ssh -J)
   --no-service      copy the binary only, do not touch the target's service
   --dry-run         print what would happen, change nothing
   --list            list the hosts this machine can plausibly reach
@@ -100,6 +103,9 @@ list_hosts() {
 }
 
 ssh_opts=(-o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new)
+if [[ -n "${JUMP:-}" ]]; then
+  ssh_opts+=(-J "$JUMP")
+fi
 if [[ -n "${HERDR_WEB_SSH_OPTS:-}" ]]; then
   # shellcheck disable=SC2206
   ssh_opts+=(${HERDR_WEB_SSH_OPTS})
@@ -107,6 +113,8 @@ fi
 
 DRY_RUN=0
 WITH_SERVICE=1
+VIA=""
+JUMP=""
 ADDR=""
 LOCAL_ADDR=""
 HERDR_BIN=""
@@ -118,6 +126,8 @@ while [[ $# -gt 0 ]]; do
     --addr) ADDR="$2"; shift 2 ;;
     --local-addr) LOCAL_ADDR="$2"; shift 2 ;;
     --herdr-bin) HERDR_BIN="$2"; shift 2 ;;
+    --via) VIA="$2"; shift 2 ;;
+    --jump) JUMP="$2"; shift 2 ;;
     --no-service) WITH_SERVICE=0; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     --list) list_hosts; exit 0 ;;
@@ -171,6 +181,26 @@ deploy_one() {
   if [[ "$DRY_RUN" -eq 1 ]]; then
     say "  would copy $binary -> $host:$remote_dir/herdr-web"
     say "  would register the service (unless --no-service)"
+    return 0
+  fi
+
+  if [[ -n "$VIA" ]]; then
+    # The target fetches the release from a host it can reach and runs the
+    # installer there. That is what makes a bastion useful: one reachable
+    # source, and no megabytes pushed from here to every machine.
+    local args=()
+    [[ -n "$ADDR" ]] && args+=(--addr "$ADDR")
+    [[ -n "$LOCAL_ADDR" ]] && args+=(--local-addr "$LOCAL_ADDR")
+    [[ -n "$HERDR_BIN" ]] && args+=(--herdr-bin "$HERDR_BIN")
+    [[ "$WITH_SERVICE" -eq 0 ]] && args+=(--no-service)
+    local quoted="${args[*]:-}"
+    say "  installing from $VIA"
+    if ! ssh "${ssh_opts[@]}" "$host" \
+      "sh -s -- --url '$VIA' $quoted" < "$root/install.sh"; then
+      say "  the installer failed on $host"
+      return 1
+    fi
+    say "  installed from $VIA on $host"
     return 0
   fi
 

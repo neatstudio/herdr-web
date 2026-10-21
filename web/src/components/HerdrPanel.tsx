@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { fetchHerdrHost, runHostAction, type HerdrHost } from "@/lib/herdr";
+import {
+  fetchHerdrHost,
+  runHostAction,
+  updateConsole,
+  type HerdrHost,
+} from "@/lib/herdr";
 
 type Props = {
   open: boolean;
@@ -44,6 +49,39 @@ export function HerdrPanel({ open, onClose, consoleVersion }: Props) {
 
   if (!open) {
     return null;
+  }
+
+  async function actConsole(): Promise<void> {
+    setBusy(true);
+    setResult(null);
+    try {
+      const done = await updateConsole();
+      if (done === null) {
+        setResult({ ok: false, command: "update console", output: "the request did not reach the bridge" });
+      } else if (!done.ok) {
+        setResult({
+          ok: false,
+          command: "update console",
+          output: [done.error ?? "the update failed", ...done.steps.map((step) => `${step.step}: ${step.detail}`)].join("\n"),
+        });
+      } else {
+        setResult({
+          ok: true,
+          command: "update console",
+          output: [
+            ...done.steps.map((step) => `${step.step}: ${step.detail}`),
+            done.updated
+              ? `restart to run the new build: ${done.restart ?? "restart the console"}`
+              : "",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        });
+      }
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function act(action: "install" | "update" | "restart"): Promise<void> {
@@ -190,6 +228,24 @@ export function HerdrPanel({ open, onClose, consoleVersion }: Props) {
                   {host.updateAvailable ? `update to ${host.latestVersion}` : "update"}
                 </button>
               )}
+              <button
+                type="button"
+                id="herdr-console-update"
+                className="hostpanel__act"
+                disabled={busy}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Update this console from its release source?\n\n" +
+                        "The new binary replaces the running one; it starts on the next restart.",
+                    )
+                  ) {
+                    void actConsole();
+                  }
+                }}
+              >
+                update console
+              </button>
               {host.installed && (
                 <button
                   type="button"

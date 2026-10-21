@@ -18,6 +18,9 @@ import (
 //go:embed all:web/dist
 var embeddedWeb embed.FS
 
+//go:embed install.sh
+var embeddedInstaller []byte
+
 // webFS returns the embedded frontend bundle, or nil when it was not built
 // yet (run `make web` first).
 func webFS() fs.FS {
@@ -65,6 +68,7 @@ func main() {
 	// why this can be set explicitly.
 	server.SetHerdrBin(strings.TrimSpace(*herdrBin))
 	server.ConsoleVersion = version
+	server.SetInstallScript(embeddedInstaller)
 
 	socketPath := strings.TrimSpace(*socket)
 	if socketPath == "" {

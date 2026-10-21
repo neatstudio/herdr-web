@@ -1535,3 +1535,58 @@ test("plain output rewraps to a phone-sized viewport", async ({ page }) => {
   expect(overflow, "plain output must not overflow sideways on a phone").toBe(false);
 });
 
+
+test("the console can update itself and says how to start the new build", async ({ page }) => {
+  await installBridge(page);
+  await page.route("**/api/v1/herdr/host", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        installed: true,
+        binary: "/home/op/.local/bin/herdr",
+        clientVersion: "0.9.5",
+        channel: "stable",
+        serverRunning: true,
+        serverVersion: "0.9.5",
+        serverStatus: "running",
+        compatible: true,
+        socket: "/home/op/.config/herdr/herdr.sock",
+        restartNeeded: false,
+        serverBinaryStale: false,
+        installMethod: "direct",
+        latestVersion: "0.9.5",
+        updateAvailable: false,
+        canUpdate: true,
+        error: "",
+      }),
+    }),
+  );
+  const calls: string[] = [];
+  await page.route("**/api/v1/herdr-web/update", async (route) => {
+    calls.push(route.request().postData() ?? "");
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        updated: true,
+        restart: "make service-restart",
+        steps: [
+          { step: "verify", ok: true, detail: "checksum matches (abc123)" },
+          { step: "replace", ok: true, detail: "installed abc123", changed: true },
+        ],
+      }),
+    });
+  });
+  await page.goto("/");
+  await page.locator("#herdr-host-open").click();
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.locator("#herdr-console-update").click();
+
+  // The bytes are replaced but the process that answered is still the old one,
+  // so the panel has to say how to start the new build.
+  await expect(page.locator("#herdr-host-output")).toContainText("checksum matches");
+  await expect(page.locator("#herdr-host-output")).toContainText("make service-restart");
+  expect(calls).toHaveLength(1);
+});

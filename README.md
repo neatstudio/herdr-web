@@ -234,6 +234,26 @@ a `dev.herdr-web` service that points somewhere else, so installing over a
 machine that already runs the console from a checkout cannot silently steal the
 service.
 
+### Installing without GitHub
+
+A running console is also a release source: it serves the installer it was
+installed with, and the binary it is running.
+
+```
+curl -fsSL http://a-reachable-host:5000/release/install.sh | sh -s -- --url http://a-reachable-host:5000/release
+```
+
+It serves its own platform by itself. For a mixed fleet, put the other builds
+where it reads them, and it serves those too:
+
+```
+make release-publish     # copies dist/release/* into ~/.local/share/herdr-web/releases
+```
+
+That is the whole fallback: one machine that can reach GitHub (or that has the
+archives) becomes the source for every machine that cannot, and the files never
+have to be copied by hand.
+
 ### Deploying to other machines
 
 `scripts/deploy-remote.sh` copies the binary to hosts that are already reachable
@@ -247,6 +267,18 @@ it.
 ./scripts/deploy-remote.sh nas                    # install and register there
 ./scripts/deploy-remote.sh --dry-run desktop-7    # say what it would do
 make deploy-remote TARGETS="nas desktop-7"
+```
+
+Two options exist because copying megabytes from a laptop to every machine over a
+home link is slow:
+
+```
+# every target is reached through a jump host
+./scripts/deploy-remote.sh --jump bastion nas desktop-7
+
+# install from a reachable release source: one host holds the bytes, each
+# target pulls them over the private link instead of receiving them from here
+./scripts/deploy-remote.sh --via http://bastion:5000/release nas desktop-7
 ```
 
 Each target gets the same guard the installer applies: a service pointing at
@@ -327,6 +359,17 @@ it was built without a bundle, and the API still serves.
 Nothing in the tests depends on the wall clock, and no test touches a real
 herdr session: anything that would mutate panes is either mocked or run
 against a throwaway `herdr --session`.
+
+### Updating this console
+
+The host panel's `update console` button replaces the running binary with the one
+its release source publishes, from GitHub or from `--from` when the machine has
+no way out. The bytes are compared, not the version: whatever differs from what
+is running is an update, and a source without a checksum is refused.
+
+The new file is in place when the request returns; the process that answered is
+still the old build, so the panel prints the command that starts the new one
+(`make service-restart`, or the platform's own unit command).
 
 ## Releasing
 

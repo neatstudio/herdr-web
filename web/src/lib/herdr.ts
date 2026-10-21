@@ -487,6 +487,39 @@ export async function runHostAction(
   return raw as HostAction;
 }
 
+/** The console's own release identity, for the update it can apply itself. */
+export type SelfRelease = {
+  version: string;
+  platform: string;
+  sha256: string;
+  source: string;
+  executable: string;
+};
+
+export type SelfUpdate = {
+  ok: boolean;
+  updated: boolean;
+  restart?: string;
+  steps: { step: string; ok: boolean; detail: string; changed?: boolean }[];
+  error?: string;
+};
+
+/**
+ * Update the console itself.
+ *
+ * The bytes are compared rather than the version: whatever a source publishes is
+ * an update if it differs from what is running. `from` points at a release
+ * source — any running console serves one — so a host without GitHub updates
+ * from a peer.
+ */
+export async function updateConsole(from?: string): Promise<SelfUpdate | null> {
+  const raw = await postJSONResult("/api/v1/herdr-web/update", from ? { from } : {});
+  if (raw === null || typeof raw !== "object") {
+    return null;
+  }
+  return raw as SelfUpdate;
+}
+
 /** Rename a pane; pass null to clear the name. */
 export async function renamePane(paneId: string, label: string | null): Promise<boolean> {
   return postJSON(`${panePath(paneId)}/rename`, { label });

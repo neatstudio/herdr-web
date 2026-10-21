@@ -762,6 +762,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeNotFound(w)
 	})
+	mux.HandleFunc("/api/v1/herdr-web/release", handleSelfRelease)
+	mux.HandleFunc("/api/v1/herdr-web/update", handleSelfUpdate)
+	// The console is also a release source: a host that cannot reach GitHub
+	// installs from a peer that can (or from a bastion).
+	mux.HandleFunc("/release/", handleRelease)
 	mux.HandleFunc("/", s.handleStatic)
 	return mux
 }
