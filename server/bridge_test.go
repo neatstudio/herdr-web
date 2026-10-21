@@ -546,7 +546,9 @@ func TestMethodsAreEnforced(t *testing.T) {
 
 	cases := []struct{ method, path, allow string }{
 		{http.MethodPost, "/api/v1/herdr/status", "GET"},
-		{http.MethodPost, "/api/v1/herdr/workspaces", "GET"},
+		// Making a workspace is a POST now, so a method that is neither is what
+		// has to be refused.
+		{http.MethodDelete, "/api/v1/herdr/workspaces", "GET"},
 		{http.MethodGet, "/api/v1/herdr/panes/w1:p1/input", "POST"},
 		{http.MethodGet, "/api/v1/herdr/panes/w1:p1/keys", "POST"},
 	}

@@ -12,6 +12,8 @@ type Props = {
   onWorkspace: (workspaceId: string) => void;
   onPane: (pane: AgentPane) => void;
   onWorkspaceMenu: (workspace: HerdrWorkspace, x: number, y: number) => void;
+  /** Opens the sheet that makes a workspace or takes over a tmux session. */
+  onNewWorkspace: () => void;
   onPaneMenu: (pane: AgentPane, x: number, y: number) => void;
 };
 
@@ -36,12 +38,25 @@ function Spaces({
   selectedWorkspaceId,
   onWorkspace,
   onWorkspaceMenu,
+  onNewWorkspace,
 }: Props) {
   return (
     <section className="side side--spaces" aria-label="Workspaces">
       <div className="col__head">
         <span>workspaces</span>
-        <span>{workspaces.length}</span>
+        <span className="col__count">
+          {workspaces.length}
+          <button
+            type="button"
+            id="herdr-new-workspace"
+            className="col__add"
+            title="new workspace, or take over a tmux session"
+            aria-label="New workspace"
+            onClick={onNewWorkspace}
+          >
+            +
+          </button>
+        </span>
       </div>
       {workspaces.length === 0 ? (
         <p className="col__empty">No workspaces reported.</p>

@@ -1640,3 +1640,54 @@ test("ctrl+c interrupts the pane, but copies when something is selected", async 
   await expect.poll(() => keyPosts).toHaveLength(2);
   expect(JSON.parse(keyPosts[1])).toEqual({ keys: ["ctrl+d"] });
 });
+
+test("a workspace can be made, and a running tmux session taken over", async ({ page }) => {
+  await installBridge(page);
+  const created: string[] = [];
+  await page.route("**/api/v1/herdr/tmux", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        available: true,
+        sessions: [
+          { name: "work", windows: 2, attached: 0 },
+          { name: "codex", windows: 1, attached: 1 },
+        ],
+      }),
+    }),
+  );
+  await page.route("**/api/v1/herdr/workspaces", async (route) => {
+    if (route.request().method() !== "POST") {
+      return route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
+    }
+    created.push(route.request().postData() ?? "");
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, workspaceId: "w1", paneId: "w1:p1", label: "made" }),
+    });
+  });
+  await page.goto("/");
+
+  // There was no way to make a workspace at all; the count in the header is where
+  // it belongs, next to the list it affects.
+  await page.locator("#herdr-new-workspace").click();
+  const sheet = page.locator(".sheet");
+  await expect(sheet).toBeVisible();
+  await expect(sheet).toContainText("take over a tmux session");
+
+  await page.locator("#workspace-label").fill("made");
+  await page.locator("#workspace-cwd").fill("/tmp");
+  await page.locator("#workspace-create").click();
+  await expect.poll(() => created).toEqual([JSON.stringify({ label: "made", cwd: "/tmp" })]);
+  await expect(page.locator(".sheet")).toHaveCount(0);
+
+  // herdr has no tmux integration, so taking a session over is a pane running
+  // tmux attach — which is what makes an old session reachable again.
+  await page.locator("#herdr-new-workspace").click();
+  await page.locator('.newws__session[data-session="codex"]').click();
+  await expect
+    .poll(() => created[1] ?? "")
+    .toBe(JSON.stringify({ command: ["tmux", "attach", "-t", "codex"] }));
+});

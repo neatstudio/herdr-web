@@ -2012,3 +2012,108 @@ body::before {
     overflow: hidden;
   }
 }
+
+/* The workspace column's "+": making a workspace had no entry point at all. */
+.col__count {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.col__add {
+  padding: 0 5px;
+  background: none;
+  border: var(--rule-w) solid var(--rule-strong);
+  color: var(--ink-faint);
+  font: inherit;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.col__add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* The new-workspace sheet: a small form, and the tmux sessions to take over. */
+.newws__field {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 8px;
+  font-size: var(--step-fine);
+  color: var(--ink-faint);
+}
+
+.newws__field input {
+  padding: 5px 7px;
+  background: none;
+  border: var(--rule-w) solid var(--rule-strong);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--step-body);
+}
+
+.newws__submit {
+  width: 100%;
+  padding: 6px;
+  background: var(--accent);
+  border: 0;
+  color: var(--paper);
+  font: inherit;
+  font-size: var(--step-fine);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.newws__submit:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.newws__tmux {
+  margin-top: 14px;
+  border-top: var(--rule-w) solid var(--rule);
+  padding-top: 10px;
+}
+
+.newws__head {
+  margin-bottom: 6px;
+  font-size: var(--step-fine);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.newws__session {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px;
+  background: none;
+  border: var(--rule-w) solid var(--rule);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--step-body);
+  cursor: pointer;
+}
+
+.newws__session:hover {
+  border-color: var(--accent);
+}
+
+.newws__dim {
+  color: var(--ink-faint);
+  font-size: var(--step-fine);
+}
+
+.newws__note {
+  margin: 6px 0 0;
+  font-size: var(--step-fine);
+  color: var(--ink-faint);
+}
+
+.newws__note--bad {
+  color: var(--warn, var(--accent));
+}

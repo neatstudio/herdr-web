@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -532,10 +533,90 @@ func handleHostInstall(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("herdr is already installed at %s", binary))
 		return
 	}
+	var body struct {
+		From string `json:"from"`
+	}
+	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body)
+
+	// A machine that cannot reach herdr.dev installs from a relay instead: any
+	// console serves herdr's binary at /release once it has been seeded there.
+	sources := []string{}
+	if from := strings.TrimSpace(body.From); from != "" {
+		sources = append(sources, strings.TrimRight(from, "/"))
+	} else {
+		for _, candidate := range selfCandidates(r.Context(), "") {
+			if candidate.Source != selfOfficialSource {
+				sources = append(sources, candidate.Source)
+			}
+		}
+	}
+	for _, source := range sources {
+		if installed, err := installHerdrFromRelay(r.Context(), source); err == nil && installed {
+			writeJSON(w, http.StatusOK, hostCommandResult{
+				OK:      true,
+				Command: "install herdr from " + source,
+				Output:  "installed herdr from " + source + "\n",
+			})
+			return
+		}
+	}
+
 	// The documented Linux/macOS installer. Its URL and the whole pipeline are
-	// compile-time constants, so nothing from the request is involved; the
-	// body is deliberately ignored rather than parsed.
+	// compile-time constants, so nothing from the request is involved.
 	runHostCommand(w, r, deps, hostInstallDisplay, "sh", "-c", hostInstallCommand)
+}
+
+// installHerdrFromRelay downloads herdr's own binary from a console that serves
+// it, and refuses anything that does not match its published checksum.
+func installHerdrFromRelay(ctx context.Context, source string) (bool, error) {
+	asset := "herdr-" + runtime.GOOS + "-" + runtime.GOARCH
+	ctx, cancel := context.WithTimeout(ctx, hostCommandTimeout)
+	defer cancel()
+
+	sum, err := selfFetchText(ctx, source+"/"+asset+".sha256")
+	if err != nil {
+		return false, err
+	}
+	want := strings.Fields(sum)
+	if len(want) == 0 {
+		return false, errors.New("no checksum published")
+	}
+	dir, err := os.UserHomeDir()
+	if err != nil {
+		return false, err
+	}
+	binDir := filepath.Join(dir, ".local", "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		return false, err
+	}
+	tmp, err := os.CreateTemp(binDir, ".herdr-incoming-*")
+	if err != nil {
+		return false, err
+	}
+	tmpPath := tmp.Name()
+	defer func() { _ = os.Remove(tmpPath) }()
+	if err := selfDownload(ctx, source+"/"+asset, tmp); err != nil {
+		_ = tmp.Close()
+		return false, err
+	}
+	if err := tmp.Close(); err != nil {
+		return false, err
+	}
+	got, err := fileSHA256(tmpPath)
+	if err != nil {
+		return false, err
+	}
+	if !strings.EqualFold(got, want[0]) {
+		return false, errors.New("the relayed binary did not match its checksum")
+	}
+	if err := os.Chmod(tmpPath, 0o755); err != nil {
+		return false, err
+	}
+	target := filepath.Join(binDir, "herdr")
+	if err := os.Rename(tmpPath, target); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // runHostCommand runs one fixed command and always answers 200 when it ran at

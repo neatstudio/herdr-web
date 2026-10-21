@@ -114,6 +114,25 @@ func handleRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if strings.HasPrefix(name, "herdr-") {
+		// herdr's own binary, so a machine without access to herdr.dev installs
+		// from a relay the same way this console updates itself.
+		dir := releaseDir()
+		if dir == "" {
+			writeError(w, http.StatusNotFound, "not_found", "no release files on this host")
+			return
+		}
+		path := filepath.Join(dir, filepath.Base(name))
+		if info, err := os.Stat(path); err != nil || info.IsDir() {
+			writeError(w, http.StatusNotFound, "not_found",
+				fmt.Sprintf("%s is not on this host; seed it with a POST to /release/%s", name, name))
+			return
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		http.ServeFile(w, r, path)
+		return
+	}
+
 	if !strings.HasPrefix(name, "herdr-web-") {
 		writeError(w, http.StatusNotFound, "not_found", "unknown release file")
 		return
@@ -210,9 +229,10 @@ func handleReleaseUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "a release file name is required")
 		return
 	}
-	if !strings.HasPrefix(name, "herdr-web-") && name != "install.sh" && name != "version" {
+	if !strings.HasPrefix(name, "herdr-web-") && !strings.HasPrefix(name, "herdr-") &&
+		name != "install.sh" && name != "version" {
 		writeError(w, http.StatusBadRequest, "invalid_request",
-			"only herdr-web-<os>-<arch>, its checksum, and install.sh can be stored here")
+			"only herdr-web-<os>-<arch>, herdr-<os>-<arch>, their checksums and install.sh can be stored here")
 		return
 	}
 	dir := releaseDir()

@@ -1,9 +1,11 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"io/fs"
 	"net/http"
+	"os/exec"
 	"strconv"
 	"strings"
 )
@@ -712,7 +714,15 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/v1/herdr/status", s.handleStatus)
-	mux.HandleFunc("/api/v1/herdr/workspaces", s.handleWorkspaces)
+	// GET lists the workspaces; POST makes one. Two registrations of the same
+	// pattern panic at startup, so they share one.
+	mux.HandleFunc("/api/v1/herdr/workspaces", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			s.handleWorkspaceCreate(w, r)
+			return
+		}
+		s.handleWorkspaces(w, r)
+	})
 	mux.HandleFunc("/api/v1/herdr/panes", s.handlePanes)
 	mux.HandleFunc("/api/v1/herdr/uploads", s.handleUpload)
 
@@ -728,6 +738,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/herdr/file", handleFileRead)
 	mux.HandleFunc("/api/v1/herdr/file/raw", handleFileRaw)
 
+	mux.HandleFunc("/api/v1/herdr/tmux", s.handleTmuxSessions)
 	mux.HandleFunc("/api/v1/herdr/workspaces/", func(w http.ResponseWriter, r *http.Request) {
 		rest := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/herdr/workspaces/"), "/")
 		if strings.HasSuffix(rest, "/rename") {
@@ -743,6 +754,8 @@ func (s *Server) Handler() http.Handler {
 			s.handlePaneRead(w, r, strings.TrimSuffix(rest, "/read"))
 		case strings.HasSuffix(rest, "/input"):
 			s.handlePaneInput(w, r, strings.TrimSuffix(rest, "/input"))
+		case strings.HasSuffix(rest, "/run"):
+			s.handlePaneRun(w, r, strings.TrimSuffix(rest, "/run"))
 		case strings.HasSuffix(rest, "/keys"):
 			s.handlePaneKeys(w, r, strings.TrimSuffix(rest, "/keys"))
 		case strings.HasSuffix(rest, "/split"):
@@ -769,4 +782,137 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/release/", handleRelease)
 	mux.HandleFunc("/", s.handleStatic)
 	return mux
+}
+
+// handleWorkspaceCreate makes a workspace, which the console had no way to do:
+// it could see and rename the ones that existed and nothing else.
+//
+// A command may be given, and it is run in the new workspace's root pane. That is
+// how an existing tmux session is taken over — herdr has no tmux integration, so
+// the pane runs `tmux attach` and the session appears inside it.
+func (s *Server) handleWorkspaceCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, "POST")
+		return
+	}
+	var request struct {
+		Label   string   `json:"label"`
+		Cwd     string   `json:"cwd"`
+		Command []string `json:"command"`
+	}
+	if !decodeBody(w, r, &request) {
+		return
+	}
+	params := map[string]any{"focus": true}
+	if label := strings.TrimSpace(request.Label); label != "" {
+		params["label"] = label
+	}
+	if cwd := strings.TrimSpace(request.Cwd); cwd != "" {
+		params["cwd"] = cwd
+	}
+	var created struct {
+		Workspace struct {
+			WorkspaceID string `json:"workspace_id"`
+			Label       string `json:"label"`
+		} `json:"workspace"`
+		RootPane struct {
+			PaneID string `json:"pane_id"`
+		} `json:"root_pane"`
+	}
+	if err := s.client().Call(r.Context(), "workspace.create", params, &created); err != nil {
+		writeBadGateway(w, "herdr_workspace_failed", err)
+		return
+	}
+
+	out := map[string]any{
+		"ok":          true,
+		"workspaceId": created.Workspace.WorkspaceID,
+		"paneId":      created.RootPane.PaneID,
+		"label":       created.Workspace.Label,
+	}
+	if len(request.Command) > 0 {
+		// The pane exists once create returns, so running the command here is
+		// ordered after it by construction.
+		runParams := map[string]any{
+			"pane_id": created.RootPane.PaneID,
+			"command": request.Command,
+		}
+		if err := s.client().Call(r.Context(), "pane.run", runParams, nil); err != nil {
+			// The workspace exists; saying so is more useful than pretending it
+			// does not, so the failure is reported next to it.
+			out["commandError"] = err.Error()
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// handlePaneRun runs a command in an existing pane.
+func (s *Server) handlePaneRun(w http.ResponseWriter, r *http.Request, paneID string) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, "POST")
+		return
+	}
+	paneID = strings.Trim(strings.TrimSpace(paneID), "/")
+	if paneID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "pane id is required")
+		return
+	}
+	var request struct {
+		Command []string `json:"command"`
+	}
+	if !decodeBody(w, r, &request) {
+		return
+	}
+	if len(request.Command) == 0 {
+		writeError(w, http.StatusBadRequest, "invalid_request", "command is required")
+		return
+	}
+	if err := s.client().Call(r.Context(), "pane.run",
+		map[string]any{"pane_id": paneID, "command": request.Command}, nil); err != nil {
+		writeBadGateway(w, "herdr_run_failed", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "paneId": paneID})
+}
+
+// handleTmuxSessions lists the tmux sessions on this host, so a session that was
+// already running can be taken over instead of abandoned.
+func (s *Server) handleTmuxSessions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, "GET")
+		return
+	}
+	type session struct {
+		Name     string `json:"name"`
+		Windows  int    `json:"windows"`
+		Attached int    `json:"attached"`
+	}
+	out := map[string]any{"sessions": []session{}, "available": false}
+
+	binary, err := exec.LookPath("tmux")
+	if err != nil {
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), hostStatusTimeout)
+	defer cancel()
+	raw, runErr := exec.CommandContext(ctx, binary, "list-sessions",
+		"-F", "#{session_name}\t#{session_windows}\t#{session_attached}").Output()
+	sessions := make([]session, 0, 4)
+	for _, line := range strings.Split(string(raw), "\n") {
+		fields := strings.Split(strings.TrimSpace(line), "\t")
+		if len(fields) < 3 {
+			continue
+		}
+		windows, _ := strconv.Atoi(fields[1])
+		attached, _ := strconv.Atoi(fields[2])
+		sessions = append(sessions, session{Name: fields[0], Windows: windows, Attached: attached})
+	}
+	// "no server running" is an empty list, not a failure.
+	out["sessions"] = sessions
+	out["available"] = true
+	if runErr != nil && len(sessions) == 0 && !strings.Contains(runErr.Error(), "exit status") {
+		out["error"] = runErr.Error()
+	}
+	writeJSON(w, http.StatusOK, out)
 }

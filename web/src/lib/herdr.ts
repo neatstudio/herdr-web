@@ -520,6 +520,53 @@ export async function updateConsole(from?: string): Promise<SelfUpdate | null> {
   return raw as SelfUpdate;
 }
 
+/** A tmux session this host is running, for taking it over. */
+export type TmuxSession = { name: string; windows: number; attached: number };
+
+export type TmuxSessions = { available: boolean; sessions: TmuxSession[]; error?: string };
+
+/** The tmux sessions on this host; herdr does not manage them, a pane can run them. */
+export async function fetchTmuxSessions(): Promise<TmuxSessions | null> {
+  const raw = await getJSON("/api/v1/herdr/tmux");
+  if (raw === null || typeof raw !== "object") {
+    return null;
+  }
+  const record = raw as Record<string, unknown>;
+  const sessions = Array.isArray(record.sessions)
+    ? (record.sessions as TmuxSession[]).filter(
+        (session) => typeof session?.name === "string" && session.name !== "",
+      )
+    : [];
+  return {
+    available: record.available === true,
+    sessions,
+    error: typeof record.error === "string" ? record.error : undefined,
+  };
+}
+
+/**
+ * Make a workspace, and optionally run a command in its first pane.
+ *
+ * The command is how a tmux session that was already running is taken over: the
+ * pane runs `tmux attach` and the session appears inside it.
+ */
+export async function createWorkspace(options: {
+  label?: string;
+  cwd?: string;
+  command?: string[];
+}): Promise<{ workspaceId: string; paneId: string; commandError?: string } | null> {
+  const raw = await postJSONResult("/api/v1/herdr/workspaces", options);
+  if (raw === null || typeof raw !== "object") {
+    return null;
+  }
+  const record = raw as Record<string, unknown>;
+  return {
+    workspaceId: typeof record.workspaceId === "string" ? record.workspaceId : "",
+    paneId: typeof record.paneId === "string" ? record.paneId : "",
+    commandError: typeof record.commandError === "string" ? record.commandError : undefined,
+  };
+}
+
 /** Rename a pane; pass null to clear the name. */
 export async function renamePane(paneId: string, label: string | null): Promise<boolean> {
   return postJSON(`${panePath(paneId)}/rename`, { label });

@@ -4,6 +4,7 @@ import { PickerSheet } from "@/components/PickerSheet";
 import { Sidebar } from "@/components/Sidebar";
 import { FileViewer } from "@/components/FileViewer";
 import { HerdrPanel } from "@/components/HerdrPanel";
+import { NewWorkspace } from "@/components/NewWorkspace";
 import { TabStage } from "@/components/TabStage";
 import { Masthead } from "@/components/Masthead";
 import { TargetMenu, type MenuTarget } from "@/components/TargetMenu";
@@ -90,6 +91,7 @@ export function App() {
   // True while herdr cannot be reached; the view keeps its last known state.
   const [offline, setOffline] = useState(false);
   const [hostPanel, setHostPanel] = useState(false);
+  const [newWorkspace, setNewWorkspace] = useState(false);
   const [narrow, setNarrow] = useState(false);
   // Panes whose working directory is not on this host: herdr can drive panes on
   // another machine over SSH, and a preview there cannot work from here.
@@ -324,6 +326,7 @@ export function App() {
           onPane={(pane) => openPaneId(pane.id)}
           onWorkspaceMenu={(workspace, x, y) => setMenu(workspaceTarget(workspace, x, y))}
           onPaneMenu={(pane, x, y) => setMenu(paneTarget(pane, x, y))}
+          onNewWorkspace={() => setNewWorkspace(true)}
         />
 
         <main className="stage">
@@ -471,6 +474,16 @@ export function App() {
 
       <FileViewer path={openPath} onClose={() => setOpenPath(null)} />
 
+      <NewWorkspace
+        open={newWorkspace}
+        onClose={() => setNewWorkspace(false)}
+        onCreated={(created) => {
+          if (created !== "") {
+            openWorkspace(created);
+          }
+          void loadFleet();
+        }}
+      />
       <HerdrPanel
         open={hostPanel}
         onClose={() => setHostPanel(false)}
