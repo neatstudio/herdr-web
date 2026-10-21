@@ -1592,3 +1592,12 @@ test("the console can update itself and says how to start the new build", async 
   await expect(page.locator("#herdr-host-output")).toContainText("make service-restart");
   expect(calls).toHaveLength(1);
 });
+
+test("the masthead names the daemon as herdr(ip:version), without an ip on loopback", async ({ page }) => {
+  await installBridge(page);
+  await page.goto("/");
+  // The test page is served from 127.0.0.1, so the address is implied.
+  await expect(page.locator("#herdr-daemon-label")).toHaveText(/^herdr\(\d+\.\d+\.\d+\)$/);
+});
+
+

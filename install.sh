@@ -377,7 +377,7 @@ if [ "$HERDR_SERVICE" -eq 1 ]; then
   <dict><key>HOME</key><string>$HOME</string></dict>
   <key>WorkingDirectory</key><string>$HOME</string>
   <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+  <key>KeepAlive</key><true/>
 </dict>
 </plist>
 HPLIST_EOF
@@ -406,7 +406,10 @@ WorkingDirectory=$HOME
 Environment=HOME=$HOME
 Environment=PATH=$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 ExecStart=$HERDR_BIN_FOUND server
-Restart=on-failure
+# The daemon exits on its own once nothing has talked to it for a while, and a
+# clean exit is not a failure: always restart it, or a console-only host goes
+# offline after the last browser closes.
+Restart=always
 RestartSec=3
 
 [Install]

@@ -1,3 +1,4 @@
+import { hostOctet } from "@/lib/fleet";
 import type { HerdrStatus } from "@/lib/herdr";
 import { THEME_CHOICES, type ThemeChoice } from "@/lib/theme";
 
@@ -13,6 +14,9 @@ export function Masthead({ status, choice, onChoice, onHost }: Props) {
   const live = status?.status === "ok";
   const version = status?.version ?? "—";
   const protocol = status?.protocol;
+  const octet = hostOctet(typeof window === "undefined" ? "" : window.location.hostname);
+  // herdr(4:0.8.2) on a tailnet address, herdr(0.9.0) on this machine.
+  const label = octet === "" ? `herdr(${version})` : `herdr(${octet}:${version})`;
 
   return (
     <header className="masthead">
@@ -34,18 +38,16 @@ export function Masthead({ status, choice, onChoice, onHost }: Props) {
         onClick={onHost}
       >
         <span className="signal" data-tone={live ? "working" : "blocked"} aria-hidden />
-        <span>{live ? "daemon live" : status === null ? "not reachable" : "daemon down"}</span>
-        <span className="cluster__sep" aria-hidden />
-        <span>v{version}</span>
+        <span id="herdr-daemon-label">{label}</span>
         {protocol !== undefined && (
-          <>
-            <span className="cluster__sep" aria-hidden />
-            <span title={status?.protocolTested === false ? "protocol outside the tested range" : ""}>
-              proto {protocol}
-              {status?.protocolTested === false ? " !" : ""}
-            </span>
-          </>
+          <span
+            className="cluster__dim"
+            title={status?.protocolTested === false ? "protocol outside the tested range" : ""}
+          >
+            {status?.protocolTested === false ? "proto !" : `p${protocol}`}
+          </span>
         )}
+        {!live && <span className="cluster__dim">{status === null ? "offline" : "down"}</span>}
       </button>
 
       <div className="switch" role="group" aria-label="Theme">

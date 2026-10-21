@@ -1430,6 +1430,12 @@ body::before {
 }
 
 /* The daemon state doubles as the way in to the herdr panel. */
+/* The parts of the cluster that explain rather than name: quieter than the
+   daemon's own label, which is what the operator is looking for. */
+.cluster__dim {
+  color: var(--ink-faint);
+}
+
 .cluster--button {
   padding: 2px 7px 1px;
   border: var(--rule-w) solid transparent;

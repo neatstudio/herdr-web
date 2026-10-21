@@ -302,3 +302,20 @@ export function orderByTone<T>(items: T[], toneOfItem: (item: T) => Tone): T[] {
     .sort((left, right) => left.rank - right.rank || left.index - right.index)
     .map((entry) => entry.item);
 }
+
+/**
+ * The last octet of the address a page was opened on, or "" for loopback.
+ *
+ * The masthead names the daemon that answers: several consoles on several
+ * machines in one tailnet need "herdr(4:0.8.2)" to be told apart at a glance,
+ * while a loopback page is this machine and needs no address at all.
+ */
+export function hostOctet(hostname: string): string {
+  const host = hostname.trim();
+  if (host === "" || host === "127.0.0.1" || host === "localhost" || host === "::1") {
+    return "";
+  }
+  const parts = host.replace(/^\[|\]$/g, "").split(".");
+  const last = parts[parts.length - 1];
+  return /^\d+$/.test(last) ? last : host;
+}

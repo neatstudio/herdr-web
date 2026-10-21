@@ -201,3 +201,13 @@ test("orderByTone sorts by status and keeps the original order within a tone", (
     ["b", "c", "a", "d"],
   );
 });
+
+test("the daemon label keeps the last octet and drops loopback", () => {
+  assert.equal(fleet.hostOctet("100.89.0.4"), "4");
+  assert.equal(fleet.hostOctet("100.89.0.200"), "200");
+  assert.equal(fleet.hostOctet("127.0.0.1"), "");
+  assert.equal(fleet.hostOctet("localhost"), "");
+  assert.equal(fleet.hostOctet("  "), "");
+  // A name that is not an address is kept whole rather than mangled.
+  assert.equal(fleet.hostOctet("m9.local"), "m9.local");
+});
