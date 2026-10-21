@@ -162,6 +162,11 @@ func TestSelfReleaseNamesTheRunningBuild(t *testing.T) {
 	}
 }
 
+// otherPlatform is a release name that is never the platform the test runs on,
+// because "linux-amd64" is the test's own platform when CI runs on Linux and the
+// self branch answers instead of the directory.
+const otherPlatform = "herdr-web-plan9-mips"
+
 func TestReleaseServesTheChecksumOfANonSelfPlatform(t *testing.T) {
 	// The release directory holds the other platforms. A client asking for
 	// "<asset>.sha256" must get that file, not "<asset>.sha256.sha256".
@@ -172,7 +177,7 @@ func TestReleaseServesTheChecksumOfANonSelfPlatform(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Setenv("HERDR_WEB_RELEASE_DIR", previous) })
 
-	asset := "herdr-web-linux-amd64"
+	asset := otherPlatform
 	if err := os.WriteFile(filepath.Join(dir, asset), []byte("binary"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +207,7 @@ func TestReleaseUploadSeedsAServingHost(t *testing.T) {
 
 	payload := []byte("a linux binary")
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/release/herdr-web-linux-amd64",
+	request := httptest.NewRequest(http.MethodPost, "/release/"+otherPlatform,
 		bytes.NewReader(payload))
 	handleRelease(recorder, request)
 
@@ -221,7 +226,7 @@ func TestReleaseUploadSeedsAServingHost(t *testing.T) {
 	}
 
 	// And it is served back, with the checksum file the installer looks for.
-	for _, name := range []string{"herdr-web-linux-amd64", "herdr-web-linux-amd64.sha256"} {
+	for _, name := range []string{otherPlatform, otherPlatform + ".sha256"} {
 		got := httptest.NewRecorder()
 		handleRelease(got, httptest.NewRequest(http.MethodGet, "/release/"+name, nil))
 		if got.Code != http.StatusOK {
