@@ -360,6 +360,31 @@ Nothing in the tests depends on the wall clock, and no test touches a real
 herdr session: anything that would mutate panes is either mocked or run
 against a throwaway `herdr --session`.
 
+### A fleet, with a bastion
+
+The pattern that works over a slow link: install once on the bastion, then let it
+be the release source, so the megabytes travel datacentre to datacentre instead
+of from the laptop.
+
+```
+# 1. bastion: copy the build over once and install it there
+scp dist/release/herdr-web-linux-amd64 root@bastion:/root/
+ssh root@bastion 'sh -s -- --from /root/herdr-web-linux-amd64' < install.sh
+
+# 2. everywhere else: install from the bastion, through the bastion
+./scripts/deploy-remote.sh \
+  --jump root@bastion \
+  --via http://bastion-tailscale-ip:5000/release \
+  root@100.89.0.4 root@100.89.0.11 root@100.89.0.2 root@100.89.0.200
+```
+
+On a server reached as root the installer writes a system unit
+(`/etc/systemd/system/dev.herdr-web.service`), because a user unit there needs a
+lingering session to exist at all; anyone else gets a user unit.
+
+That recipe is what installed this fleet: five hosts, every one of them pulling
+the same build from one bastion and coming up `active` and `enabled`.
+
 ### Updating this console
 
 The host panel's `update console` button replaces the running binary with the one

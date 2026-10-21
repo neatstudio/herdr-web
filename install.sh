@@ -138,10 +138,22 @@ TMP="$BIN.incoming"
 # Installing on a machine that already runs herdr-web from a source checkout
 # would silently repoint that service at this copy and stop the one being used.
 # Both service managers are checked: the guard has to hold on Linux as well.
+# A server reached over ssh is usually root, where a user unit needs a lingering
+# session to exist at all. Root gets a system unit; anyone else gets a user one.
+is_root() {
+  [ "$(id -u)" -eq 0 ]
+}
+
 existing_unit() {
   case "$(uname -s)" in
     Darwin) printf '%s' "$HOME/Library/LaunchAgents/$SERVICE_LABEL.plist" ;;
-    *) printf '%s' "$HOME/.config/systemd/user/$SERVICE_LABEL.service" ;;
+    *)
+      if is_root; then
+        printf '%s' "/etc/systemd/system/$SERVICE_LABEL.service"
+      else
+        printf '%s' "$HOME/.config/systemd/user/$SERVICE_LABEL.service"
+      fi
+      ;;
   esac
 }
 
@@ -275,14 +287,23 @@ PLIST
       say "log: $LOG_DIR/herdr-web.log"
       ;;
     Linux)
-      UNIT_DIR="$HOME/.config/systemd/user"
       LOG_DIR="$HOME/.local/share/herdr-web"
-      mkdir -p "$UNIT_DIR" "$LOG_DIR"
       ARGS=""
       [ -n "$ADDR" ] && ARGS="$ARGS --addr $ADDR"
       [ -n "$LOCAL_ADDR" ] && ARGS="$ARGS --local-addr $LOCAL_ADDR"
       [ -n "$HERDR_BIN" ] && ARGS="$ARGS --herdr-bin $HERDR_BIN"
       [ -n "$HERDR_SOCKET" ] && ARGS="$ARGS --herdr-socket $HERDR_SOCKET"
+      if is_root; then
+        UNIT_DIR="/etc/systemd/system"
+        CTL="systemctl"
+        WANTED="multi-user.target"
+        mkdir -p "$UNIT_DIR" "$LOG_DIR"
+      else
+        UNIT_DIR="$HOME/.config/systemd/user"
+        CTL="systemctl --user"
+        WANTED="default.target"
+        mkdir -p "$UNIT_DIR" "$LOG_DIR"
+      fi
       cat > "$UNIT_DIR/$SERVICE_LABEL.service" <<UNIT
 [Unit]
 Description=herdr-web: web console for a herdr daemon
@@ -300,17 +321,19 @@ StandardOutput=append:$LOG_DIR/herdr-web.log
 StandardError=append:$LOG_DIR/herdr-web.log
 
 [Install]
-WantedBy=default.target
+WantedBy=$WANTED
 UNIT
       if command -v systemctl >/dev/null 2>&1; then
-        systemctl --user daemon-reload 2>/dev/null || true
-        systemctl --user enable "$SERVICE_LABEL.service" 2>/dev/null || true
+        $CTL daemon-reload 2>/dev/null || true
+        $CTL enable "$SERVICE_LABEL.service" 2>/dev/null || true
         # enable --now leaves an already-running unit alone, so an update would
         # replace the file and keep the old build in memory.
-        systemctl --user restart "$SERVICE_LABEL.service" 2>/dev/null || \
-          systemctl --user start "$SERVICE_LABEL.service" 2>/dev/null || \
-          say "note: could not start the service; run: systemctl --user start $SERVICE_LABEL"
-        loginctl enable-linger "$(id -un)" 2>/dev/null || true
+        $CTL restart "$SERVICE_LABEL.service" 2>/dev/null || \
+          $CTL start "$SERVICE_LABEL.service" 2>/dev/null || \
+          say "note: could not start the service; run: $CTL start $SERVICE_LABEL"
+        if ! is_root; then
+          loginctl enable-linger "$(id -un)" 2>/dev/null || true
+        fi
         say "service registered: $UNIT_DIR/$SERVICE_LABEL.service"
       else
         say "systemctl not found; unit written to $UNIT_DIR/$SERVICE_LABEL.service"
