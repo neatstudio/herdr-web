@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // releaseSource is a fake release host: one asset and its checksum.
@@ -247,5 +248,79 @@ func TestReleaseUploadRefusesAnythingElse(t *testing.T) {
 		if recorder.Code == http.StatusOK {
 			t.Fatalf("%q was accepted", name)
 		}
+	}
+}
+
+func TestSelfUpdateRetriesADroppedChecksum(t *testing.T) {
+	// A body cut short is what a CDN redirect looks like on a flaky link, and
+	// one attempt used to be the verdict: the panel reported a missing checksum
+	// for a file that exists.
+	current := []byte("old build")
+	path := fakeExecutable(t, string(current))
+	next := []byte("new build")
+	var hits int
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, ".sha256") {
+			hits++
+			if hits == 1 {
+				// Announce a length, then send less: the client sees unexpected EOF.
+				w.Header().Set("Content-Length", "128")
+				_, _ = w.Write([]byte("truncated"))
+				return
+			}
+			_, _ = w.Write([]byte(checksum(next) + "  " + selfPlatform() + "\n"))
+			return
+		}
+		_, _ = w.Write(next)
+	}))
+	t.Cleanup(source.Close)
+
+	previousDelay := selfRetryDelay
+	selfRetryDelay = time.Millisecond
+	t.Cleanup(func() { selfRetryDelay = previousDelay })
+
+	recorder := httptest.NewRecorder()
+	handleSelfUpdate(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/herdr-web/update",
+		strings.NewReader(`{"from":"`+source.URL+`"}`)))
+
+	if !strings.Contains(recorder.Body.String(), `"updated":true`) {
+		t.Fatalf("a dropped body should be retried, got %s", recorder.Body.String())
+	}
+	if hits < 2 {
+		t.Fatalf("checksum fetched %d times, want a retry", hits)
+	}
+	got, _ := os.ReadFile(path)
+	if string(got) != string(next) {
+		t.Fatalf("binary = %q", got)
+	}
+}
+
+func TestSelfUpdateNamesAnUnreachableSourceAsSuch(t *testing.T) {
+	// "No checksum published" and "could not reach the source" are different
+	// problems; reporting the first for the second sends the operator looking
+	// for a file that is not missing.
+	fakeExecutable(t, "old build")
+	recorder := httptest.NewRecorder()
+	handleSelfUpdate(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/herdr-web/update",
+		strings.NewReader(`{"from":"http://127.0.0.1:1/release"}`)))
+
+	body := recorder.Body.String()
+	if strings.Contains(body, "published no checksum") {
+		t.Fatalf("a connection failure was reported as a missing checksum: %s", body)
+	}
+	if !strings.Contains(body, "could not be read") {
+		t.Fatalf("body = %s", body)
+	}
+}
+
+func TestSelfSourceFallsBackToAConfiguredMirror(t *testing.T) {
+	t.Setenv("HERDR_WEB_RELEASE_SOURCE", "http://mirror.example:5000/release")
+	// A host that cannot trust GitHub pins its own source once, instead of
+	// naming it on every update.
+	if got := selfSourceURL(""); got != "http://mirror.example:5000/release" {
+		t.Fatalf("source = %q", got)
+	}
+	if got := selfSourceURL("http://explicit/release/"); got != "http://explicit/release" {
+		t.Fatalf("an explicit source must win, got %q", got)
 	}
 }

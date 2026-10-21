@@ -42,7 +42,29 @@ func selfSourceURL(from string) string {
 	if from != "" {
 		return strings.TrimRight(from, "/")
 	}
+	// A host that cannot reliably reach GitHub pins its own source instead of
+	// asking for it on every update: any console serves one.
+	if configured := strings.TrimSpace(os.Getenv("HERDR_WEB_RELEASE_SOURCE")); configured != "" {
+		return strings.TrimRight(configured, "/")
+	}
 	return "https://github.com/" + selfReleaseName + "/releases/latest/download"
+}
+
+// selfAttempts is how many times a transfer is tried. GitHub's download endpoint
+// redirects to a CDN and a connection dropped mid-body ("unexpected EOF") is
+// common enough that one attempt is not a verdict.
+const selfAttempts = 3
+
+// selfRetryDelay is the wait between attempts, growing linearly.
+var selfRetryDelay = 700 * time.Millisecond
+
+func selfSleep(ctx context.Context, d time.Duration) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(d):
+		return true
+	}
 }
 
 type selfRelease struct {
@@ -134,8 +156,15 @@ func handleSelfUpdate(w http.ResponseWriter, r *http.Request) {
 	wantSum, err := selfFetchText(ctx, source+"/"+asset+".sha256")
 	if err != nil {
 		steps = append(steps, selfStep{Step: "checksum", Detail: "could not read " + source + "/" + asset + ".sha256: " + err.Error()})
-		writeJSON(w, http.StatusOK, selfUpdateResult{OK: false, Steps: steps,
-			Error: "the release source published no checksum, so nothing was replaced"})
+		// "The source published no checksum" and "the source could not be
+		// reached" are different problems with different answers, and reporting
+		// the first for the second sent an operator looking for a missing file.
+		message := "the release source published no checksum, so nothing was replaced"
+		if !isNotFound(err) {
+			message = "the release source could not be read: " + err.Error() +
+				". Nothing was replaced; try again, or point the update at a mirror with \"from\"."
+		}
+		writeJSON(w, http.StatusOK, selfUpdateResult{OK: false, Steps: steps, Error: message})
 		return
 	}
 	want := strings.Fields(wantSum)
@@ -226,43 +255,111 @@ func shortSum(sum string) string {
 	return sum
 }
 
+// selfFetchError carries the status a source answered, so a missing file and an
+// unreachable host are not reported as the same thing.
+type selfFetchError struct {
+	url    string
+	status int
+	err    error
+}
+
+func (e *selfFetchError) Error() string {
+	if e.status != 0 {
+		return fmt.Sprintf("%s answered %d %s", e.url, e.status, http.StatusText(e.status))
+	}
+	return e.url + ": " + e.err.Error()
+}
+
+func (e *selfFetchError) Unwrap() error { return e.err }
+
+// isNotFound reports whether the source answered "it is not here", which means
+// the build was never published rather than the network failing.
+func isNotFound(err error) bool {
+	var fetch *selfFetchError
+	return errors.As(err, &fetch) && fetch.status == http.StatusNotFound
+}
+
 func selfFetchText(ctx context.Context, url string) (string, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return "", err
+	var last error
+	for attempt := 0; attempt < selfAttempts; attempt++ {
+		if attempt > 0 && !selfSleep(ctx, selfRetryDelay*time.Duration(attempt)) {
+			break
+		}
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return "", err
+		}
+		request.Header.Set("User-Agent", "herdr-web")
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			last = &selfFetchError{url: url, err: err}
+			continue
+		}
+		body, readErr := io.ReadAll(io.LimitReader(response.Body, 4096))
+		_ = response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			last = &selfFetchError{url: url, status: response.StatusCode}
+			// A missing file will still be missing on the next attempt.
+			break
+		}
+		if readErr != nil {
+			// A body cut short is worth another attempt: that is what a CDN
+			// redirect under a flaky link looks like.
+			last = &selfFetchError{url: url, err: readErr}
+			continue
+		}
+		return string(body), nil
 	}
-	request.Header.Set("User-Agent", "herdr-web")
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		return "", err
+	if last == nil {
+		last = &selfFetchError{url: url, err: ctx.Err()}
 	}
-	defer func() { _ = response.Body.Close() }()
-	if response.StatusCode != http.StatusOK {
-		return "", errors.New(response.Status)
-	}
-	body, err := io.ReadAll(io.LimitReader(response.Body, 4096))
-	if err != nil {
-		return "", err
-	}
-	return string(body), nil
+	return "", last
 }
 
 func selfDownload(ctx context.Context, url string, dest io.Writer) error {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return err
+	var last error
+	for attempt := 0; attempt < selfAttempts; attempt++ {
+		if attempt > 0 && !selfSleep(ctx, selfRetryDelay*time.Duration(attempt)) {
+			break
+		}
+		// Each attempt starts the file again: a half-written body is worse than
+		// no file, and the checksum would reject it anyway.
+		if truncater, ok := dest.(interface{ Truncate(int64) error }); ok {
+			_ = truncater.Truncate(0)
+			if seeker, ok := dest.(io.Seeker); ok {
+				if _, err := seeker.Seek(0, io.SeekStart); err != nil {
+					return err
+				}
+			}
+		}
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return err
+		}
+		request.Header.Set("User-Agent", "herdr-web")
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			last = &selfFetchError{url: url, err: err}
+			continue
+		}
+		status := response.StatusCode
+		if status != http.StatusOK {
+			_ = response.Body.Close()
+			last = &selfFetchError{url: url, status: status}
+			break
+		}
+		_, copyErr := io.Copy(dest, io.LimitReader(response.Body, 128<<20))
+		_ = response.Body.Close()
+		if copyErr != nil {
+			last = &selfFetchError{url: url, err: copyErr}
+			continue
+		}
+		return nil
 	}
-	request.Header.Set("User-Agent", "herdr-web")
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		return err
+	if last == nil {
+		last = &selfFetchError{url: url, err: ctx.Err()}
 	}
-	defer func() { _ = response.Body.Close() }()
-	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("%s answered %s", url, response.Status)
-	}
-	_, err = io.Copy(dest, io.LimitReader(response.Body, 128<<20))
-	return err
+	return last
 }
 
 // contextWithTimeout ties the work to the request, with its own ceiling because
