@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -48,6 +49,17 @@ func selfSourceURL(from string) string {
 		return strings.TrimRight(configured, "/")
 	}
 	return "https://github.com/" + selfReleaseName + "/releases/latest/download"
+}
+
+// selfClient bounds the parts of a transfer that can hang forever: an
+// unreachable source has to fail, and fail again quickly enough that three
+// attempts still fit inside one response.
+var selfClient = &http.Client{
+	Transport: &http.Transport{
+		DialContext:           (&net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		TLSHandshakeTimeout:   15 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
+	},
 }
 
 // selfAttempts is how many times a transfer is tried. GitHub's download endpoint
@@ -290,7 +302,7 @@ func selfFetchText(ctx context.Context, url string) (string, error) {
 			return "", err
 		}
 		request.Header.Set("User-Agent", "herdr-web")
-		response, err := http.DefaultClient.Do(request)
+		response, err := selfClient.Do(request)
 		if err != nil {
 			last = &selfFetchError{url: url, err: err}
 			continue
@@ -337,7 +349,7 @@ func selfDownload(ctx context.Context, url string, dest io.Writer) error {
 			return err
 		}
 		request.Header.Set("User-Agent", "herdr-web")
-		response, err := http.DefaultClient.Do(request)
+		response, err := selfClient.Do(request)
 		if err != nil {
 			last = &selfFetchError{url: url, err: err}
 			continue
