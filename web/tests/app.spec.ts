@@ -1583,8 +1583,6 @@ test("the console can update itself and says how to start the new build", async 
   });
   await page.goto("/");
   await page.locator("#herdr-host-open").click();
-  // A host that cannot reach GitHub points the update at a mirror instead.
-  await page.locator("#herdr-console-source").fill("http://peer:5000/release");
   page.once("dialog", (dialog) => void dialog.accept());
   await page.locator("#herdr-console-update").click();
 
@@ -1592,7 +1590,8 @@ test("the console can update itself and says how to start the new build", async 
   // so the panel has to say how to start the new build.
   await expect(page.locator("#herdr-host-output")).toContainText("checksum matches");
   await expect(page.locator("#herdr-host-output")).toContainText("make service-restart");
-  expect(calls).toEqual(['{"from":"http://peer:5000/release"}']);
+  // No source is sent: the console decides where an update comes from.
+  expect(calls).toEqual(["{}"]);
 });
 
 test("the masthead names the daemon as herdr(ip:version), without an ip on loopback", async ({ page }) => {

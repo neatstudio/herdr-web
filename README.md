@@ -422,10 +422,18 @@ the same build from one bastion and coming up `active` and `enabled`.
 
 ### Updating this console
 
-The host panel's `update console` button replaces the running binary with the one
-its release source publishes, from GitHub or from `--from` when the machine has
-no way out. The bytes are compared, not the version: whatever differs from what
-is running is an update, and a source without a checksum is refused.
+The host panel's `update console` button replaces the running binary. Which
+source it comes from is the console's own judgement, in this order: the source
+that worked last time, GitHub, and the consoles it can reach on the tailnet —
+each is probed as a release source, and the first one that answers wins. That is
+how a host behind a link that drops GitHub's download updates itself: it pays for
+one slow attempt, uses a peer, and remembers it. The panel says which source was
+used.
+
+The bytes are compared, not the version: whatever differs from what is running is
+an update, and a source without a checksum is refused. `--from` (or
+`HERDR_WEB_RELEASE_SOURCE`) still overrides the search when a source must be
+pinned.
 
 The new file is in place when the request returns; the process that answered is
 still the old build, so the panel prints the command that starts the new one

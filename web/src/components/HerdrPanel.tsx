@@ -23,9 +23,6 @@ export function HerdrPanel({ open, onClose, consoleVersion }: Props) {
   const [host, setHost] = useState<HerdrHost | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; command: string; output: string } | null>(null);
-  // A mirror for the console's own update: GitHub is not reachable everywhere,
-  // and any running console serves a release source at /release.
-  const [consoleSource, setConsoleSource] = useState("");
 
   const refresh = useCallback(async (): Promise<void> => {
     setHost(await fetchHerdrHost());
@@ -58,7 +55,7 @@ export function HerdrPanel({ open, onClose, consoleVersion }: Props) {
     setBusy(true);
     setResult(null);
     try {
-      const done = await updateConsole(consoleSource.trim() === "" ? undefined : consoleSource.trim());
+      const done = await updateConsole();
       if (done === null) {
         setResult({ ok: false, command: "update console", output: "the request did not reach the bridge" });
       } else if (!done.ok) {
@@ -229,17 +226,6 @@ export function HerdrPanel({ open, onClose, consoleVersion }: Props) {
                   {host.updateAvailable ? `update to ${host.latestVersion}` : "update"}
                 </button>
               )}
-              <input
-                id="herdr-console-source"
-                className="hostpanel__source"
-                type="url"
-                inputMode="url"
-                spellCheck={false}
-                placeholder="update source (default: GitHub; any console serves /release)"
-                value={consoleSource}
-                onChange={(event) => setConsoleSource(event.target.value)}
-                disabled={busy}
-              />
               <button
                 type="button"
                 id="herdr-console-update"

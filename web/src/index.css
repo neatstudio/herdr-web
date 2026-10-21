@@ -1482,18 +1482,6 @@ body::before {
 }
 
 .hostpanel__button,
-/* The console's update source: empty means GitHub, so it reads as an override. */
-.hostpanel__source {
-  min-width: 0;
-  flex: 1 1 14ch;
-  padding: 4px 7px;
-  background: none;
-  border: var(--rule-w) solid var(--rule-strong);
-  color: var(--ink);
-  font: inherit;
-  font-size: var(--step-fine);
-}
-
 .hostpanel__act {
   padding: 3px 9px 2px;
   border: var(--rule-w) solid var(--rule-strong);

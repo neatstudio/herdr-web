@@ -48,8 +48,12 @@ func selfSourceURL(from string) string {
 	if configured := strings.TrimSpace(os.Getenv("HERDR_WEB_RELEASE_SOURCE")); configured != "" {
 		return strings.TrimRight(configured, "/")
 	}
-	return "https://github.com/" + selfReleaseName + "/releases/latest/download"
+	return selfOfficialSource
 }
+
+// selfOfficialSource is where the project publishes releases. A variable so a
+// test can point it at a dead address instead of the real one.
+var selfOfficialSource = "https://github.com/" + selfReleaseName + "/releases/latest/download"
 
 // selfClient bounds the parts of a transfer that can hang forever: an
 // unreachable source has to fail, and fail again quickly enough that three
@@ -135,6 +139,12 @@ type selfUpdateResult struct {
 // on every platform this runs on and leaves the running process on the old inode
 // until it restarts. It never restarts itself: that would drop the answer to the
 // request that asked for it.
+// handleSelfUpdate replaces the running binary with the one a source publishes.
+//
+// Which source is not the operator's problem: the remembered one is tried first,
+// then GitHub, then the consoles reachable on the tailnet, and the first source
+// that answers wins. A host behind a link that drops GitHub's download pays for
+// that once and then remembers a source that works.
 func handleSelfUpdate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeMethodNotAllowed(w, "POST")
@@ -144,7 +154,6 @@ func handleSelfUpdate(w http.ResponseWriter, r *http.Request) {
 		From string `json:"from"`
 	}
 	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body)
-	source := selfSourceURL(body.From)
 
 	execPath, err := selfExecutable()
 	if err != nil {
@@ -160,48 +169,77 @@ func handleSelfUpdate(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := contextWithTimeout(r, selfUpdateTimeout)
 	defer cancel()
 
-	steps := make([]selfStep, 0, 3)
+	explicit := strings.TrimSpace(body.From) != ""
+	candidates := selfCandidates(ctx, body.From, false)
+	if len(candidates) == 0 {
+		candidates = []string{selfSourceURL(body.From)}
+	}
+
+	tried := make([]selfStep, 0, 4)
+	var lastErr string
+	for _, source := range candidates {
+		result, err := selfUpdateFrom(ctx, execPath, source)
+		if err == nil {
+			rememberSelfSource(source)
+			// An explicit source is shown as it was given; a discovered one is
+			// named so the operator knows where the build came from.
+			if !explicit {
+				result.Steps = append([]selfStep{{Step: "source", OK: true,
+					Detail: "used " + selfSourceLabel(source)}}, result.Steps...)
+			}
+			writeJSON(w, http.StatusOK, result)
+			return
+		}
+		if source == selfOfficialSource {
+			rememberGitHubFailure()
+		}
+		tried = append(tried, result.Steps...)
+		lastErr = err.Error()
+	}
+	writeJSON(w, http.StatusOK, selfUpdateResult{
+		OK:    false,
+		Steps: tried,
+		Error: "no release source answered: " + lastErr,
+	})
+}
+
+// selfUpdateFrom fetches one source and applies it. An error means the source
+// could not provide a verified build, and the caller moves on to the next one.
+func selfUpdateFrom(ctx context.Context, execPath, source string) (selfUpdateResult, error) {
+	steps := make([]selfStep, 0, 4)
 	asset := selfPlatform()
-	keep := selfStep{Step: "keep", OK: true}
+
 	// A source without a checksum is refused: an unverified binary is not worth
 	// replacing a working console with.
 	wantSum, err := selfFetchText(ctx, source+"/"+asset+".sha256")
 	if err != nil {
-		steps = append(steps, selfStep{Step: "checksum", Detail: "could not read " + source + "/" + asset + ".sha256: " + err.Error()})
-		// "The source published no checksum" and "the source could not be
-		// reached" are different problems with different answers, and reporting
-		// the first for the second sent an operator looking for a missing file.
-		message := "the release source published no checksum, so nothing was replaced"
-		if !isNotFound(err) {
-			message = "the release source could not be read: " + err.Error() +
-				". Nothing was replaced; try again, or point the update at a mirror with \"from\"."
+		detail := "could not read " + source + "/" + asset + ".sha256: " + err.Error()
+		steps = append(steps, selfStep{Step: "checksum", Detail: detail})
+		if isNotFound(err) {
+			return selfUpdateResult{OK: false, Steps: steps},
+				errors.New("the release source published no checksum")
 		}
-		writeJSON(w, http.StatusOK, selfUpdateResult{OK: false, Steps: steps, Error: message})
-		return
+		return selfUpdateResult{OK: false, Steps: steps},
+			errors.New("the release source could not be read")
 	}
 	want := strings.Fields(wantSum)
 	if len(want) == 0 {
 		steps = append(steps, selfStep{Step: "checksum", Detail: "the checksum file was empty"})
-		writeJSON(w, http.StatusOK, selfUpdateResult{OK: false, Steps: steps,
-			Error: "the release source published an empty checksum"})
-		return
+		return selfUpdateResult{OK: false, Steps: steps}, errors.New("the checksum file was empty")
 	}
 	currentSum, err := fileSHA256(execPath)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "release_unavailable", err.Error())
-		return
+		return selfUpdateResult{}, err
 	}
 	if strings.EqualFold(currentSum, want[0]) {
-		keep.Detail = "already running this build (" + shortSum(currentSum) + ")"
-		steps = append(steps, keep)
-		writeJSON(w, http.StatusOK, selfUpdateResult{OK: true, Updated: false, Steps: steps})
-		return
+		steps = append(steps, selfStep{Step: "keep", OK: true,
+			Detail: "already running this build (" + shortSum(currentSum) + ")"})
+		return selfUpdateResult{OK: true, Updated: false, Steps: steps}, nil
 	}
 
 	tmp, err := os.CreateTemp(filepath.Dir(execPath), ".herdr-web-update-*")
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "update_unavailable", err.Error())
-		return
+		return selfUpdateResult{}, err
 	}
 	tmpPath := tmp.Name()
 	// Any failure past this point leaves the running binary untouched.
@@ -209,42 +247,38 @@ func handleSelfUpdate(w http.ResponseWriter, r *http.Request) {
 	if err := selfDownload(ctx, source+"/"+asset, tmp); err != nil {
 		_ = tmp.Close()
 		steps = append(steps, selfStep{Step: "download", Detail: err.Error()})
-		writeJSON(w, http.StatusOK, selfUpdateResult{OK: false, Steps: steps, Error: "the release could not be downloaded"})
-		return
+		return selfUpdateResult{OK: false, Steps: steps}, errors.New("the release could not be downloaded")
 	}
 	if err := tmp.Close(); err != nil {
-		writeError(w, http.StatusInternalServerError, "update_unavailable", err.Error())
-		return
+		return selfUpdateResult{}, err
 	}
 	got, err := fileSHA256(tmpPath)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "update_unavailable", err.Error())
-		return
+		return selfUpdateResult{}, err
 	}
 	if !strings.EqualFold(got, want[0]) {
-		steps = append(steps, selfStep{Step: "verify", Detail: "checksum mismatch: the source said " + shortSum(want[0]) + ", the file is " + shortSum(got)})
-		writeJSON(w, http.StatusOK, selfUpdateResult{OK: false, Steps: steps, Error: "the downloaded release did not match its checksum"})
-		return
+		steps = append(steps, selfStep{Step: "verify", Detail: "checksum mismatch: the source said " +
+			shortSum(want[0]) + ", the file is " + shortSum(got)})
+		return selfUpdateResult{OK: false, Steps: steps}, errors.New("the download did not match its checksum")
 	}
 	steps = append(steps, selfStep{Step: "verify", OK: true, Detail: "checksum matches (" + shortSum(got) + ")"})
 	if err := os.Chmod(tmpPath, 0o755); err != nil {
-		writeError(w, http.StatusInternalServerError, "update_unavailable", err.Error())
-		return
+		return selfUpdateResult{}, err
 	}
 	if err := os.Rename(tmpPath, execPath); err != nil {
 		steps = append(steps, selfStep{Step: "replace", Detail: err.Error()})
-		writeJSON(w, http.StatusOK, selfUpdateResult{OK: false, Steps: steps, Error: "the new binary could not replace the old one"})
-		return
+		return selfUpdateResult{OK: false, Steps: steps}, errors.New("the new binary could not replace the old one")
 	}
-	steps = append(steps, selfStep{Step: "replace", OK: true, Detail: "installed " + shortSum(got) + " at " + execPath, Changed: true})
-	writeJSON(w, http.StatusOK, selfUpdateResult{
+	steps = append(steps, selfStep{Step: "replace", OK: true,
+		Detail: "installed " + shortSum(got) + " at " + execPath, Changed: true})
+	return selfUpdateResult{
 		OK:      true,
 		Updated: true,
 		Steps:   steps,
 		// The new file is on disk; the running process is still the old one, so
 		// the operator (or the service manager) has to start it.
 		Restart: restartHint(),
-	})
+	}, nil
 }
 
 // restartHint names the command that starts the new binary, for the unit the

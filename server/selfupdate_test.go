@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -322,5 +323,95 @@ func TestSelfSourceFallsBackToAConfiguredMirror(t *testing.T) {
 	}
 	if got := selfSourceURL("http://explicit/release/"); got != "http://explicit/release" {
 		t.Fatalf("an explicit source must win, got %q", got)
+	}
+}
+
+func TestSelfUpdateFallsThroughToAPeerWhenGitHubIsUnreachable(t *testing.T) {
+	// The judgement the console is supposed to make for itself: GitHub is the
+	// official source, but a console on the same tailnet serves the same files.
+	current := []byte("old build")
+	next := []byte("newer build")
+	path := fakeExecutable(t, string(current))
+	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, ".sha256") {
+			_, _ = w.Write([]byte(checksum(next) + "  " + selfPlatform() + "\n"))
+			return
+		}
+		_, _ = w.Write(next)
+	}))
+	t.Cleanup(peer.Close)
+
+	// No remembered source, and GitHub pointed at a dead address.
+	t.Setenv("HERDR_WEB_RELEASE_SOURCE", "")
+	t.Setenv("HOME", t.TempDir())
+	previousOfficial := selfOfficialSource
+	selfOfficialSource = "http://127.0.0.1:1/release"
+	t.Cleanup(func() { selfOfficialSource = previousOfficial })
+
+	previousPeers := selfTailnetPeers
+	selfTailnetPeers = func(context.Context) []string { return []string{peer.URL + "/release"} }
+	t.Cleanup(func() { selfTailnetPeers = previousPeers })
+	previousDelay := selfRetryDelay
+	selfRetryDelay = time.Millisecond
+	t.Cleanup(func() { selfRetryDelay = previousDelay })
+
+	recorder := httptest.NewRecorder()
+	handleSelfUpdate(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/herdr-web/update", nil))
+
+	body := recorder.Body.String()
+	if !strings.Contains(body, `"updated":true`) {
+		t.Fatalf("the peer was not used: %s", body)
+	}
+	if !strings.Contains(body, "used "+peer.URL+"/release") {
+		t.Fatalf("body does not say where the build came from: %s", body)
+	}
+	got, _ := os.ReadFile(path)
+	if string(got) != string(next) {
+		t.Fatalf("binary = %q", got)
+	}
+	// And the choice is remembered, so the next update does not pay for GitHub
+	// again.
+	if state := readSelfState(); state.Source != peer.URL+"/release" {
+		t.Fatalf("remembered source = %q", state.Source)
+	}
+	if state := readSelfState(); state.GitHubFailedAt == 0 {
+		t.Fatal("a failed GitHub attempt was not remembered")
+	}
+}
+
+func TestSelfCandidatesPreferTheRememberedSource(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("HERDR_WEB_RELEASE_SOURCE", "")
+	previousPeers := selfTailnetPeers
+	selfTailnetPeers = func(context.Context) []string { return []string{"http://peer:5000/release"} }
+	t.Cleanup(func() { selfTailnetPeers = previousPeers })
+
+	writeSelfState(selfState{Source: "http://remembered:5000/release"})
+	got := selfCandidates(context.Background(), "", false)
+	if len(got) == 0 || got[0] != "http://remembered:5000/release" {
+		t.Fatalf("candidates = %v, want the remembered source first", got)
+	}
+
+	// After a GitHub failure the peers come before it, which is what makes a
+	// blocked link cost one slow attempt rather than every update.
+	rememberGitHubFailure()
+	got = selfCandidates(context.Background(), "", false)
+	peerAt, githubAt := -1, -1
+	for i, source := range got {
+		if strings.HasPrefix(source, "http://peer") {
+			peerAt = i
+		}
+		if strings.Contains(source, "github.com") {
+			githubAt = i
+		}
+	}
+	if peerAt < 0 || githubAt < 0 || peerAt > githubAt {
+		t.Fatalf("candidates = %v, want the peer before github", got)
+	}
+
+	// An explicit source is a decision: nothing else is tried.
+	got = selfCandidates(context.Background(), "http://explicit/release", false)
+	if len(got) != 1 || got[0] != "http://explicit/release" {
+		t.Fatalf("candidates = %v", got)
 	}
 }
