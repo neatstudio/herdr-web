@@ -128,8 +128,10 @@ func handleRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if wantSum {
+		// `path` already ends in .sha256: the request came for the checksum, not
+		// for the binary beside it.
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		http.ServeFile(w, r, path+".sha256")
+		http.ServeFile(w, r, path)
 		return
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")

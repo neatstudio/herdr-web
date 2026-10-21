@@ -157,3 +157,31 @@ func TestSelfReleaseNamesTheRunningBuild(t *testing.T) {
 		t.Fatalf("body=%s does not carry the platform", body)
 	}
 }
+
+func TestReleaseServesTheChecksumOfANonSelfPlatform(t *testing.T) {
+	// The release directory holds the other platforms. A client asking for
+	// "<asset>.sha256" must get that file, not "<asset>.sha256.sha256".
+	dir := t.TempDir()
+	previous := os.Getenv("HERDR_WEB_RELEASE_DIR")
+	if err := os.Setenv("HERDR_WEB_RELEASE_DIR", dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Setenv("HERDR_WEB_RELEASE_DIR", previous) })
+
+	asset := "herdr-web-linux-amd64"
+	if err := os.WriteFile(filepath.Join(dir, asset), []byte("binary"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, asset+".sha256"), []byte("abc123  "+asset+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := httptest.NewRecorder()
+	handleRelease(recorder, httptest.NewRequest(http.MethodGet, "/release/"+asset+".sha256", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", recorder.Code)
+	}
+	if got := recorder.Body.String(); !strings.Contains(got, "abc123") {
+		t.Fatalf("body = %q", got)
+	}
+}
