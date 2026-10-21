@@ -304,7 +304,11 @@ WantedBy=default.target
 UNIT
       if command -v systemctl >/dev/null 2>&1; then
         systemctl --user daemon-reload 2>/dev/null || true
-        systemctl --user enable --now "$SERVICE_LABEL.service" 2>/dev/null || \
+        systemctl --user enable "$SERVICE_LABEL.service" 2>/dev/null || true
+        # enable --now leaves an already-running unit alone, so an update would
+        # replace the file and keep the old build in memory.
+        systemctl --user restart "$SERVICE_LABEL.service" 2>/dev/null || \
+          systemctl --user start "$SERVICE_LABEL.service" 2>/dev/null || \
           say "note: could not start the service; run: systemctl --user start $SERVICE_LABEL"
         loginctl enable-linger "$(id -un)" 2>/dev/null || true
         say "service registered: $UNIT_DIR/$SERVICE_LABEL.service"
