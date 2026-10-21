@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { hostOctet } from "@/lib/fleet";
 import type { HerdrStatus } from "@/lib/herdr";
 import { THEME_CHOICES, type ThemeChoice } from "@/lib/theme";
@@ -17,6 +18,13 @@ export function Masthead({ status, choice, onChoice, onHost }: Props) {
   const octet = hostOctet(typeof window === "undefined" ? "" : window.location.hostname);
   // herdr(4:0.8.2) on a tailnet address, herdr(0.9.0) on this machine.
   const label = octet === "" ? `herdr(${version})` : `herdr(${octet}:${version})`;
+
+  // The tab strip is the one place several consoles are seen at once, and there
+  // they all said "herdr": the title carries the same name as the masthead so a
+  // window switcher can tell the machines apart.
+  useEffect(() => {
+    document.title = label;
+  }, [label]);
 
   return (
     <header className="masthead">

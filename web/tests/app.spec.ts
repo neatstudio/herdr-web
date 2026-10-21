@@ -1601,3 +1601,11 @@ test("the masthead names the daemon as herdr(ip:version), without an ip on loopb
 });
 
 
+
+test("the tab title names the machine, so consoles on several hosts differ", async ({ page }) => {
+  await installBridge(page);
+  await page.goto("/");
+  // Served over loopback in the test: the address is implied, the version is not.
+  await expect(page).toHaveTitle(/^herdr\(\d+\.\d+\.\d+\)$/);
+  await expect(page.locator("#herdr-daemon-label")).toHaveText(/^herdr\(\d+\.\d+\.\d+\)$/);
+});
