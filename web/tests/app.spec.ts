@@ -1609,3 +1609,33 @@ test("the tab title names the machine, so consoles on several hosts differ", asy
   await expect(page).toHaveTitle(/^herdr\(\d+\.\d+\.\d+\)$/);
   await expect(page.locator("#herdr-daemon-label")).toHaveText(/^herdr\(\d+\.\d+\.\d+\)$/);
 });
+
+test("ctrl+c interrupts the pane, but copies when something is selected", async ({ page }) => {
+  const keyPosts: string[] = [];
+  await installBridge(page);
+  await page.route("**/api/v1/herdr/panes/*/keys", async (route) => {
+    keyPosts.push(route.request().postData() ?? "");
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+  });
+  await page.goto("/");
+
+  const input = page.locator("#herdr-input");
+  await input.click();
+  await input.pressSequentially("some text");
+  // Nothing selected: Ctrl-C is the terminal's interrupt, not the browser's copy.
+  await input.press("Control+c");
+  await expect.poll(() => keyPosts).toEqual([JSON.stringify({ keys: ["ctrl+c"] })]);
+
+  // With a selection the browser owns it: sending it to the pane would steal a
+  // copy the operator asked for.
+  await input.selectText();
+  await input.press("Control+c");
+  await page.waitForTimeout(300);
+  expect(keyPosts).toHaveLength(1);
+
+  // Ctrl-D ends input, and the same rule applies.
+  await input.click();
+  await input.press("Control+d");
+  await expect.poll(() => keyPosts).toHaveLength(2);
+  expect(JSON.parse(keyPosts[1])).toEqual({ keys: ["ctrl+d"] });
+});

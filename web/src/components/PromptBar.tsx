@@ -275,6 +275,18 @@ export function PromptBar({ paneId }: { paneId: string }) {
       onRawKey(event);
       return;
     }
+    // Ctrl+letter is a terminal key, not a document shortcut: Ctrl-C interrupts,
+    // Ctrl-D ends input, Ctrl-Z suspends. It is only handed to the pane when
+    // nothing is selected, because with a selection Ctrl-C means copy.
+    if (event.ctrlKey && !event.metaKey && !event.altKey && event.key.length === 1) {
+      const box = event.currentTarget;
+      if (box.selectionStart !== box.selectionEnd) {
+        return;
+      }
+      event.preventDefault();
+      void sendPaneKeys(paneId, [`ctrl+${event.key.toLowerCase()}`]);
+      return;
+    }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       void send(value);
@@ -440,6 +452,9 @@ export function PromptBar({ paneId }: { paneId: string }) {
             <>
               <span>
                 <kbd>⇥</kbd> complete
+              </span>
+              <span>
+                <kbd>^c</kbd> interrupt
               </span>
               <span>
                 <kbd>⇧⏎</kbd> newline

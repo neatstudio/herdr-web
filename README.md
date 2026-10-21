@@ -78,6 +78,10 @@ and the design leans on two things to pay them:
   the same way but *without* Enter, because an agent's slash command opens a menu
   for the rest of the line — an Enter here would pick the first entry before it
   was ever seen.
+- **Ctrl+letter belongs to the terminal.** `Ctrl-C` interrupts, `Ctrl-D` ends
+  input, `Ctrl-Z` suspends, `Ctrl-L` clears — typed in the composer, they go
+  straight to the pane. With text selected they are left to the browser, because
+  then `Ctrl-C` means copy.
 - **Raw mode is one key away.** Press `Esc` and every key goes to the pane
   instead: Tab completes, arrows walk the shell's history, Ctrl-C interrupts, and
   a TUI's own menus are driven from there. `Shift+Esc` leaves raw mode — plain
