@@ -488,3 +488,21 @@ func TestSelfNewerUnderstandsUntaggedBuilds(t *testing.T) {
 		t.Error("the release a build sits on is not newer than that build")
 	}
 }
+
+func TestReleaseServesItsOwnChecksum(t *testing.T) {
+	// "herdr-web-<platform>.sha256" starts with "herdr-", so a herdr-prefixed
+	// branch placed first swallowed the console's own assets and the update
+	// failed with "not on this host".
+	payload := []byte("binary bytes")
+	path := fakeExecutable(t, string(payload))
+
+	recorder := httptest.NewRecorder()
+	handleRelease(recorder, httptest.NewRequest(http.MethodGet, "/release/"+selfPlatform()+".sha256", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), checksum(payload)) {
+		t.Fatalf("body = %q", recorder.Body.String())
+	}
+	_ = path
+}

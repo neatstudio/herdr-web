@@ -114,6 +114,22 @@ func handleRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !strings.HasPrefix(name, "herdr-web-") {
+		writeError(w, http.StatusNotFound, "not_found", "unknown release file")
+		return
+	}
+	// A checksum beside the binary, so an installer can verify what it fetched.
+	wantSum := strings.HasSuffix(name, ".sha256")
+	asset := strings.TrimSuffix(name, ".sha256")
+
+	if asset == releaseSelfPath() {
+		if wantSum {
+			writeChecksumForSelf(w, r)
+			return
+		}
+		serveSelf(w, r)
+		return
+	}
 	if strings.HasPrefix(name, "herdr-") {
 		// herdr's own binary, so a machine without access to herdr.dev installs
 		// from a relay the same way this console updates itself.
@@ -133,22 +149,6 @@ func handleRelease(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !strings.HasPrefix(name, "herdr-web-") {
-		writeError(w, http.StatusNotFound, "not_found", "unknown release file")
-		return
-	}
-	// A checksum beside the binary, so an installer can verify what it fetched.
-	wantSum := strings.HasSuffix(name, ".sha256")
-	asset := strings.TrimSuffix(name, ".sha256")
-
-	if asset == releaseSelfPath() {
-		if wantSum {
-			writeChecksumForSelf(w, r)
-			return
-		}
-		serveSelf(w, r)
-		return
-	}
 	// Another platform: only what someone put in the release directory.
 	dir := releaseDir()
 	if dir == "" {
@@ -178,7 +178,7 @@ func handleRelease(w http.ResponseWriter, r *http.Request) {
 // fine on every platform this console supports: the file is not held open for
 // writing, and an install replaces it by renaming.
 func serveSelf(w http.ResponseWriter, r *http.Request) {
-	path, err := os.Executable()
+	path, err := selfExecutable()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "release_unavailable", err.Error())
 		return
@@ -193,7 +193,7 @@ func serveSelf(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeChecksumForSelf(w http.ResponseWriter, r *http.Request) {
-	path, err := os.Executable()
+	path, err := selfExecutable()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "release_unavailable", err.Error())
 		return
