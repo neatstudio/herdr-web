@@ -17,6 +17,9 @@ import (
 // A started daemon is waited for in production; the tests must not sit through
 // that budget, and they never run a real daemon.
 func init() {
+	// Remembered update sources belong to the operator, not to the test binary.
+	selfStatePathOverride = filepath.Join(os.TempDir(), "herdr-web-test-update-source.json")
+	_ = os.Remove(selfStatePathOverride)
 	hostStartTimeout = 400 * time.Millisecond
 	// The start step launches herdr's headless server; a test records the call
 	// and lets the fake status probe answer instead.

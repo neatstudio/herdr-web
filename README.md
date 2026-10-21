@@ -430,8 +430,13 @@ how a host behind a link that drops GitHub's download updates itself: it pays fo
 one slow attempt, uses a peer, and remembers it. The panel says which source was
 used.
 
-The bytes are compared, not the version: whatever differs from what is running is
-an update, and a source without a checksum is refused. `--from` (or
+A source also has to publish a **version**, and it must be newer: a differing
+hash alone is not an update, and comparing hashes once replaced a working build
+with an older release. Two untagged builds of the same base tag are ordered by
+their commit count (`v0.2.0-22-g...` is newer than `v0.2.0-17-g...`), which is
+what lets a fleet that never tags update itself from a peer. A source that cannot
+say what it publishes is not used, and every download is checked against the
+published checksum. `--from` (or
 `HERDR_WEB_RELEASE_SOURCE`) still overrides the search when a source must be
 pinned.
 

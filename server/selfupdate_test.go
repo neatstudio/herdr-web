@@ -349,7 +349,9 @@ func TestSelfUpdateFallsThroughToAPeerWhenGitHubIsUnreachable(t *testing.T) {
 	t.Cleanup(func() { selfOfficialSource = previousOfficial })
 
 	previousPeers := selfTailnetPeers
-	selfTailnetPeers = func(context.Context) []string { return []string{peer.URL + "/release"} }
+	selfTailnetPeers = func(context.Context) []selfCandidate {
+		return []selfCandidate{{Source: peer.URL + "/release", Version: "v99.0.0"}}
+	}
 	t.Cleanup(func() { selfTailnetPeers = previousPeers })
 	previousDelay := selfRetryDelay
 	selfRetryDelay = time.Millisecond
@@ -383,25 +385,27 @@ func TestSelfCandidatesPreferTheRememberedSource(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("HERDR_WEB_RELEASE_SOURCE", "")
 	previousPeers := selfTailnetPeers
-	selfTailnetPeers = func(context.Context) []string { return []string{"http://peer:5000/release"} }
+	selfTailnetPeers = func(context.Context) []selfCandidate {
+		return []selfCandidate{{Source: "http://peer:5000/release", Version: "v99.0.0"}}
+	}
 	t.Cleanup(func() { selfTailnetPeers = previousPeers })
 
 	writeSelfState(selfState{Source: "http://remembered:5000/release"})
-	got := selfCandidates(context.Background(), "", false)
-	if len(got) == 0 || got[0] != "http://remembered:5000/release" {
+	got := selfCandidates(context.Background(), "")
+	if len(got) == 0 || got[0].Source != "http://remembered:5000/release" {
 		t.Fatalf("candidates = %v, want the remembered source first", got)
 	}
 
 	// After a GitHub failure the peers come before it, which is what makes a
 	// blocked link cost one slow attempt rather than every update.
 	rememberGitHubFailure()
-	got = selfCandidates(context.Background(), "", false)
+	got = selfCandidates(context.Background(), "")
 	peerAt, githubAt := -1, -1
-	for i, source := range got {
-		if strings.HasPrefix(source, "http://peer") {
+	for i, candidate := range got {
+		if strings.HasPrefix(candidate.Source, "http://peer") {
 			peerAt = i
 		}
-		if strings.Contains(source, "github.com") {
+		if strings.Contains(candidate.Source, "github.com") {
 			githubAt = i
 		}
 	}
@@ -410,8 +414,77 @@ func TestSelfCandidatesPreferTheRememberedSource(t *testing.T) {
 	}
 
 	// An explicit source is a decision: nothing else is tried.
-	got = selfCandidates(context.Background(), "http://explicit/release", false)
-	if len(got) != 1 || got[0] != "http://explicit/release" {
+	got = selfCandidates(context.Background(), "http://explicit/release")
+	if len(got) != 1 || got[0].Source != "http://explicit/release" {
 		t.Fatalf("candidates = %v", got)
+	}
+}
+
+func TestSelfUpdateRefusesAnOlderPeer(t *testing.T) {
+	// The hash differs, so without a version comparison this would replace a
+	// working console with an older build — which is exactly what happened once.
+	current := []byte("current build")
+	path := fakeExecutable(t, string(current))
+	older := []byte("older build")
+	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, ".sha256") {
+			_, _ = w.Write([]byte(checksum(older) + "  " + selfPlatform() + "\n"))
+			return
+		}
+		_, _ = w.Write(older)
+	}))
+	t.Cleanup(peer.Close)
+
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("HERDR_WEB_RELEASE_SOURCE", "")
+	previousOfficial := selfOfficialSource
+	selfOfficialSource = "http://127.0.0.1:1/release"
+	t.Cleanup(func() { selfOfficialSource = previousOfficial })
+	previousPeers := selfTailnetPeers
+	selfTailnetPeers = func(context.Context) []selfCandidate {
+		// A version below the one this build reports.
+		return []selfCandidate{{Source: peer.URL + "/release", Version: "v0.0.1"}}
+	}
+	t.Cleanup(func() { selfTailnetPeers = previousPeers })
+	previousVersion := ConsoleVersion
+	ConsoleVersion = "v0.2.0-22-gabcdef"
+	t.Cleanup(func() { ConsoleVersion = previousVersion })
+	previousDelay := selfRetryDelay
+	selfRetryDelay = time.Millisecond
+	t.Cleanup(func() { selfRetryDelay = previousDelay })
+
+	recorder := httptest.NewRecorder()
+	handleSelfUpdate(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/herdr-web/update", nil))
+
+	body := recorder.Body.String()
+	if strings.Contains(body, `"updated":true`) {
+		t.Fatalf("an older build was installed: %s", body)
+	}
+	if !strings.Contains(body, "not newer") {
+		t.Fatalf("body does not explain the skip: %s", body)
+	}
+	got, _ := os.ReadFile(path)
+	if string(got) != string(current) {
+		t.Fatal("the binary was replaced by an older build")
+	}
+}
+
+func TestSelfNewerUnderstandsUntaggedBuilds(t *testing.T) {
+	// Two builds of the same release differ only by their commit count, and a
+	// fleet that never tags relies on that being ordered.
+	if !selfNewer("v0.2.0-22-g8916292", "v0.2.0-17-g32b94d0") {
+		t.Error("a later commit count is not newer")
+	}
+	if selfNewer("v0.2.0-15-g6e049b7", "v0.2.0-22-g8916292") {
+		t.Error("an earlier commit count is newer")
+	}
+	if selfNewer("v0.2.0-22-g8916292", "v0.2.0-22-g8916292") {
+		t.Error("the same build is not newer")
+	}
+	if !selfNewer("v0.2.1", "v0.2.0-22-g8916292") {
+		t.Error("a later release is not newer")
+	}
+	if selfNewer("v0.2.0", "v0.2.0-22-g8916292") {
+		t.Error("the release a build sits on is not newer than that build")
 	}
 }

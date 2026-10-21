@@ -93,6 +93,17 @@ func handleRelease(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 
+	// The version this console publishes, so an updater can tell whether the
+	// build it would download is newer before downloading it.
+	if name == "version" {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		if r.Method == http.MethodHead {
+			return
+		}
+		_, _ = w.Write([]byte(ConsoleVersion + "\n"))
+		return
+	}
+
 	if name == "install.sh" {
 		w.Header().Set("Content-Type", "text/x-shellscript; charset=utf-8")
 		w.Header().Set("Content-Disposition", `attachment; filename="install.sh"`)
@@ -199,7 +210,7 @@ func handleReleaseUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "a release file name is required")
 		return
 	}
-	if !strings.HasPrefix(name, "herdr-web-") && name != "install.sh" {
+	if !strings.HasPrefix(name, "herdr-web-") && name != "install.sh" && name != "version" {
 		writeError(w, http.StatusBadRequest, "invalid_request",
 			"only herdr-web-<os>-<arch>, its checksum, and install.sh can be stored here")
 		return

@@ -66,6 +66,9 @@ var selfClient = &http.Client{
 	},
 }
 
+// selfSourceTimeout is how long one source gets before the next is tried.
+const selfSourceTimeout = 100 * time.Second
+
 // selfAttempts is how many times a transfer is tried. GitHub's download endpoint
 // redirects to a CDN and a connection dropped mid-body ("unexpected EOF") is
 // common enough that one attempt is not a verdict.
@@ -170,15 +173,31 @@ func handleSelfUpdate(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	explicit := strings.TrimSpace(body.From) != ""
-	candidates := selfCandidates(ctx, body.From, false)
+	candidates := selfCandidates(ctx, body.From)
 	if len(candidates) == 0 {
-		candidates = []string{selfSourceURL(body.From)}
+		candidates = []selfCandidate{{Source: selfSourceURL(body.From)}}
 	}
 
 	tried := make([]selfStep, 0, 4)
 	var lastErr string
-	for _, source := range candidates {
-		result, err := selfUpdateFrom(ctx, execPath, source)
+	for _, candidate := range candidates {
+		source := candidate.Source
+		// A source publishing a build that is not newer is not an update: the
+		// hash differs, so it would otherwise replace a working console with an
+		// older one.
+		// "dev" carries no numbers, so nothing published can be compared to it;
+		// a release is an improvement over an unstamped build.
+		comparable := len(versionParts(ConsoleVersion)) > 0
+		if candidate.Version != "" && comparable && !newerVersion(candidate.Version, ConsoleVersion) {
+			tried = append(tried, selfStep{Step: "skip", OK: true,
+				Detail: selfSourceLabel(source) + " has " + candidate.Version + ", not newer than " + ConsoleVersion})
+			continue
+		}
+		// Each source gets its own budget: a slow download from the one that
+		// cannot be reached well must not consume the time the next one needs.
+		attemptCtx, attemptCancel := context.WithTimeout(ctx, selfSourceTimeout)
+		result, err := selfUpdateFrom(attemptCtx, execPath, source)
+		attemptCancel()
 		if err == nil {
 			rememberSelfSource(source)
 			// An explicit source is shown as it was given; a discovered one is
@@ -196,11 +215,11 @@ func handleSelfUpdate(w http.ResponseWriter, r *http.Request) {
 		tried = append(tried, result.Steps...)
 		lastErr = err.Error()
 	}
-	writeJSON(w, http.StatusOK, selfUpdateResult{
-		OK:    false,
-		Steps: tried,
-		Error: "no release source answered: " + lastErr,
-	})
+	message := "no release source answered: " + lastErr
+	if lastErr == "" {
+		message = "every release source publishes a build that is not newer than this one"
+	}
+	writeJSON(w, http.StatusOK, selfUpdateResult{OK: false, Steps: tried, Error: message})
 }
 
 // selfUpdateFrom fetches one source and applies it. An error means the source
@@ -208,6 +227,34 @@ func handleSelfUpdate(w http.ResponseWriter, r *http.Request) {
 func selfUpdateFrom(ctx context.Context, execPath, source string) (selfUpdateResult, error) {
 	steps := make([]selfStep, 0, 4)
 	asset := selfPlatform()
+
+	// Which version a source publishes decides whether this is an update at all.
+	// A differing hash alone is not enough: it once replaced a working build with
+	// an older release, and an update that can go backwards is worse than none.
+	publishedRaw, versionErr := selfFetchText(ctx, source+"/version")
+	if versionErr != nil {
+		detail := "could not read " + source + "/version: " + versionErr.Error()
+		steps = append(steps, selfStep{Step: "version", Detail: detail})
+		if isNotFound(versionErr) {
+			steps[len(steps)-1].Detail = source + " does not say which version it publishes"
+			return selfUpdateResult{OK: false, Steps: steps}, errors.New("the source published no version")
+		}
+		return selfUpdateResult{OK: false, Steps: steps}, errors.New("the release source could not be read")
+	}
+	published := strings.TrimSpace(publishedRaw)
+	if published == "" {
+		steps = append(steps, selfStep{Step: "version",
+			Detail: source + " publishes an empty version"})
+		return selfUpdateResult{OK: false, Steps: steps}, errors.New("the source published an empty version")
+	}
+	comparable := len(versionParts(ConsoleVersion)) > 0
+	if comparable && !selfNewer(published, ConsoleVersion) {
+		steps = append(steps, selfStep{Step: "skip", OK: true,
+			Detail: "publishes " + published + ", not newer than " + ConsoleVersion})
+		return selfUpdateResult{OK: false, Steps: steps}, errors.New("the published build is not newer")
+	}
+	steps = append(steps, selfStep{Step: "version", OK: true,
+		Detail: "publishes " + published + ", this build is " + ConsoleVersion})
 
 	// A source without a checksum is refused: an unverified binary is not worth
 	// replacing a working console with.
@@ -292,6 +339,15 @@ func restartHint() string {
 	default:
 		return "restart the console"
 	}
+}
+
+// mustSelfText reads a short text file and returns "" when it is absent.
+func mustSelfText(ctx context.Context, url string) string {
+	text, err := selfFetchText(ctx, url)
+	if err != nil {
+		return ""
+	}
+	return text
 }
 
 func shortSum(sum string) string {

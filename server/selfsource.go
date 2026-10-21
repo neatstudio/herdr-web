@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -36,6 +38,11 @@ const (
 	selfGitHubQuiet = 6 * time.Hour
 	// selfPeerPort is the port a console serves on.
 	selfPeerPort = "5000"
+	// selfOfficialVersionURL reports the newest release tag.
+	selfOfficialVersionURL = "https://api.github.com/repos/" + selfReleaseName + "/releases/latest"
+	// selfOfficialVersionTimeout is short: an update must not start by waiting on
+	// an API that may be blocked.
+	selfOfficialVersionTimeout = 4 * time.Second
 )
 
 // selfState is what the console remembers about where updates come from.
@@ -50,7 +57,15 @@ type selfState struct {
 // so tests do not depend on a tailnet being present.
 var selfTailnetPeers = discoverTailnetPeers
 
+// selfStatePathOverride lets a test keep its remembered sources to itself: a
+// test that wrote to the real file changed where the running console looks for
+// updates.
+var selfStatePathOverride string
+
 func selfStatePath() string {
+	if selfStatePathOverride != "" {
+		return selfStatePathOverride
+	}
 	dir, err := os.UserHomeDir()
 	if err != nil {
 		return ""
@@ -109,50 +124,50 @@ func rememberGitHubFailure() {
 	writeSelfState(state)
 }
 
+// selfCandidate is a release source and the version it publishes.
+type selfCandidate struct {
+	Source  string
+	Version string
+}
+
 // selfCandidates lists the sources to try, best first. The caller stops at the
 // first one that answers with a complete release.
-func selfCandidates(ctx context.Context, explicit string, peersOnly bool) []string {
+func selfCandidates(ctx context.Context, explicit string) []selfCandidate {
 	if from := strings.TrimSpace(explicit); from != "" {
 		// An explicit source is a decision, not a suggestion.
-		return []string{strings.TrimRight(from, "/")}
+		return []selfCandidate{{Source: strings.TrimRight(from, "/")}}
 	}
 	state := readSelfState()
 	seen := map[string]bool{}
-	candidates := make([]string, 0, 4)
-	add := func(source string) {
+	candidates := make([]selfCandidate, 0, 4)
+	add := func(source, version string) {
 		source = strings.TrimRight(strings.TrimSpace(source), "/")
 		if source == "" || seen[source] {
 			return
 		}
 		seen[source] = true
-		candidates = append(candidates, source)
+		candidates = append(candidates, selfCandidate{Source: source, Version: version})
 	}
 
 	if configured := strings.TrimSpace(os.Getenv("HERDR_WEB_RELEASE_SOURCE")); configured != "" {
-		add(configured)
+		add(configured, "")
 	}
-	add(state.Source)
+	add(state.Source, "")
 
 	official := selfSourceURL("")
 	githubRecent := state.GitHubFailedAt > 0 &&
 		time.Since(time.Unix(state.GitHubFailedAt, 0)) < selfGitHubQuiet
 
-	if peersOnly {
-		for _, peer := range selfTailnetPeers(ctx) {
-			add(peer)
-		}
-		return candidates
-	}
 	if githubRecent {
 		for _, peer := range selfTailnetPeers(ctx) {
-			add(peer)
+			add(peer.Source, peer.Version)
 		}
-		add(official)
+		add(official, selfOfficialVersion(ctx))
 		return candidates
 	}
-	add(official)
+	add(official, selfOfficialVersion(ctx))
 	for _, peer := range selfTailnetPeers(ctx) {
-		add(peer)
+		add(peer.Source, peer.Version)
 	}
 	return candidates
 }
@@ -160,8 +175,8 @@ func selfCandidates(ctx context.Context, explicit string, peersOnly bool) []stri
 // discoverTailnetPeers returns release sources for consoles answering on the
 // tailnet. Only peers that answer as a console are returned, and they are probed
 // in parallel because each probe is a network round trip.
-func discoverTailnetPeers(ctx context.Context) []string {
-	raw, err := currentHostDeps().run(ctx, "tailscale", "status", "--json")
+func discoverTailnetPeers(ctx context.Context) []selfCandidate {
+	raw, err := tailnetStatus(ctx)
 	if err != nil {
 		return nil
 	}
@@ -202,7 +217,7 @@ func discoverTailnetPeers(ctx context.Context) []string {
 	var (
 		wait  sync.WaitGroup
 		mu    sync.Mutex
-		found []string
+		found []selfCandidate
 	)
 	for _, ip := range addresses {
 		wait.Add(1)
@@ -230,12 +245,27 @@ func discoverTailnetPeers(ctx context.Context) []string {
 				return
 			}
 			mu.Lock()
-			found = append(found, url+"/release")
+			found = append(found, selfCandidate{Source: url + "/release", Version: release.Version})
 			mu.Unlock()
 		}(ip)
 	}
 	wait.Wait()
 	return found
+}
+
+// tailnetStatus runs `tailscale status --json`. The macOS app keeps the binary
+// inside the bundle rather than on PATH, which is why the usual location is tried
+// as well: a console that cannot see its neighbours can only ever use GitHub.
+func tailnetStatus(ctx context.Context) ([]byte, error) {
+	deps := currentHostDeps()
+	if raw, err := deps.run(ctx, "tailscale", "status", "--json"); err == nil {
+		return raw, nil
+	}
+	const app = "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+	if _, err := os.Stat(app); err == nil {
+		return deps.run(ctx, app, "status", "--json")
+	}
+	return nil, fmt.Errorf("tailscale status is not available")
 }
 
 // isPrivateV4 reports whether an address is inside one of the ranges a console is
@@ -254,6 +284,38 @@ func isPrivateV4(ip net.IP) bool {
 		(v4[0] == 169 && v4[1] == 254)
 }
 
+// selfOfficialVersion asks GitHub which release is the latest one.
+//
+// Without it a source publishes no version and the only thing that can be
+// compared is the hash, which is how a working build was once replaced by an
+// older release. It is best effort: a host that cannot reach the API simply gets
+// no comparison, and the checksum still guards the download.
+func selfOfficialVersion(ctx context.Context) string {
+	probeCtx, cancel := context.WithTimeout(ctx, selfOfficialVersionTimeout)
+	defer cancel()
+	request, err := http.NewRequestWithContext(probeCtx, http.MethodGet, selfOfficialVersionURL, nil)
+	if err != nil {
+		return ""
+	}
+	request.Header.Set("User-Agent", "herdr-web")
+	request.Header.Set("Accept", "application/vnd.github+json")
+	response, err := selfClient.Do(request)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		return ""
+	}
+	var release struct {
+		Tag string `json:"tag_name"`
+	}
+	if json.NewDecoder(io.LimitReader(response.Body, 1<<16)).Decode(&release) != nil {
+		return ""
+	}
+	return strings.TrimSpace(release.Tag)
+}
+
 // selfSourceLabel is how a source is described in the panel.
 func selfSourceLabel(source string) string {
 	switch {
@@ -264,4 +326,52 @@ func selfSourceLabel(source string) string {
 	default:
 		return fmt.Sprintf("%s", source)
 	}
+}
+
+// describeCount reads the commit count out of a git-describe version such as
+// v0.2.0-22-g8916292, which is what an untagged build reports.
+func describeCount(version string) (int, bool) {
+	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
+	// The shape is <tag>-<count>-g<hash>[-dirty].
+	fields := strings.Split(version, "-")
+	for index := len(fields) - 1; index >= 0; index-- {
+		if !strings.HasPrefix(fields[index], "g") {
+			continue
+		}
+		if index == 0 {
+			return 0, false
+		}
+		count, err := strconv.Atoi(fields[index-1])
+		if err != nil {
+			return 0, false
+		}
+		return count, true
+	}
+	return 0, false
+}
+
+// selfNewer reports whether a published build is newer than the running one.
+//
+// The numbers decide first. When they are equal — two untagged builds of the
+// same release — the commit count from git-describe decides, because otherwise
+// every build of the same base tag looks identical and a fleet that never tags
+// could never update itself.
+func selfNewer(published, current string) bool {
+	if newerVersion(published, current) {
+		return true
+	}
+	if len(versionParts(published)) != len(versionParts(current)) {
+		return false
+	}
+	for index, part := range versionParts(published) {
+		if part != versionParts(current)[index] {
+			return false
+		}
+	}
+	publishedCount, publishedOK := describeCount(published)
+	currentCount, currentOK := describeCount(current)
+	if !publishedOK || !currentOK {
+		return false
+	}
+	return publishedCount > currentCount
 }

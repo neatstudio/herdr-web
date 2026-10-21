@@ -63,8 +63,11 @@ jobs:
           draft: false
           prerelease: false
 
-      - name: attach the installer
+      - name: attach the installer and the version
         run: |
-          gh release upload "${GITHUB_REF_NAME}" install.sh --clobber
+          # The updater compares versions before downloading: a source that
+          # cannot say what it publishes may not replace a working build.
+          printf '%s\n' "${GITHUB_REF_NAME}" > /tmp/version
+          gh release upload "${GITHUB_REF_NAME}" install.sh /tmp/version --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
