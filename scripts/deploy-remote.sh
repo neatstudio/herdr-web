@@ -35,7 +35,7 @@ binary_for() {
     # A release artifact older than this checkout ships an old frontend without
     # saying so, which is worse than refusing: warn, then let the operator decide.
     if [[ "$candidate" -ot "$BASH_SOURCE" || "$candidate" -ot "$root/install.sh" ]]; then
-      say "  warning: $candidate is older than this checkout; run 'make release-archives'"
+      say "  warning: $candidate is older than this checkout; run 'make release-archives'" >&2
     fi
     printf '%s' "$candidate"
     return 0
@@ -60,6 +60,8 @@ usage: deploy-remote.sh [options] TARGET...
 
   TARGET        host[:path] to deploy to. The host must already be reachable by
                 ssh, e.g. an entry in ~/.ssh/config or a MagicDNS/Tailscale name.
+                An ssh_config alias is the easy case: its User, IdentityFile and
+                ProxyJump are used as written, so nothing has to be repeated here.
                 The optional path is where the binary goes on that machine
                 (default: ~/.local/share/herdr-web/app, i.e. a relative path).
 
@@ -71,6 +73,9 @@ Options:
   --via URL        install from a release source instead of copying from here
                     (any running console serves one: http://host:5000/release)
   --jump HOST      reach every target through this host (ssh -J)
+  --identity PATH  an ssh key to use for the targets (may be repeated); using it
+                    also sets IdentitiesOnly, so a crowded agent cannot exhaust
+                    the server's authentication attempts
   --no-service      copy the binary only, do not touch the target's service
   --herdr-service   also register herdr's headless server as a service there
   --dry-run         print what would happen, change nothing
@@ -117,6 +122,7 @@ WITH_SERVICE=1
 HERDR_SERVICE=0
 VIA=""
 JUMP=""
+IDENTITIES=()
 ADDR=""
 LOCAL_ADDR=""
 HERDR_BIN=""
@@ -130,6 +136,7 @@ while [[ $# -gt 0 ]]; do
     --herdr-bin) HERDR_BIN="$2"; shift 2 ;;
     --via) VIA="$2"; shift 2 ;;
     --jump) JUMP="$2"; shift 2 ;;
+    --identity) IDENTITIES+=("$2"); shift 2 ;;
     --no-service) WITH_SERVICE=0; shift ;;
     --herdr-service) HERDR_SERVICE=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
@@ -140,11 +147,42 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ ${#IDENTITIES[@]} -gt 0 ]]; then
+  # Only these keys are offered: an agent holding a dozen keys hits the server's
+  # authentication-attempt limit and reports "permission denied" for a key that
+  # would have worked.
+  ssh_opts+=(-o IdentitiesOnly=yes)
+  for key in "${IDENTITIES[@]}"; do
+    ssh_opts+=(-i "$key")
+  done
+fi
+
 [[ ${#TARGETS[@]} -gt 0 ]] || die "no target given (try --list)"
 [[ -x "$binary" ]] || die "missing $binary; run: make build"
 
 # The release asset name, for the message a failed service start leaves behind.
 os_arch="$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')"
+
+# ssh_run runs ssh once, and once more with IdentitiesOnly when the agent was the
+# problem. A crowded agent exhausts sshd's authentication attempts and reports
+# "permission denied", which reads like a bad key even though the config names
+# the right one; keeping to the config's IdentityFile is what fixes it.
+ssh_run() {
+  local out status
+  out="$(ssh "${ssh_opts[@]}" "$@" 2>&1)" && { printf '%s' "$out"; return 0; }
+  status=$?
+  case "$out" in
+    *"Too many authentication failures"* | *"Permission denied (publickey"*)
+      if out="$(ssh "${ssh_opts[@]}" -o IdentitiesOnly=yes "$@" 2>&1)"; then
+        printf '%s' "$out"
+        return 0
+      fi
+      status=$?
+      ;;
+  esac
+  printf '%s' "$out"
+  return $status
+}
 
 deploy_one() {
   local target="$1"
@@ -165,16 +203,19 @@ deploy_one() {
   local remote_bin="$remote_dir/herdr-web"
 
   say "checking $host"
-  if ! ssh "${ssh_opts[@]}" "$host" 'echo ok' >/dev/null 2>&1; then
-    say "  $host is not reachable by ssh; add it to ~/.ssh/config first"
+  if ! ssh_run "$host" 'echo ok' >/dev/null 2>&1; then
+    say "  $host is not reachable by ssh. If it is in ~/.ssh/config, pass its"
+    say "  alias as the target and its User, IdentityFile and ProxyJump are used"
+    say "  as written; otherwise pass --identity (the server stops answering when"
+    say "  an agent offers too many keys)."
     return 1
   fi
   # Refuse a target whose herdr-web service points somewhere else: the same
   # guard the installer applies locally.
   local existing
-  existing="$(ssh "${ssh_opts[@]}" "$host" "cat ~/Library/LaunchAgents/$label.plist 2>/dev/null || cat ~/.config/systemd/user/$label.service 2>/dev/null" || true)"
+  existing="$(ssh_run "$host" "cat ~/Library/LaunchAgents/$label.plist 2>/dev/null || cat ~/.config/systemd/user/$label.service 2>/dev/null" || true)"
   if [[ -n "$existing" && "$existing" != *"$remote_bin"* ]]; then
-    if ssh "${ssh_opts[@]}" "$host" "grep -q 'herdr-web' ~/Library/LaunchAgents/$label.plist 2>/dev/null || grep -q 'herdr-web' ~/.config/systemd/user/$label.service 2>/dev/null"; then
+    if ssh_run "$host" "grep -q 'herdr-web' ~/Library/LaunchAgents/$label.plist 2>/dev/null || grep -q 'herdr-web' ~/.config/systemd/user/$label.service 2>/dev/null"; then
       say "  $host already runs a $label service from another path; leaving it alone."
       say "  remove it there first, or deploy to the same directory."
       return 1
@@ -182,7 +223,19 @@ deploy_one() {
   fi
 
   if [[ "$DRY_RUN" -eq 1 ]]; then
-    say "  would copy $binary -> $host:$remote_dir/herdr-web"
+    if [[ -n "$VIA" ]]; then
+      say "  would install from $VIA on $host"
+    else
+      # The platform decides the payload, so a dry run has to resolve it too:
+      # claiming the local build would be the one mistake this mode exists to
+      # catch.
+      local planned
+      if planned="$(binary_for "$host")"; then
+        say "  would copy $planned -> $host:$remote_dir/herdr-web"
+      else
+        return 1
+      fi
+    fi
     say "  would register the service (unless --no-service)"
     return 0
   fi
@@ -199,8 +252,7 @@ deploy_one() {
     [[ "$HERDR_SERVICE" -eq 1 ]] && args+=(--herdr-service)
     local quoted="${args[*]:-}"
     say "  installing from $VIA"
-    if ! ssh "${ssh_opts[@]}" "$host" \
-      "sh -s -- --url '$VIA' $quoted" < "$root/install.sh"; then
+    if ! ssh_run "$host" "sh -s -- --url '$VIA' $quoted" < "$root/install.sh"; then
       say "  the installer failed on $host"
       return 1
     fi
@@ -211,12 +263,12 @@ deploy_one() {
   local payload
   payload="$(binary_for "$host")" || return 1
   say "  copying $(du -h "$payload" | cut -f1) to $host:$remote_dir/"
-  ssh "${ssh_opts[@]}" "$host" "mkdir -p $remote_dir" || return 1
+  ssh_run "$host" "mkdir -p $remote_dir" >/dev/null || return 1
   scp "${ssh_opts[@]}" -q "$payload" "$host:$remote_dir/herdr-web.new" || return 1
   ssh "${ssh_opts[@]}" "$host" "chmod 0755 $remote_dir/herdr-web.new && mv $remote_dir/herdr-web.new $remote_dir/herdr-web" || return 1
   # The binary has to run on the target before it is registered as a service:
   # a wrong-architecture copy would just restart forever in systemd.
-  if ! ssh "${ssh_opts[@]}" "$host" "$remote_bin -version >/dev/null 2>&1"; then
+  if ! ssh_run "$host" "$remote_bin -version >/dev/null 2>&1"; then
     say "  the copied binary does not run on $host; nothing registered"
     ssh "${ssh_opts[@]}" "$host" "rm -f $remote_dir/herdr-web" || true
     return 1
