@@ -18,6 +18,9 @@ import (
 // that budget, and they never run a real daemon.
 func init() {
 	hostStartTimeout = 400 * time.Millisecond
+	// The start step launches herdr's headless server; a test records the call
+	// and lets the fake status probe answer instead.
+	hostSpawnDetached = func(string, []string) error { return nil }
 }
 
 // liveHerdrStatus is `herdr status --json` captured verbatim from this machine,
@@ -538,12 +541,7 @@ func (h *hostSequence) run(_ context.Context, name string, args ...string) ([]by
 		}
 		return []byte(`{"client":{"version":"0.9.0"},"server":{` + state + `}}`), nil
 	}
-	if strings.Contains(line, "new-session") {
-		if h.running != nil {
-			*h.running = true
-		}
-		return []byte(""), nil
-	}
+
 	if strings.Contains(line, "server stop") {
 		if h.running != nil {
 			*h.running = false
@@ -558,6 +556,7 @@ func (h *hostSequence) run(_ context.Context, name string, args ...string) ([]by
 
 func TestHostUpdateStopsTheDaemonAndStartsItAgain(t *testing.T) {
 	running := true
+	spawned := recordSpawns(t, &running)
 	seq := &hostSequence{running: &running}
 	hostResolve = func(string) (string, bool) { return "/usr/local/bin/herdr", true }
 	SetHostDeps(seq.run, nil)
@@ -603,12 +602,18 @@ func TestHostUpdateStopsTheDaemonAndStartsItAgain(t *testing.T) {
 	joined := strings.Join(seq.ran, "\n")
 	stopAt := strings.Index(joined, "server stop")
 	updateAt := strings.Index(joined, "/usr/local/bin/herdr update")
-	startAt := strings.Index(joined, "new-session")
-	if stopAt < 0 || updateAt < 0 || startAt < 0 {
+	if stopAt < 0 || updateAt < 0 {
 		t.Fatalf("missing a step:\n%s", joined)
 	}
-	if !(stopAt < updateAt && updateAt < startAt) {
+	if !(stopAt < updateAt) {
 		t.Fatalf("wrong order:\n%s", joined)
+	}
+	// herdr runs its own headless server; tmux was one multiplexer hosting
+	// another, and starting it must not depend on one being installed.
+	if got := spawned(); len(got) != 1 {
+		t.Fatalf("headless server started %d times, want 1", len(got))
+	} else if joined := strings.Join(got[0], " "); !strings.HasSuffix(joined, "server") {
+		t.Fatalf("started %q, want the headless server", joined)
 	}
 	if !running {
 		t.Error("the daemon was not started again, so the console has nothing to talk to")
@@ -617,6 +622,8 @@ func TestHostUpdateStopsTheDaemonAndStartsItAgain(t *testing.T) {
 
 func TestHostUpdateSkipsTheStopWhenNothingRuns(t *testing.T) {
 	running := false
+	spawned := recordSpawns(t, &running)
+	_ = spawned
 	seq := &hostSequence{running: &running}
 	hostResolve = func(string) (string, bool) { return "/usr/local/bin/herdr", true }
 	SetHostDeps(seq.run, nil)
@@ -655,6 +662,8 @@ func TestHostUpdateSkipsTheStopWhenNothingRuns(t *testing.T) {
 
 func TestHostUpdateStartsAgainEvenWhenTheUpdateFails(t *testing.T) {
 	running := true
+	spawned := recordSpawns(t, &running)
+	_ = spawned
 	seq := &hostSequence{running: &running, failOn: "herdr update"}
 	hostResolve = func(string) (string, bool) { return "/usr/local/bin/herdr", true }
 	SetHostDeps(seq.run, nil)
@@ -693,6 +702,7 @@ func TestHostUpdateStartsAgainEvenWhenTheUpdateFails(t *testing.T) {
 
 func TestHostRestartStopsAndStarts(t *testing.T) {
 	running := true
+	spawned := recordSpawns(t, &running)
 	seq := &hostSequence{running: &running}
 	hostResolve = func(string) (string, bool) { return "/usr/local/bin/herdr", true }
 	SetHostDeps(seq.run, nil)
@@ -707,8 +717,11 @@ func TestHostRestartStopsAndStarts(t *testing.T) {
 		t.Fatalf("status = %d, want 200: %s", recorder.Code, recorder.Body.String())
 	}
 	joined := strings.Join(seq.ran, "\n")
-	if !strings.Contains(joined, "server stop") || !strings.Contains(joined, "new-session") {
-		t.Fatalf("restart did not stop and start:\n%s", joined)
+	if !strings.Contains(joined, "server stop") {
+		t.Fatalf("restart did not stop the daemon:\n%s", joined)
+	}
+	if got := spawned(); len(got) != 1 {
+		t.Fatalf("restart started the daemon %d times, want 1; body=%s", len(got), recorder.Body.String())
 	}
 	if !running {
 		t.Error("restart left the daemon down")
@@ -752,4 +765,23 @@ func TestSessionArgsNameTheSessionTheSocketBelongsTo(t *testing.T) {
 	if got := sessionArgs(); got != nil {
 		t.Fatalf("sessionArgs = %q, want none without a socket", got)
 	}
+}
+
+// recordSpawns captures the detached headless-server starts a test triggers and
+// restores the real one afterwards.
+func recordSpawns(t *testing.T, running *bool) func() [][]string {
+	t.Helper()
+	var spawned [][]string
+	previous := hostSpawnDetached
+	hostSpawnDetached = func(binary string, args []string) error {
+		spawned = append(spawned, append([]string{binary}, args...))
+		if running != nil {
+			*running = true
+		}
+		return nil
+	}
+	t.Cleanup(func() { hostSpawnDetached = previous })
+	// Returned as an accessor: a slice returned by value would be the empty
+	// header from before any append, not what the test later recorded.
+	return func() [][]string { return spawned }
 }

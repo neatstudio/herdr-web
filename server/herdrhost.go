@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -74,6 +75,9 @@ var (
 	hostBinOverride string
 	hostRun         hostRunner  = defaultHostRun
 	hostFetch       hostFetcher = defaultHostFetch
+	// hostSpawnDetached starts the headless server. Replaceable so a test does
+	// not launch a real daemon.
+	hostSpawnDetached = spawnDetached
 	// hostStartTimeout bounds the wait for a started daemon to answer. A
 	// variable so tests do not sit through the real budget.
 	hostStartTimeout = 20 * time.Second
@@ -674,20 +678,15 @@ func stopHostDaemon(ctx context.Context, deps hostDeps, binary string) hostStep 
 // daemon answers. herdr cannot be started without a terminal: measured here,
 // running it with no tty reports "cannot attach without a usable terminal".
 func startHostDaemon(ctx context.Context, deps hostDeps, binary string) hostStep {
-	out := hostStep{
-		Step:    "start",
-		Command: "tmux new-session -d -s " + hostDaemonSession + " " + displayWithSession(binary),
-	}
-	// A session left over from an earlier start would make new-session fail, and
-	// herdr is not running at this point, so the session is ours to clear.
-	_, _ = deps.run(ctx, "tmux", "kill-session", "-t", hostDaemonSession)
-	start := append([]string{"new-session", "-d", "-s", hostDaemonSession, "-x", "200", "-y", "50", binary},
-		sessionArgs()...)
-	output, err := deps.run(ctx, "tmux", start...)
-	out.Output = string(output)
-	if err != nil {
-		out.Output = strings.TrimSpace(out.Output + "\ntmux is needed to start herdr without a terminal; " +
-			"start it in a terminal instead")
+	// herdr runs its own server without a terminal: `herdr server` is a headless
+	// daemon (measured: it answers "herdr server running" with no tty). Wrapping
+	// it in tmux, as this used to do, was one multiplexer hosting another.
+	command := displayWithSession(binary + " server")
+	out := hostStep{Step: "start", Command: command}
+
+	args := append(sessionArgs(), "server")
+	if err := hostSpawnDetached(binary, args); err != nil {
+		out.Output = strings.TrimSpace(out.Output + "\n" + err.Error())
 		out.ExitCode = -1
 		return out
 	}
@@ -707,9 +706,28 @@ func startHostDaemon(ctx context.Context, deps hostDeps, binary string) hostStep
 		}
 	}
 	out.Output = strings.TrimSpace(out.Output + "\nherdr did not answer after " +
-		hostStartTimeout.String() + "; start it in a terminal")
+		hostStartTimeout.String() + "; its log is in the herdr config directory")
 	out.ExitCode = -1
 	return out
+}
+
+// spawnDetached starts herdr's headless server and does not wait for it: the
+// server runs until it is stopped, and this console keeps answering meanwhile.
+// A new session (setsid) keeps it alive after this process would have exited.
+func spawnDetached(binary string, args []string) error {
+	command := exec.Command(binary, args...)
+	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	dir, err := os.UserConfigDir()
+	if err == nil {
+		command.Dir = filepath.Join(dir, "herdr")
+	}
+	if err := command.Start(); err != nil {
+		return fmt.Errorf("could not start %s: %w", binary, err)
+	}
+	// The child is not waited for: this process must not reap it, and its goal
+	// is to outlive this request.
+	_ = command.Process.Release()
+	return nil
 }
 
 // hostStepResponse is what the panel renders for a sequence.

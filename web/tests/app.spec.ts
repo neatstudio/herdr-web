@@ -1050,8 +1050,10 @@ test("a stopped daemon says what to run, instead of leaving it at not running", 
   await expect(hint).toBeVisible();
   // herdr is a terminal application: the hint has to give a command that works
   // over ssh, not just say "run herdr".
-  await expect(hint).toContainText("tmux new-session");
-  await expect(hint).toContainText("herdr update");
+  // herdr runs its own headless server: a second multiplexer underneath it was
+  // the wrong answer, and the hint must not send anyone to tmux.
+  await expect(hint).toContainText("herdr server");
+  await expect(hint).not.toContainText("tmux");
   await expect(page.locator("#herdr-restart-hint")).toHaveCount(0);
 });
 

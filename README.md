@@ -87,19 +87,21 @@ and the design leans on two things to pay them:
 Enter sends, Shift+Enter writes a newline, and the box wraps and grows, so a
 long message is readable before it goes out.
 
-## herdr must be running, and it needs a terminal
+## herdr runs its own server, headless
 
-This console talks to a herdr daemon; it cannot start one. herdr is a TUI
-application, so its session starts from a terminal and the daemon lives inside
-it — `herdr` cannot be started by a service unit of its own, and running it with
-no tty reports `cannot attach without a usable terminal`.
-
-On a server that means starting it inside a terminal multiplexer:
+`herdr` (the TUI) needs a terminal, but **`herdr server` does not**: it is a
+headless daemon with its own socket, and it is what this console talks to.
+Wrapping it in tmux, as this project first did, was one multiplexer hosting
+another for no reason.
 
 ```
-tmux new-session -d -s herdr -x 200 -y 50 'herdr'   # start
-tmux attach -t herdr                                 # look at it
+herdr server          # the daemon, no terminal needed
+herdr status          # it answers once it is up
 ```
+
+The installer registers it as `dev.herdr` when asked (`--herdr-service`), so a
+server comes back after a reboot with both the console and its daemon running —
+no tmux, no login.
 
 An update is a two-step operation for older servers. `herdr update` installs
 the new binary but will not kill the sessions running in the old server; for a
@@ -109,7 +111,7 @@ update again:
 ```
 herdr server stop     # ends the panes in that server
 herdr update          # finishes the swap
-tmux new-session -d -s herdr -x 200 -y 50 'herdr'   # start the new server
+herdr server          # start the new server (the service does this for you)
 ```
 
 The console notices the daemon going away and keeps showing the last state; it
@@ -128,7 +130,7 @@ with nothing in it.
 Updating from the panel is a sequence, because one command is not enough on an
 older server: the daemon is stopped first (an update on a server from before
 endpoint generation 1 needs that final stop), then updated, then started again
-in a detached tmux session. Without the last step the console would be left
+as a headless `herdr server`. Without the last step the console would be left
 talking to nothing — which is exactly what happened on a deployed host. A failed
 update still ends with the daemon running, on the version that is still on disk.
 The same panel can restart the daemon by itself.

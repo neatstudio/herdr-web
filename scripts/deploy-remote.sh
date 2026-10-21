@@ -72,6 +72,7 @@ Options:
                     (any running console serves one: http://host:5000/release)
   --jump HOST      reach every target through this host (ssh -J)
   --no-service      copy the binary only, do not touch the target's service
+  --herdr-service   also register herdr's headless server as a service there
   --dry-run         print what would happen, change nothing
   --list            list the hosts this machine can plausibly reach
   -h, --help        show this help
@@ -113,6 +114,7 @@ fi
 
 DRY_RUN=0
 WITH_SERVICE=1
+HERDR_SERVICE=0
 VIA=""
 JUMP=""
 ADDR=""
@@ -129,6 +131,7 @@ while [[ $# -gt 0 ]]; do
     --via) VIA="$2"; shift 2 ;;
     --jump) JUMP="$2"; shift 2 ;;
     --no-service) WITH_SERVICE=0; shift ;;
+    --herdr-service) HERDR_SERVICE=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     --list) list_hosts; exit 0 ;;
     -h | --help) usage; exit 0 ;;
@@ -193,6 +196,7 @@ deploy_one() {
     [[ -n "$LOCAL_ADDR" ]] && args+=(--local-addr "$LOCAL_ADDR")
     [[ -n "$HERDR_BIN" ]] && args+=(--herdr-bin "$HERDR_BIN")
     [[ "$WITH_SERVICE" -eq 0 ]] && args+=(--no-service)
+    [[ "$HERDR_SERVICE" -eq 1 ]] && args+=(--herdr-service)
     local quoted="${args[*]:-}"
     say "  installing from $VIA"
     if ! ssh "${ssh_opts[@]}" "$host" \

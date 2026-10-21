@@ -37,6 +37,8 @@ Options:
   --url URL          download the binary from URL (a mirror, or a private host)
   --root DIR         where the binary is installed (default ~/.local/share/herdr-web/app)
   --no-service       install the binary only, do not register the service
+  --herdr-service    also run herdr's own headless server as a service, so the
+                     console has a daemon after a reboot without a terminal
   --service          register and start the service (the default)
   --addr HOST:PORT       Tailscale-facing address passed to the service
   --local-addr HOST:PORT loopback address passed to the service
@@ -111,6 +113,7 @@ FROM=""
 URL=""
 ROOT="$DEFAULT_ROOT"
 WITH_SERVICE=1
+HERDR_SERVICE=0
 ADDR=""
 LOCAL_ADDR=""
 HERDR_BIN=""
@@ -122,6 +125,7 @@ while [ $# -gt 0 ]; do
     --url) URL="$2"; shift 2 ;;
     --root) ROOT="$2"; shift 2 ;;
     --no-service) WITH_SERVICE=0; shift ;;
+    --herdr-service) HERDR_SERVICE=1; shift ;;
     --service) WITH_SERVICE=1; shift ;;
     --addr) ADDR="$2"; shift 2 ;;
     --local-addr) LOCAL_ADDR="$2"; shift 2 ;;
@@ -343,6 +347,82 @@ UNIT
   esac
 else
   say "skipped the service (-no-service); start it yourself: $BIN"
+fi
+
+# herdr is its own multiplexer and runs its own server without a terminal; a
+# second multiplexer underneath it (tmux) was one server hosting another.
+if [ "$HERDR_SERVICE" -eq 1 ]; then
+  HERDR_BIN_FOUND="$HERDR_BIN"
+  [ -n "$HERDR_BIN_FOUND" ] || HERDR_BIN_FOUND="$(command -v herdr 2>/dev/null || true)"
+  if [ -z "$HERDR_BIN_FOUND" ] && [ -x "$HOME/.local/bin/herdr" ]; then
+    HERDR_BIN_FOUND="$HOME/.local/bin/herdr"
+  fi
+  if [ -z "$HERDR_BIN_FOUND" ]; then
+    say "herdr is not installed here, so its service was not registered; install it from the console"
+  elif [ "$(uname -s)" = "Darwin" ]; then
+    HPLIST="$HOME/Library/LaunchAgents/dev.herdr.plist"
+    mkdir -p "$HOME/Library/LaunchAgents"
+    cat > "$HPLIST" <<HPLIST_EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>dev.herdr</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$HERDR_BIN_FOUND</string>
+    <string>server</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict><key>HOME</key><string>$HOME</string></dict>
+  <key>WorkingDirectory</key><string>$HOME</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+</dict>
+</plist>
+HPLIST_EOF
+    launchctl bootout "gui/$(id -u)/dev.herdr" 2>/dev/null || true
+    launchctl bootstrap "gui/$(id -u)" "$HPLIST"
+    say "herdr server registered: $HPLIST"
+  else
+    if is_root; then
+      HUNIT="/etc/systemd/system/dev.herdr.service"
+      HCTL="systemctl"
+      HWANTED="multi-user.target"
+    else
+      HUNIT="$HOME/.config/systemd/user/dev.herdr.service"
+      HCTL="systemctl --user"
+      HWANTED="default.target"
+    fi
+    mkdir -p "$(dirname "$HUNIT")"
+    cat > "$HUNIT" <<HUNIT_EOF
+[Unit]
+Description=herdr headless server
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=$HOME
+Environment=HOME=$HOME
+Environment=PATH=$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+ExecStart=$HERDR_BIN_FOUND server
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=$HWANTED
+HUNIT_EOF
+    $HCTL daemon-reload 2>/dev/null || true
+    $HCTL enable dev.herdr.service 2>/dev/null || true
+    # A daemon the operator started by hand in a terminal must not be killed
+    # here: enabling is enough for the next boot.
+    if "$HERDR_BIN_FOUND" status --json 2>/dev/null | grep -q '"running":true'; then
+      say "herdr server is already running; the unit starts it after a reboot"
+    else
+      $HCTL restart dev.herdr.service 2>/dev/null || $HCTL start dev.herdr.service 2>/dev/null || true
+      say "herdr server registered: $HUNIT"
+    fi
+  fi
 fi
 
 say "done. The console listens on the Tailscale address (port 5000) and 127.0.0.1 (port 5001)."

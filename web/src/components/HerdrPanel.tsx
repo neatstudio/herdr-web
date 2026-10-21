@@ -163,15 +163,13 @@ export function HerdrPanel({ open, onClose, consoleVersion }: Props) {
               // what to run next instead of leaving it at "not running".
               <div className="hostpanel__note" id="herdr-daemon-hint">
                 <p>
-                  no daemon is running here. herdr is a terminal application, so it has to be
-                  started from a terminal — over ssh that usually means inside tmux:
+                  no daemon is running here. herdr runs its own server headless — no terminal and
+                  no multiplexer underneath it:
                 </p>
-                <pre className="hostpanel__output">
-                  tmux new-session -d -s herdr -x 200 -y 50 'herdr'
-                </pre>
+                <pre className="hostpanel__output">herdr server</pre>
                 <p>
-                  if an update just stopped an old server, run <code>herdr update</code> once more
-                  first to finish the swap.
+                  the installer registers that as a service (<code>--herdr-service</code>) so it
+                  starts at boot; the buttons above start it too.
                 </p>
               </div>
             )}
