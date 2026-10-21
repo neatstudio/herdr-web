@@ -1,8 +1,10 @@
 package server
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -183,5 +185,67 @@ func TestReleaseServesTheChecksumOfANonSelfPlatform(t *testing.T) {
 	}
 	if got := recorder.Body.String(); !strings.Contains(got, "abc123") {
 		t.Fatalf("body = %q", got)
+	}
+}
+
+func TestReleaseUploadSeedsAServingHost(t *testing.T) {
+	// A network with no way out still needs the files: the reachable machine is
+	// seeded by hand and serves the rest of its segment from /release.
+	dir := t.TempDir()
+	previous := os.Getenv("HERDR_WEB_RELEASE_DIR")
+	if err := os.Setenv("HERDR_WEB_RELEASE_DIR", dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Setenv("HERDR_WEB_RELEASE_DIR", previous) })
+
+	payload := []byte("a linux binary")
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/release/herdr-web-linux-amd64",
+		bytes.NewReader(payload))
+	handleRelease(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", recorder.Code, recorder.Body.String())
+	}
+	var body struct {
+		SHA256 string `json:"sha256"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	// The checksum comes from what arrived, not from the request.
+	if body.SHA256 != checksum(payload) {
+		t.Fatalf("sha256 = %s, want %s", body.SHA256, checksum(payload))
+	}
+
+	// And it is served back, with the checksum file the installer looks for.
+	for _, name := range []string{"herdr-web-linux-amd64", "herdr-web-linux-amd64.sha256"} {
+		got := httptest.NewRecorder()
+		handleRelease(got, httptest.NewRequest(http.MethodGet, "/release/"+name, nil))
+		if got.Code != http.StatusOK {
+			t.Fatalf("%s: status = %d", name, got.Code)
+		}
+		if !strings.Contains(got.Body.String(), "linux binary") &&
+			!strings.Contains(got.Body.String(), body.SHA256) {
+			t.Fatalf("%s: body = %q", name, got.Body.String())
+		}
+	}
+}
+
+func TestReleaseUploadRefusesAnythingElse(t *testing.T) {
+	dir := t.TempDir()
+	previous := os.Getenv("HERDR_WEB_RELEASE_DIR")
+	if err := os.Setenv("HERDR_WEB_RELEASE_DIR", dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Setenv("HERDR_WEB_RELEASE_DIR", previous) })
+
+	for _, name := range []string{"../../etc/passwd", "notes.txt", ""} {
+		recorder := httptest.NewRecorder()
+		handleRelease(recorder, httptest.NewRequest(http.MethodPost, "/release/"+name,
+			strings.NewReader("x")))
+		if recorder.Code == http.StatusOK {
+			t.Fatalf("%q was accepted", name)
+		}
 	}
 }

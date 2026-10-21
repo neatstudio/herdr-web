@@ -184,6 +184,45 @@ ssh_run() {
   return $status
 }
 
+# push_binary copies the payload and leaves it in place as $remote_dir/herdr-web.
+#
+# A machine that cannot fetch anything only receives, and that copy is the slow
+# one: rsync sends only what differs and resumes a broken transfer, and when it
+# is missing the stream is compressed on the wire (30 MiB of herdr moves as ~10).
+push_binary() {
+  local host="$1" payload="$2" remote_dir="$3"
+  local incoming="$remote_dir/.incoming"
+  local name
+  name="$(basename "$payload")"
+  # A staging directory keeps the replace atomic and makes the destination shape
+  # unambiguous: pushing straight at "herdr-web.new" once left a directory there
+  # and the install became a failed rename.
+  ssh_run "$host" "rm -rf '$incoming' && mkdir -p '$incoming'" >/dev/null || return 1
+
+  if ssh_run "$host" 'command -v rsync >/dev/null 2>&1' >/dev/null 2>&1 && command -v rsync >/dev/null 2>&1; then
+    say "  rsync $(du -h "$payload" | cut -f1) (compressed, resumable)"
+    # rsync takes the transport as one -e string, not as loose ssh options.
+    local transport="ssh"
+    local opt
+    for opt in "${ssh_opts[@]}"; do
+      transport+=" $(printf '%q' "$opt")"
+    done
+    if ! rsync -az --partial -e "$transport" "$payload" "$host:$incoming/"; then
+      return 1
+    fi
+  else
+    # A machine that cannot fetch anything only receives, and that copy is the
+    # slow one: the stream is compressed, which is what makes 30 MiB of herdr
+    # arrive as about 10.
+    say "  streaming $(du -h "$payload" | cut -f1) compressed"
+    if ! gzip -c "$payload" | ssh "${ssh_opts[@]}" "$host" "gunzip > '$incoming/$name'"; then
+      return 1
+    fi
+  fi
+
+  ssh_run "$host" "chmod 0755 '$incoming/$name' && mv -f '$incoming/$name' '$remote_dir/herdr-web' && rm -rf '$incoming'" >/dev/null || return 1
+}
+
 deploy_one() {
   local target="$1"
   local host="${target%%:*}"
@@ -252,20 +291,18 @@ deploy_one() {
     [[ "$HERDR_SERVICE" -eq 1 ]] && args+=(--herdr-service)
     local quoted="${args[*]:-}"
     say "  installing from $VIA"
-    if ! ssh_run "$host" "sh -s -- --url '$VIA' $quoted" < "$root/install.sh"; then
-      say "  the installer failed on $host"
-      return 1
+    if ssh_run "$host" "sh -s -- --url '$VIA' $quoted" < "$root/install.sh"; then
+      say "  installed from $VIA on $host"
+      return 0
     fi
-    say "  installed from $VIA on $host"
-    return 0
+    # A target with no route to the source cannot fetch it. That is not the end
+    # of the deployment: the same binary goes over the ssh connection instead.
+    say "  $host could not fetch from $VIA; pushing the binary instead"
   fi
 
   local payload
   payload="$(binary_for "$host")" || return 1
-  say "  copying $(du -h "$payload" | cut -f1) to $host:$remote_dir/"
-  ssh_run "$host" "mkdir -p $remote_dir" >/dev/null || return 1
-  scp "${ssh_opts[@]}" -q "$payload" "$host:$remote_dir/herdr-web.new" || return 1
-  ssh "${ssh_opts[@]}" "$host" "chmod 0755 $remote_dir/herdr-web.new && mv $remote_dir/herdr-web.new $remote_dir/herdr-web" || return 1
+  push_binary "$host" "$payload" "$remote_dir" || return 1
   # The binary has to run on the target before it is registered as a service:
   # a wrong-architecture copy would just restart forever in systemd.
   if ! ssh_run "$host" "$remote_bin -version >/dev/null 2>&1"; then
@@ -306,13 +343,12 @@ write_service() {
   [[ -n "$LOCAL_ADDR" ]] && args+=" --local-addr $LOCAL_ADDR"
   [[ -n "$HERDR_BIN" ]] && args+=" --herdr-bin $HERDR_BIN"
 
-  ssh "${ssh_opts[@]}" "$host" "uname -s" > /tmp/hw-target-os.$$ 2>/dev/null || true
-  local target_os
-  target_os="$(cat /tmp/hw-target-os.$$ 2>/dev/null || echo Linux)"
-  rm -f /tmp/hw-target-os.$$
+  local target_os target_uid
+  target_os="$(ssh_run "$host" "uname -s" 2>/dev/null || echo Linux)"
+  target_uid="$(ssh_run "$host" "id -u" 2>/dev/null || echo 0)"
 
   if [[ "$target_os" == "Darwin" ]]; then
-    ssh "${ssh_opts[@]}" "$host" "mkdir -p ~/Library/LaunchAgents ~/.local/share/herdr-web && cat > ~/Library/LaunchAgents/$label.plist <<PLIST
+    ssh_run "$host" "mkdir -p ~/Library/LaunchAgents ~/.local/share/herdr-web && cat > ~/Library/LaunchAgents/$label.plist <<PLIST
 <?xml version=\"1.0\" encoding=\"UTF-8\"?>
 <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
 <plist version=\"1.0\">
@@ -334,36 +370,46 @@ write_service() {
 </plist>
 PLIST
 launchctl bootout gui/\$(id -u)/$label 2>/dev/null || true
-launchctl bootstrap gui/\$(id -u) ~/Library/LaunchAgents/$label.plist" || return 1
+launchctl bootstrap gui/\$(id -u) ~/Library/LaunchAgents/$label.plist" >/dev/null || return 1
     say "  service registered on $host (launchd)"
     return 0
   fi
 
-  ssh "${ssh_opts[@]}" "$host" "mkdir -p ~/.config/systemd/user ~/.local/share/herdr-web && cat > ~/.config/systemd/user/$label.service <<UNIT
+  # Root gets a system unit: a user unit there needs a lingering session that a
+  # fresh root login does not have, and it sits in "activating" instead.
+  local unit_dir ctl wanted
+  if [[ "$target_uid" == "0" ]]; then
+    unit_dir="/etc/systemd/system"
+    ctl="systemctl"
+    wanted="multi-user.target"
+  else
+    unit_dir="\$HOME/.config/systemd/user"
+    ctl="systemctl --user"
+    wanted="default.target"
+  fi
+
+  ssh_run "$host" "mkdir -p $unit_dir ~/.local/share/herdr-web && cat > $unit_dir/$label.service <<UNIT
 [Unit]
 Description=herdr-web: web console for a herdr daemon
 After=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h
-Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+WorkingDirectory=\$HOME
+Environment=PATH=\$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 ExecStart=$remote_bin$args
 Restart=on-failure
 RestartSec=3
-StandardOutput=append:%h/.local/share/herdr-web/herdr-web.log
-StandardError=append:%h/.local/share/herdr-web/herdr-web.log
+StandardOutput=append:\$HOME/.local/share/herdr-web/herdr-web.log
+StandardError=append:\$HOME/.local/share/herdr-web/herdr-web.log
 
 [Install]
-WantedBy=default.target
+WantedBy=$wanted
 UNIT
-systemctl --user daemon-reload 2>/dev/null || true
-# enable --now leaves an already-running unit alone, which would keep the old
-# binary in memory after the file was replaced. Restart, always.
-systemctl --user enable $label.service 2>/dev/null || true
-systemctl --user restart $label.service 2>/dev/null || systemctl --user start $label.service 2>/dev/null || true
-loginctl enable-linger \$(id -un) 2>/dev/null || true" || return 1
-  say "  service registered on $host (systemd user unit)"
+$ctl daemon-reload 2>/dev/null || true
+$ctl enable $label.service 2>/dev/null || true
+$ctl restart $label.service 2>/dev/null || $ctl start $label.service 2>/dev/null || true" >/dev/null || return 1
+  say "  service registered on $host ($ctl)"
 }
 
 failed=0

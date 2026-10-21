@@ -76,8 +76,14 @@ func releaseDir() string {
 // running executable is used for its own platform. requestOS/requestArch let a
 // client ask for another platform explicitly, which is what a mixed fleet needs.
 func handleRelease(w http.ResponseWriter, r *http.Request) {
+	// Seeding is the fallback for a network with no way out: one host that can
+	// receive the files serves them to the rest of its segment.
+	if r.Method == http.MethodPost {
+		handleReleaseUpload(w, r)
+		return
+	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		writeMethodNotAllowed(w, "GET")
+		writeMethodNotAllowed(w, "GET, POST")
 		return
 	}
 	name := strings.Trim(strings.TrimPrefix(r.URL.Path, "/release/"), "/")
@@ -177,4 +183,85 @@ func writeChecksumForSelf(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fmt.Fprintf(w, "%s  %s\n", sum, releaseSelfPath())
+}
+
+// handleReleaseUpload stores a release file so this console can serve it.
+//
+// A network with no way out still needs the binary, and the machine that can be
+// reached by hand is the one to put it on: after this, every other machine in
+// that segment installs from here with `install.sh --url http://this-host:5000/release`.
+//
+// The body is the file itself, and the checksum is computed here rather than
+// trusted from the request, so what is served later is exactly what arrived.
+func handleReleaseUpload(w http.ResponseWriter, r *http.Request) {
+	name := strings.Trim(strings.TrimPrefix(r.URL.Path, "/release/"), "/")
+	if name == "" || strings.Contains(name, "..") || strings.Contains(name, "/") {
+		writeError(w, http.StatusBadRequest, "invalid_request", "a release file name is required")
+		return
+	}
+	if !strings.HasPrefix(name, "herdr-web-") && name != "install.sh" {
+		writeError(w, http.StatusBadRequest, "invalid_request",
+			"only herdr-web-<os>-<arch>, its checksum, and install.sh can be stored here")
+		return
+	}
+	dir := releaseDir()
+	if dir == "" {
+		writeError(w, http.StatusInternalServerError, "release_unavailable", "no release directory")
+		return
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		writeError(w, http.StatusInternalServerError, "release_unavailable", err.Error())
+		return
+	}
+	path := filepath.Join(dir, filepath.Base(name))
+	tmp, err := os.CreateTemp(dir, ".upload-*")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "release_unavailable", err.Error())
+		return
+	}
+	tmpPath := tmp.Name()
+	defer func() { _ = os.Remove(tmpPath) }()
+
+	// A binary is megabytes; the cap keeps a stray upload from filling the disk.
+	const limit = 256 << 20
+	written, err := io.Copy(tmp, io.LimitReader(r.Body, limit+1))
+	if err != nil {
+		_ = tmp.Close()
+		writeError(w, http.StatusBadRequest, "upload_failed", err.Error())
+		return
+	}
+	if written > limit {
+		_ = tmp.Close()
+		writeError(w, http.StatusRequestEntityTooLarge, "too_large",
+			"release files above 256 MiB are not accepted")
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		writeError(w, http.StatusInternalServerError, "release_unavailable", err.Error())
+		return
+	}
+	sum, err := fileSHA256(tmpPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "release_unavailable", err.Error())
+		return
+	}
+	if err := os.Chmod(tmpPath, 0o755); err != nil {
+		writeError(w, http.StatusInternalServerError, "release_unavailable", err.Error())
+		return
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		writeError(w, http.StatusInternalServerError, "release_unavailable", err.Error())
+		return
+	}
+	// The checksum the installer looks for, written from what actually arrived.
+	if err := os.WriteFile(path+".sha256", []byte(sum+"  "+filepath.Base(name)+"\n"), 0o644); err != nil {
+		writeError(w, http.StatusInternalServerError, "release_unavailable", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"stored":   filepath.Base(name),
+		"bytes":    written,
+		"sha256":   sum,
+		"servedAt": "/release/" + filepath.Base(name),
+	})
 }

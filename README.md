@@ -240,6 +240,35 @@ a `dev.herdr-web` service that points somewhere else, so installing over a
 machine that already runs the console from a checkout cannot silently steal the
 service.
 
+### When a host can reach nothing
+
+Three paths, and the tooling tries them in this order rather than stopping at the
+first one that does not work:
+
+1. **Pull** — `--via <source>`: the target fetches the release itself. Fast, and
+   the only one that scales, because the bytes travel between datacentres.
+2. **Push** — automatic when the pull fails: the same binary goes over the ssh
+   connection instead, by `rsync -az --partial` when both ends have it (only the
+   difference is sent, and an interrupted transfer resumes) or as a compressed
+   stream otherwise. This is what moves a machine that has no route out at all.
+3. **Seed** — for a segment where no machine can reach anything: one reachable
+   host stores the files and serves its neighbours.
+
+   ```
+   curl -X POST --data-binary @herdr-web-linux-amd64 \
+        http://the-reachable-host:5000/release/herdr-web-linux-amd64
+   ```
+
+   The checksum is computed from what arrived, so what it serves later is exactly
+   what was uploaded, and every machine in that segment installs from it with
+   `--url http://the-reachable-host:5000/release`.
+
+The reason this matters: a machine shared into a tailnet one way can be reached
+but cannot reach back, so it can never fetch a release. Pushing works; pulling
+does not. Measured on such a host, `herdr` (30 MiB) moved as ~10 MiB compressed
+and took about fifty minutes — the fallback exists so that this is a slow path
+rather than a dead end.
+
 ### Installing without GitHub
 
 A running console is also a release source: it serves the installer it was
