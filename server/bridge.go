@@ -773,6 +773,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/herdr/file/raw", handleFileRaw)
 
 	mux.HandleFunc("/api/v1/herdr/tmux", s.handleTmuxSessions)
+	mux.HandleFunc("/api/v1/herdr/tmux/output", s.handleTmuxOutput)
 	mux.HandleFunc("/api/v1/herdr/workspaces/", func(w http.ResponseWriter, r *http.Request) {
 		rest := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/herdr/workspaces/"), "/")
 		if strings.HasSuffix(rest, "/rename") {
@@ -908,6 +909,71 @@ func (s *Server) handlePaneRun(w http.ResponseWriter, r *http.Request, paneID st
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "paneId": paneID})
+}
+
+// handleTmuxOutput shows a tmux session's screen without attaching to it.
+//
+// Attaching adds a client, and tmux then sizes the window to the client used
+// last: a session someone is working in arrives squashed. Reading the pane with
+// capture-pane changes nothing, which is what a session with live work in it
+// needs when the question is only "what is it doing".
+func (s *Server) handleTmuxOutput(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, "GET")
+		return
+	}
+	session := strings.TrimSpace(r.URL.Query().Get("session"))
+	if session == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "session is required")
+		return
+	}
+	lines := 120
+	if raw := strings.TrimSpace(r.URL.Query().Get("lines")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 && parsed <= 1000 {
+			lines = parsed
+		}
+	}
+	binary, err := exec.LookPath("tmux")
+	if err != nil {
+		writeError(w, http.StatusNotFound, "tmux_missing", "tmux is not installed on this host")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), hostStatusTimeout)
+	defer cancel()
+
+	// The name is checked against the sessions that exist rather than passed
+	// through: tmux targets are a small language, and this endpoint takes a word.
+	listed, listErr := exec.CommandContext(ctx, binary, "list-sessions", "-F", "#{session_name}").Output()
+	if listErr != nil && len(listed) == 0 {
+		writeError(w, http.StatusNotFound, "tmux_missing", "no tmux server is running on this host")
+		return
+	}
+	known := false
+	for _, name := range strings.Split(strings.TrimSpace(string(listed)), "\n") {
+		if strings.TrimSpace(name) == session {
+			known = true
+			break
+		}
+	}
+	if !known {
+		writeError(w, http.StatusNotFound, "unknown_session", "no such tmux session: "+session)
+		return
+	}
+
+	// -J joins wrapped lines so the console can wrap them to its own width, and -p
+	// prints to stdout instead of a terminal.
+	output, captureErr := exec.CommandContext(ctx, binary,
+		"capture-pane", "-p", "-J", "-t", session, "-S", "-"+strconv.Itoa(lines)).Output()
+	if captureErr != nil && len(output) == 0 {
+		writeBadGateway(w, "tmux_capture_failed", captureErr)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":      true,
+		"session": session,
+		"lines":   lines,
+		"output":  string(output),
+	})
 }
 
 // handleTmuxSessions lists the tmux sessions on this host, so a session that was

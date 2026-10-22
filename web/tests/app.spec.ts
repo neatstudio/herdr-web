@@ -1734,6 +1734,13 @@ test("legacy tmux sessions are folded away in the host panel, not in a workspace
       body: JSON.stringify({ ok: true, workspaceId: "w1", paneId: "w1:p1" }),
     });
   });
+  await page.route("**/api/v1/herdr/tmux/output?*", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, session: "kimi2", output: "running the migration\nall tests pass\n" }),
+    }),
+  );
   await page.goto("/");
 
   // Left over from the multiplexer herdr replaced: shown in the panel, folded
@@ -1749,6 +1756,11 @@ test("legacy tmux sessions are folded away in the host panel, not in a workspace
 
   // One somebody else is watching is taken over rather than shared and resized
   // under them, which is what made an agent look dead while it was running.
+  // A session with live work in it can be looked at without attaching, because
+  // attaching resizes it under whoever is working there.
+  await legacy.locator('.hostpanel__act--peek[data-peek="kimi2"]').click();
+  await expect(page.locator("#hostpanel-tmux-peek")).toContainText("running the migration");
+
   page.once("dialog", (dialog) => void dialog.accept());
   await legacy.locator('.hostpanel__act[data-session="kimi2"]').click();
   await expect.poll(() => created[1] ?? "").toBe(JSON.stringify({ label: "kimi2", command: ["tmux", "attach", "-d", "-t", "kimi2"] }));

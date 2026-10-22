@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -636,5 +637,24 @@ func TestHealthIsIndependentOfTheDaemon(t *testing.T) {
 	}
 	if body := decodeMap(t, response); body["status"] != "ok" {
 		t.Fatalf("body=%v", body)
+	}
+}
+
+func TestTmuxOutputRefusesNamesItWasNotGiven(t *testing.T) {
+	// The session name reaches tmux as a target, which is its own small language:
+	// it is only ever used after being matched against the sessions that exist.
+	console := NewServer("", nil)
+	recorder := httptest.NewRecorder()
+	console.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet,
+		"/api/v1/herdr/tmux/output?session=nope", nil))
+	if recorder.Code == http.StatusOK {
+		t.Fatalf("an unknown session was read: %s", recorder.Body.String())
+	}
+
+	recorder = httptest.NewRecorder()
+	console.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet,
+		"/api/v1/herdr/tmux/output", nil))
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d", recorder.Code)
 	}
 }

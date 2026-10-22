@@ -2261,3 +2261,29 @@ body::before {
   width: 100%;
   text-align: left;
 }
+
+/* Peeking at a session that has live work in it: read-only, so it cannot disturb
+   the terminal somebody is working from. */
+.hostpanel__peek {
+  margin-top: 8px;
+  border: var(--rule-w) solid var(--rule);
+}
+
+.hostpanel__peek-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px;
+  border-bottom: var(--rule-w) solid var(--rule);
+  color: var(--ink-faint);
+}
+
+.hostpanel__peek pre {
+  margin: 0;
+  padding: 6px;
+  max-height: 220px;
+  overflow: auto;
+  font-size: var(--step-fine);
+  white-space: pre-wrap;
+  color: var(--ink);
+}

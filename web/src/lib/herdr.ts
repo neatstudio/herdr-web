@@ -697,6 +697,18 @@ export async function fetchTmuxSessions(): Promise<TmuxSessions | null> {
   };
 }
 
+/** A tmux session's screen, read with capture-pane and without attaching. */
+export async function fetchTmuxOutput(session: string, lines = 120): Promise<string | null> {
+  const raw = await getJSON(
+    `/api/v1/herdr/tmux/output?session=${encodeURIComponent(session)}&lines=${lines}`,
+  );
+  if (raw === null || typeof raw !== "object") {
+    return null;
+  }
+  const output = (raw as Record<string, unknown>).output;
+  return typeof output === "string" ? output : null;
+}
+
 /**
  * Make a workspace, and optionally run a command in its first pane.
  *

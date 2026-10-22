@@ -3,6 +3,7 @@ import {
   createWorkspace,
   fetchFleet,
   fetchHerdrHost,
+  fetchTmuxOutput,
   fetchTmuxSessions,
   type TmuxSession,
   runHostAction,
@@ -34,6 +35,9 @@ export function HerdrPanel({ open, onClose, onDispatch, consoleVersion }: Props)
   // workspaces and do not belong in "new workspace"; they are host state, and the
   // panel is where host state is shown.
   const [tmux, setTmux] = useState<TmuxSession[]>([]);
+  // The session being peeked at, and its screen. Reading it does not attach, so a
+  // session with live work in it can be checked on without disturbing it.
+  const [peek, setPeek] = useState<{ session: string; output: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; command: string; output: string } | null>(null);
 
@@ -68,6 +72,21 @@ export function HerdrPanel({ open, onClose, onDispatch, consoleVersion }: Props)
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
+
+  useEffect(() => {
+    if (!open || peek === null) {
+      return;
+    }
+    const session = peek.session;
+    const timer = setInterval(() => {
+      void fetchTmuxOutput(session, 120).then((output) => {
+        if (output !== null) {
+          setPeek((current) => (current !== null && current.session === session ? { session, output } : current));
+        }
+      });
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [open, peek]);
 
   if (!open) {
     return null;
@@ -207,6 +226,21 @@ export function HerdrPanel({ open, onClose, onDispatch, consoleVersion }: Props)
                     <li key={session.name}>
                       <button
                         type="button"
+                        className="hostpanel__act hostpanel__act--peek"
+                        data-peek={session.name}
+                        onClick={() => {
+                          void fetchTmuxOutput(session.name, 120).then((output) =>
+                            setPeek({ session: session.name, output: output ?? "" }),
+                          );
+                        }}
+                      >
+                        {session.name}
+                        <span className="hostpanel__dim">
+                          {session.attached > 0 ? ` · ${session.attached} watching` : " · idle"}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
                         className="hostpanel__act"
                         data-session={session.name}
                         onClick={() => {
@@ -226,14 +260,22 @@ export function HerdrPanel({ open, onClose, onDispatch, consoleVersion }: Props)
                           }).then(() => refresh());
                         }}
                       >
-                        {session.name}
-                        <span className="hostpanel__dim">
-                          {session.attached > 0 ? ` · take over (${session.attached})` : " · open"}
-                        </span>
+                        {session.attached > 0 ? "take over" : "open"}
                       </button>
                     </li>
                   ))}
                 </ul>
+                {peek !== null && (
+                  <div className="hostpanel__peek" id="hostpanel-tmux-peek">
+                    <div className="hostpanel__peek-head">
+                      <span>{peek.session} · read-only</span>
+                      <button type="button" className="hostpanel__act" onClick={() => setPeek(null)}>
+                        close
+                      </button>
+                    </div>
+                    <pre>{peek.output}</pre>
+                  </div>
+                )}
               </details>
             )}
 
