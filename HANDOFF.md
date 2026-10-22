@@ -1,6 +1,6 @@
 # Handoff — herdr-web
 
-Written 2026-10-22 at `v0.6.7`. Two people are picking work up from here; the split
+Written 2026-10-22 at `v0.6.7`, updated at `v0.6.8`. Two people are picking work up from here; the split
 is at the bottom. Read the two sections above it first: the contracts are not
 negotiable without a decision, and the pitfalls have each cost a debugging session
 already.
@@ -21,9 +21,9 @@ a task to whichever machine can run it.
 
 | Thing | Value |
 | --- | --- |
-| Version | `v0.6.7` (`git describe`), tag pushed |
+| Version | `v0.6.8` (`git describe`), tag pushed |
 | Tests | `go test ./...` green; `npm --prefix web run test:unit` 102/102; Playwright 72/72 |
-| Fleet | see below, all `v0.6.6`+ and following `v0.6.7` |
+| Fleet | see below, all `v0.6.8` |
 | herdr on the fleet | 0.9.5 everywhere; **tw1's daemon is currently stopped** |
 
 Fleet as the hub reports it (`http://100.89.0.206:5000/api/v1/fleet`):
@@ -144,26 +144,11 @@ or pull deploy, fallback to push), `scripts/version.sh` (version arithmetic),
 
 ### Owner A — the agent that wrote this file
 
-**A1. `+` in the tab strip must create a tab, not split the pane.** *(the reported
-bug)*
-
-Today `web/src/App.tsx` `newPane()` calls `splitPane(paneId, …)`, and
-`web/src/components/PaneTabs.tsx` labels the button "new pane: split this one".
-Splitting is already available from the pane context menu (`TargetMenu` →
-`onSplit`). A herdr workspace holds tabs; each tab holds panes.
-
-- Add `POST /api/v1/herdr/tabs` → `tab.create` (`params: { workspace_id, cwd?,
-  label?, focus: true }`), returning `{ tabId, paneId, workspaceId }`.
-- `web/src/lib/herdr.ts`: `createTab(workspaceId?)`.
-- `newPane()` creates a tab in the shown workspace and selects the new pane; keep the
-  optimistic insertion into the pane list (herdr reports it on the next poll).
-- Rewrite the three tests that assert the `+` split
-  (`app.spec.ts`: "the strip's + makes a new pane by splitting the open one", "a split
-  keeps the view where it was", "a phone splits downwards") into tab tests, and keep
-  the split tests on the context menu path.
-- Acceptance: pressing `+` adds a tab; the pane count of the workspace is unchanged;
-  splitting still reachable from the pane menu; `npm --prefix web run test:unit` and
-  the Playwright suite green.
+**A1. DONE (`v0.6.8`) — `+` adds a tab.** `POST /api/v1/herdr/tabs` wraps
+`tab.create`; `newTab()` in `App.tsx` adds the tab and selects its root pane;
+splitting stays on the pane menu. Verified on `100.89.0.200`:
+`POST /api/v1/herdr/tabs {"workspaceId":"w1"}` → `{tabId:"w1:t2", paneId:"w1:p2"}`, and
+`herdr tab close w1:t2` cleaned up.
 
 **A2. Close phase 2: bring the work back.** A job runs in a git worktree on the
 target machine (`worktree.create`), the agent commits to that branch. The dispatcher
@@ -183,6 +168,13 @@ must collect it.
 from the UI. Wire it into the dispatch panel per job, with the workspace id.
 
 ### Owner B — the other engineer
+
+**B0. The hub's sshd is down (found `v0.6.8`).** `43.153.207.224` answers ping and
+serves `:5000`, but `:22` is refused — the machine is fine, sshd is not. The console
+kept working and even updated itself from a peer and restarted through systemd with
+no login at all, which is the design working; the host still needs its sshd back
+(`systemctl status sshd` on the console's own pane, or out-of-band access).
+
 
 **B1. `100.89.0.10` is not in the fleet.** It cannot reach the seeds, so it neither
 reports nor follows. Give it a seed it can reach (it can reach the laptop and this
