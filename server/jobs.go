@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -199,6 +200,20 @@ func (s *Server) handleJobStop(w http.ResponseWriter, r *http.Request, workspace
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "workspaceId": workspaceID})
+}
+
+// selfAgentKinds is jobAgentKinds, computed once: every heartbeat asks, and the
+// answer only changes when the machine is reinstalled.
+var (
+	agentKindsOnce  sync.Once
+	agentKindsCache []string
+)
+
+func selfAgentKinds() []string {
+	agentKindsOnce.Do(func() {
+		agentKindsCache = jobAgentKinds()
+	})
+	return agentKindsCache
 }
 
 // handleAgentKinds reports which agents this host can start.

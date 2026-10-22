@@ -48,10 +48,15 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
     if (!open || chosen.length > 0) {
       return;
     }
-    // Everything known, chosen by default: a fleet is small, and excluding a
-    // machine is the rarer intent.
-    setChosen(peers.map((peer) => `http://${peer.addr}`));
-  }, [open, peers, chosen.length]);
+    // Everything that can run this agent, chosen by default: a job sent where the
+    // agent is not installed can only fail, and which machine has which agent is
+    // not the same everywhere.
+    setChosen(
+      peers
+        .filter((peer) => (peer.agents ?? []).includes(kind) || (peer.agents ?? []).length === 0)
+        .map((peer) => `http://${peer.addr}`),
+    );
+  }, [open, peers, chosen.length, kind]);
 
   useEffect(() => {
     if (!open) {
@@ -152,19 +157,24 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
             peers.map((peer) => {
               const url = `http://${peer.addr}`;
               const on = chosen.includes(url);
+              const agents = peer.agents ?? [];
+              const capable = agents.length === 0 || agents.includes(kind);
               return (
                 <li key={peer.id}>
-                  <label>
+                  <label title={capable ? "" : `${peer.addr} has no ${kind}`}>
                     <input
                       type="checkbox"
                       data-target={peer.addr}
                       checked={on}
+                      disabled={!capable}
                       onChange={() =>
                         setChosen(on ? chosen.filter((item) => item !== url) : [...chosen, url])
                       }
                     />
                     <span>{peer.addr}</span>
-                    <span className="newws__dim">{peer.version}</span>
+                    <span className="newws__dim">
+                      {agents.length === 0 ? "no agent reported" : agents.join(" ")}
+                    </span>
                   </label>
                 </li>
               );

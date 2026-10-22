@@ -625,6 +625,8 @@ export type FleetPeer = {
   addr: string;
   version: string;
   platform: string;
+  /** The agent kinds this machine can start. */
+  agents?: string[];
   /** Unix seconds of the last hello. */
   seen: number;
   /** True when it has not said hello recently. */

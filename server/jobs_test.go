@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -107,5 +108,36 @@ func TestDispatchSendsTheSameJobToEachMachine(t *testing.T) {
 	}
 	if answer.Dispatch.ID == "" || len(answer.Dispatch.Jobs) != 1 {
 		t.Fatalf("dispatch = %+v", answer.Dispatch)
+	}
+}
+
+func TestFleetPeersReportWhichAgentsTheyCanStart(t *testing.T) {
+	// A job has to run where its agent exists, and that is not the same machine
+	// everywhere, so the fleet carries the answer.
+	previous := lookPath
+	lookPath = func(name string) (string, error) {
+		if name == "claude" {
+			return "/usr/bin/claude", nil
+		}
+		return "", &notFoundError{}
+	}
+	t.Cleanup(func() { lookPath = previous })
+	agentKindsOnce = sync.Once{}
+	agentKindsCache = nil
+	t.Cleanup(func() {
+		agentKindsOnce = sync.Once{}
+		agentKindsCache = nil
+	})
+
+	console := fleetTestServer(t)
+	self := console.fleetSelfPeer()
+	if len(self.Agents) != 1 || self.Agents[0] != "claude" {
+		t.Fatalf("agents = %v", self.Agents)
+	}
+
+	recorder := httptest.NewRecorder()
+	console.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/fleet", nil))
+	if !strings.Contains(recorder.Body.String(), `"agents":["claude"]`) {
+		t.Fatalf("body = %s", recorder.Body.String())
 	}
 }

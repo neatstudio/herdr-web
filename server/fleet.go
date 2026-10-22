@@ -56,6 +56,9 @@ type fleetPeer struct {
 	Addr     string `json:"addr"`
 	Version  string `json:"version"`
 	Platform string `json:"platform"`
+	// Agents are the agent kinds this machine can start. A job has to run where
+	// its agent exists, and that is not the same machine everywhere.
+	Agents []string `json:"agents,omitempty"`
 	// Seen is unix seconds; each console stamps what it hears with its own clock,
 	// which is enough for a list whose only question is "has this gone quiet".
 	Seen int64 `json:"seen"`
@@ -205,6 +208,7 @@ func (s *Server) fleetSelfPeer() fleetPeer {
 		Addr:     s.fleetAddr,
 		Version:  ConsoleVersion,
 		Platform: runtime.GOOS + "-" + runtime.GOARCH,
+		Agents:   selfAgentKinds(),
 		Seen:     time.Now().Unix(),
 	}
 }
@@ -600,6 +604,7 @@ func (s *Server) handleFleet(w http.ResponseWriter, r *http.Request) {
 			"addr":     peer.Addr,
 			"version":  peer.Version,
 			"platform": peer.Platform,
+			"agents":   peer.Agents,
 			"seen":     peer.Seen,
 			"stale":    now-peer.Seen > int64(fleetPeerStaleAfter/time.Second),
 		})
