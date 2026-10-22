@@ -344,9 +344,10 @@ func (s *Server) handleFleet(w http.ResponseWriter, r *http.Request) {
 			"version":  ConsoleVersion,
 			"platform": runtime.GOOS + "-" + runtime.GOARCH,
 		},
-		"hub":    s.fleetHub != "",
+		// A console with no hub named is the hub itself, and follows nobody.
+		"hub":    s.fleetHub == "",
 		"hubUrl": s.fleetHubBase(),
-		"follow": fleetFollowEnabled(),
+		"follow": s.fleetHub != "" && fleetFollowEnabled(),
 		"peers":  out,
 	})
 }
