@@ -141,3 +141,12 @@ func TestFleetPeersReportWhichAgentsTheyCanStart(t *testing.T) {
 		t.Fatalf("body = %s", recorder.Body.String())
 	}
 }
+
+func TestTabCreateRefusesAnythingButPost(t *testing.T) {
+	console := NewServer("", nil)
+	recorder := httptest.NewRecorder()
+	console.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/herdr/tabs", nil))
+	if recorder.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d", recorder.Code)
+	}
+}

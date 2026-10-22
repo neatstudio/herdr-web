@@ -14,8 +14,8 @@ type Props = {
   activeTabId: string | null;
   onSelect: (id: string) => void;
   onMenu: (paneId: string, x: number, y: number) => void;
-  /** Split the active pane: how a new pane is made. */
-  onNewPane: () => void;
+  /** Add a tab to the workspace: a new shell, not a split. */
+  onNewTab: () => void;
   canSplit: boolean;
 };
 
@@ -30,7 +30,7 @@ export function PaneTabs({
   activeTabId,
   onSelect,
   onMenu,
-  onNewPane,
+  onNewTab,
   canSplit,
 }: Props) {
   if (panes.length === 0) {
@@ -74,11 +74,11 @@ export function PaneTabs({
       {canSplit && (
         <button
           type="button"
-          id="herdr-new-pane"
+          id="herdr-new-tab"
           className="tab tab--new"
-          title="new pane: split this one"
-          aria-label="New pane"
-          onClick={onNewPane}
+          title="new tab in this workspace"
+          aria-label="New tab"
+          onClick={onNewTab}
         >
           +
         </button>

@@ -361,6 +361,37 @@ async function postJSONResult(path: string, body: unknown): Promise<unknown> {
 }
 
 /** Split a pane, which is how a new pane is made; answers with its id. */
+/**
+ * Add a tab to a workspace: a new shell beside the ones that are there.
+ *
+ * This is what the strip's + does. Splitting is a different action and belongs to
+ * the pane it splits, because a tab is what herdr shows in the strip and a pane is
+ * what it shows inside one.
+ */
+export async function createTab(workspaceId: string, cwd?: string): Promise<{
+  tabId: string;
+  paneId: string;
+  workspaceId: string;
+} | null> {
+  const raw = await postJSONResult("/api/v1/herdr/tabs", {
+    workspaceId,
+    ...(cwd === undefined || cwd === "" ? {} : { cwd }),
+  });
+  if (raw === null || typeof raw !== "object") {
+    return null;
+  }
+  const record = raw as Record<string, unknown>;
+  const paneId = typeof record.paneId === "string" ? record.paneId : "";
+  if (paneId === "") {
+    return null;
+  }
+  return {
+    tabId: typeof record.tabId === "string" ? record.tabId : "",
+    paneId,
+    workspaceId: typeof record.workspaceId === "string" ? record.workspaceId : workspaceId,
+  };
+}
+
 export async function splitPane(
   paneId: string,
   direction: "right" | "down",

@@ -772,6 +772,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/herdr/file", handleFileRead)
 	mux.HandleFunc("/api/v1/herdr/file/raw", handleFileRaw)
 
+	mux.HandleFunc("/api/v1/herdr/tabs", s.handleTabCreate)
 	mux.HandleFunc("/api/v1/herdr/tmux", s.handleTmuxSessions)
 	mux.HandleFunc("/api/v1/herdr/tmux/output", s.handleTmuxOutput)
 	mux.HandleFunc("/api/v1/herdr/workspaces/", func(w http.ResponseWriter, r *http.Request) {
@@ -818,6 +819,53 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/release/", handleRelease)
 	mux.HandleFunc("/", s.handleStatic)
 	return mux
+}
+
+// handleTabCreate adds a tab to a workspace: a new shell beside the ones that are
+// already there, which is what the strip's + was supposed to do. Splitting is a
+// different action, and it belongs to the pane it splits, not to the strip.
+func (s *Server) handleTabCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, "POST")
+		return
+	}
+	var request struct {
+		WorkspaceID string `json:"workspaceId"`
+		Cwd         string `json:"cwd"`
+		Label       string `json:"label"`
+	}
+	if !decodeBody(w, r, &request) {
+		return
+	}
+	params := map[string]any{"focus": true}
+	if workspaceID := strings.TrimSpace(request.WorkspaceID); workspaceID != "" {
+		params["workspace_id"] = workspaceID
+	}
+	if cwd := strings.TrimSpace(request.Cwd); cwd != "" {
+		params["cwd"] = cwd
+	}
+	if label := strings.TrimSpace(request.Label); label != "" {
+		params["label"] = label
+	}
+	var created struct {
+		Tab struct {
+			TabID       string `json:"tab_id"`
+			WorkspaceID string `json:"workspace_id"`
+		} `json:"tab"`
+		RootPane struct {
+			PaneID string `json:"pane_id"`
+		} `json:"root_pane"`
+	}
+	if err := s.client().Call(r.Context(), "tab.create", params, &created); err != nil {
+		writeBadGateway(w, "herdr_tab_failed", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":          true,
+		"tabId":       created.Tab.TabID,
+		"paneId":      created.RootPane.PaneID,
+		"workspaceId": created.Tab.WorkspaceID,
+	})
 }
 
 // handleWorkspaceCreate makes a workspace, which the console had no way to do:

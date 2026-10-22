@@ -47,12 +47,12 @@ async function installBridge(page: Page, options: FixtureOptions = {}): Promise<
   const resizes: string[] = [];
   const splits: string[] = [];
   const closes: string[] = [];
+  const tabs: string[] = [];
   const created: unknown[] = [];
-  Object.assign(page as Page & { resizes?: string[]; splits?: string[]; closes?: string[] }, {
-    resizes,
-    splits,
-    closes,
-  });
+  Object.assign(
+    page as Page & { resizes?: string[]; splits?: string[]; closes?: string[]; tabs?: string[] },
+    { resizes, splits, closes, tabs },
+  );
   const workspaces = options.workspaces ?? WORKSPACES;
   const panes = options.panes ?? PANES;
   if (options.daemonDown === true) {
@@ -129,6 +129,28 @@ async function installBridge(page: Page, options: FixtureOptions = {}): Promise<
       body: JSON.stringify({ path: "/tmp", exists: options.pathMissing !== true, isDir: true }),
     }),
   );
+  // A tab is a new shell beside the current one: herdr reports it as its own tab
+  // with its own root pane, which is what the strip shows.
+  await page.route("**/api/v1/herdr/tabs", async (route) => {
+    const body = route.request().postData() ?? "";
+    tabs.push(body);
+    // Echo the workspace that was asked for: the strip is grouped by workspace,
+    // and a fixture that always answers w1 would hide a bug on every other one.
+    const workspaceId = (JSON.parse(body || "{}") as { workspaceId?: string }).workspaceId ?? "w1";
+    created.push({
+      id: "w1:p9",
+      workspaceId,
+      tabId: `${workspaceId}:t9`,
+      focused: false,
+      cwd: "/tmp/new",
+      agentStatus: "unknown",
+    });
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, tabId: `${workspaceId}:t9`, paneId: "w1:p9", workspaceId }),
+    });
+  });
   await page.route("**/api/v1/herdr/panes/*/split", async (route) => {
     splits.push(route.request().postData() ?? "");
     const source = decodeURIComponent(new URL(route.request().url()).pathname.split("/").at(-2) ?? "");
@@ -881,17 +903,22 @@ test("a path that is not on this host says so instead of showing nothing", async
   await expect(page.locator(".viewer")).toHaveCount(0);
 });
 
-test("the strip's + makes a new pane by splitting the open one", async ({ page }) => {
+test("the strip's + adds a tab, and splits nothing", async ({ page }) => {
   await installBridge(page);
   await page.goto("/");
 
-  // Sideways where there is room; stacked on a phone, where side by side would
-  // leave neither pane readable.
-  await page.locator("#herdr-new-pane").click();
-  const sent = (page as Page & { splits?: string[] }).splits ?? [];
-  await expect.poll(() => sent).toEqual([JSON.stringify({ direction: "right" })]);
-  // The new pane becomes the one being typed at.
+  // A tab is a workspace's shell; a pane is what a tab is divided into. The strip
+  // lists tabs, so + must not divide the thing it is next to.
+  await page.locator('.side--spaces [data-workspace-id="w1"]').click();
+  await page.locator("#herdr-new-tab").click();
+  const tabs = (page as Page & { tabs?: string[] }).tabs ?? [];
+  const splits = (page as Page & { splits?: string[] }).splits ?? [];
+  await expect.poll(() => tabs).toEqual([JSON.stringify({ workspaceId: "w1" })]);
+  expect(splits).toEqual([]);
+
+  // The new pane becomes the one being typed at, and joins the strip at once.
   await expect(page.locator("#herdr-input")).toHaveAttribute("placeholder", "send to w1:p9");
+  await expect(page.locator('.strip .tab[data-pane-id="w1:p9"]')).toHaveCount(1);
 });
 
 test("a split keeps the view where it was, and selects the new pane at once", async ({ page }) => {
@@ -900,7 +927,9 @@ test("a split keeps the view where it was, and selects the new pane at once", as
   await page.locator('.side--spaces [data-workspace-id="w1"]').click();
   await expect(page.locator('.tab[aria-selected="true"]')).toHaveCount(1);
 
-  await page.locator("#herdr-new-pane").click();
+  // Splitting is the pane's own action, from its menu.
+  await page.locator('.side--agents .row[data-pane-id="w1:p1"]').click({ button: "right" });
+  await page.getByRole("menuitem", { name: /Split right/ }).click();
 
   // The new pane is not in herdr's pane list until the next poll. The console
   // must not go blank or jump to another workspace in the meantime: the tab
@@ -916,14 +945,23 @@ test("a split keeps the view where it was, and selects the new pane at once", as
   await expect(page.locator('.strip .tab[data-pane-id="w1:p9"]')).toHaveCount(0);
 });
 
-test("a phone splits downwards", async ({ page }) => {
+test("a phone's + adds a tab, exactly as it does on a desktop", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 780 });
   await installBridge(page);
   await page.goto("/");
-  await page.locator("#herdr-new-pane").click();
-  const sent = (page as Page & { splits?: string[] }).splits ?? [];
-  await expect.poll(() => sent).toEqual([JSON.stringify({ direction: "down" })]);
+
+  // The phone changes the layout, not the meaning of the button.
+  await page.locator('#herdr-new-tab').click();
+  const before = await page.locator(".strip .tab").count();
+  const tabs = (page as Page & { tabs?: string[] }).tabs ?? [];
+  const splits = (page as Page & { splits?: string[] }).splits ?? [];
+  await expect.poll(() => tabs.length).toBe(1);
+  expect(splits).toEqual([]);
+  await expect(page.locator(".strip .tab")).toHaveCount(before + 1);
 });
+
+
+
 
 test("a split offers both directions and a close from the pane menu", async ({ page }) => {
   await installBridge(page);

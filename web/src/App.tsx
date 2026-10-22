@@ -18,6 +18,7 @@ import {
   fetchSelfRelease,
   hostHas,
   resizePane,
+  createTab,
   splitPane,
   fetchStatus,
   fetchWorkspaces,
@@ -291,39 +292,39 @@ export function App() {
     setPicker(false);
   }, []);
 
-  const newPane = useCallback(async (): Promise<void> => {
-    if (paneId === null) {
+  const newTab = useCallback(async (): Promise<void> => {
+    const workspace = shownWorkspaceId ?? workspaceRef.current ?? null;
+    if (workspace === null) {
       return;
     }
-    const source = panes.find((pane) => pane.id === paneId);
-    const created = await splitPane(paneId, narrow ? "down" : "right");
+    const created = await createTab(workspace);
     if (created === null) {
       return;
     }
-    // herdr will report the new pane on the next poll, but the console must not
-    // sit blank until then: the tab strip, the tiles and the prompt all resolve
-    // against the pane list, so the new pane joins it immediately.
-    const layoutOfNew = await fetchLayout(created);
+    // herdr reports the new tab on the next poll, and the strip is built from the
+    // pane list, so the pane joins it at once instead of the strip staying short
+    // for a second.
     setPanes((current) =>
-      current.some((pane) => pane.id === created)
+      current.some((pane) => pane.id === created.paneId)
         ? current
         : [
             ...current,
             {
-              id: created,
-              workspaceId: source?.workspaceId ?? workspaceRef.current ?? "",
-              tabId: layoutOfNew?.tabId ?? source?.tabId ?? "",
+              id: created.paneId,
+              workspaceId: created.workspaceId || workspace,
+              tabId: created.tabId,
               focused: false,
               agentStatus: "unknown",
               cwd: "",
             },
           ],
     );
-    setPaneId(created);
+    setPaneId(created.paneId);
+    const layoutOfNew = await fetchLayout(created.paneId);
     if (layoutOfNew !== null) {
       setLayout(layoutOfNew);
     }
-  }, [paneId, narrow, panes]);
+  }, [shownWorkspaceId]);
 
   const closeActivePane = useCallback(async (target: string): Promise<void> => {
     if (!(await closePane(target))) {
@@ -442,7 +443,7 @@ export function App() {
             workspaceName={activeWorkspace?.name ?? ""}
             activeTabId={activePane?.tabId ?? null}
             onSelect={openPaneId}
-            onNewPane={() => void newPane()}
+            onNewTab={() => void newTab()}
             canSplit={paneId !== null}
             onMenu={(id, x, y) => {
               const pane = panes.find((candidate) => candidate.id === id);
