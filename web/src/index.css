@@ -2233,3 +2233,31 @@ body::before {
   font-size: var(--step-fine);
   white-space: pre-wrap;
 }
+
+/* Left over from the multiplexer herdr replaced: shown, but folded away. */
+.hostpanel__legacy {
+  margin-top: 12px;
+  border-top: var(--rule-w) solid var(--rule);
+  padding-top: 8px;
+  font-size: var(--step-fine);
+}
+
+.hostpanel__legacy summary {
+  cursor: pointer;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.hostpanel__legacy ul {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 3px;
+}
+
+.hostpanel__legacy .hostpanel__act {
+  width: 100%;
+  text-align: left;
+}

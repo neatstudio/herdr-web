@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  createWorkspace,
   fetchFleet,
   fetchHerdrHost,
+  fetchTmuxSessions,
+  type TmuxSession,
   runHostAction,
   updateConsole,
   rollbackConsole,
@@ -27,6 +30,10 @@ type Props = {
 export function HerdrPanel({ open, onClose, onDispatch, consoleVersion }: Props) {
   const [host, setHost] = useState<HerdrHost | null>(null);
   const [fleet, setFleet] = useState<Fleet | null>(null);
+  // Sessions left behind by the multiplexer this console replaced. They are not
+  // workspaces and do not belong in "new workspace"; they are host state, and the
+  // panel is where host state is shown.
+  const [tmux, setTmux] = useState<TmuxSession[]>([]);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; command: string; output: string } | null>(null);
 
@@ -39,6 +46,8 @@ export function HerdrPanel({ open, onClose, onDispatch, consoleVersion }: Props)
     ]);
     setHost(hostResult);
     setFleet(fleetResult);
+    const sessions = await fetchTmuxSessions().catch(() => null);
+    setTmux(sessions?.sessions ?? []);
   }, []);
 
   useEffect(() => {
@@ -180,6 +189,53 @@ export function HerdrPanel({ open, onClose, onDispatch, consoleVersion }: Props)
             </button>
           </section>
         )}
+
+            {tmux.length > 0 && (
+              // Collapsed, and only when sessions exist: this is what is left
+              // over from the multiplexer herdr replaced, not part of the
+              // everyday flow. Opening one starts a pane here; tmux attach adds a
+              // client, so a session someone else is watching is taken over (-d)
+              // rather than shared and resized under them.
+              <details className="hostpanel__legacy" id="hostpanel-tmux">
+                <summary>legacy tmux sessions · {tmux.length}</summary>
+                <p className="hostpanel__note">
+                  herdr runs no tmux. A session here is opened by a pane running <code>tmux attach</code>;
+                  one another terminal has open is taken over, which detaches that terminal.
+                </p>
+                <ul>
+                  {tmux.map((session) => (
+                    <li key={session.name}>
+                      <button
+                        type="button"
+                        className="hostpanel__act"
+                        data-session={session.name}
+                        onClick={() => {
+                          const watched = session.attached > 0;
+                          if (watched) {
+                            const ok = window.confirm(
+                              `${session.name} is open in ${session.attached} other terminal${session.attached === 1 ? "" : "s"}.\n\n` +
+                                "Taking it over detaches them; the agent inside keeps running.",
+                            );
+                            if (!ok) {
+                              return;
+                            }
+                          }
+                          void createWorkspace({
+                            label: session.name,
+                            command: ["tmux", "attach", ...(watched ? ["-d"] : []), "-t", session.name],
+                          }).then(() => refresh());
+                        }}
+                      >
+                        {session.name}
+                        <span className="hostpanel__dim">
+                          {session.attached > 0 ? ` · take over (${session.attached})` : " · open"}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
 
         {host === null ? (
           <p className="hostpanel__note">asking this machine…</p>

@@ -1675,22 +1675,9 @@ test("ctrl+c interrupts the pane, but copies when something is selected", async 
   expect(JSON.parse(keyPosts[1])).toEqual({ keys: ["ctrl+d"] });
 });
 
-test("a workspace can be made, and a running tmux session taken over", async ({ page }) => {
+test("a workspace can be made without anything else in the way", async ({ page }) => {
   await installBridge(page);
   const created: string[] = [];
-  await page.route("**/api/v1/herdr/tmux", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        available: true,
-        sessions: [
-          { name: "work", windows: 2, attached: 0 },
-          { name: "codex", windows: 1, attached: 1 },
-        ],
-      }),
-    }),
-  );
   await page.route("**/api/v1/herdr/workspaces", async (route) => {
     if (route.request().method() !== "POST") {
       return route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
@@ -1709,33 +1696,64 @@ test("a workspace can be made, and a running tmux session taken over", async ({ 
   await page.locator("#herdr-new-workspace").click();
   const sheet = page.locator(".sheet");
   await expect(sheet).toBeVisible();
-  // The heading says what it is, and the note says what attaching does: herdr has
-  // no tmux of its own, so a session is a pane running tmux attach.
-  await expect(sheet).toContainText("tmux sessions on this machine");
+  // A workspace is a name and a directory. Sessions left over from another
+  // multiplexer are not part of making one.
+  await expect(sheet).not.toContainText("tmux");
 
   await page.locator("#workspace-label").fill("made");
   await page.locator("#workspace-cwd").fill("/tmp");
   await page.locator("#workspace-create").click();
   await expect.poll(() => created).toEqual([JSON.stringify({ label: "made", cwd: "/tmp" })]);
   await expect(page.locator(".sheet")).toHaveCount(0);
-
-  // herdr has no tmux integration, so a session is opened by a pane running
-  // tmux attach. One nobody is watching opens as it is...
-  await page.locator("#herdr-new-workspace").click();
-  await page.locator('.newws__session[data-session="work"]').click();
-  await expect
-    .poll(() => created[1] ?? "")
-    .toBe(JSON.stringify({ command: ["tmux", "attach", "-t", "work"] }));
-
-  // ...and one that is already open is taken over, which detaches the terminal
-  // that has it: sharing it would resize the session to this pane instead.
-  await page.locator("#herdr-new-workspace").click();
-  page.once("dialog", (dialog) => void dialog.accept());
-  await page.locator('.newws__session[data-session="codex"]').click();
-  await expect
-    .poll(() => created[2] ?? "")
-    .toBe(JSON.stringify({ command: ["tmux", "attach", "-d", "-t", "codex"] }));
 });
+
+test("legacy tmux sessions are folded away in the host panel, not in a workspace", async ({ page }) => {
+  await installBridge(page);
+  const created: string[] = [];
+  await page.route("**/api/v1/herdr/tmux", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        available: true,
+        sessions: [
+          { name: "work", windows: 2, attached: 0 },
+          { name: "kimi2", windows: 1, attached: 2 },
+        ],
+      }),
+    }),
+  );
+  await page.route("**/api/v1/herdr/workspaces", async (route) => {
+    if (route.request().method() !== "POST") {
+      return route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
+    }
+    created.push(route.request().postData() ?? "");
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, workspaceId: "w1", paneId: "w1:p1" }),
+    });
+  });
+  await page.goto("/");
+
+  // Left over from the multiplexer herdr replaced: shown in the panel, folded
+  // away, and absent from the flow that makes a workspace.
+  await page.locator("#herdr-host-open").click();
+  const legacy = page.locator("#hostpanel-tmux");
+  await expect(legacy).toBeVisible();
+  await expect(legacy).not.toHaveAttribute("open", "");
+  await legacy.locator("summary").click();
+
+  await legacy.locator('.hostpanel__act[data-session="work"]').click();
+  await expect.poll(() => created[0] ?? "").toBe(JSON.stringify({ label: "work", command: ["tmux", "attach", "-t", "work"] }));
+
+  // One somebody else is watching is taken over rather than shared and resized
+  // under them, which is what made an agent look dead while it was running.
+  page.once("dialog", (dialog) => void dialog.accept());
+  await legacy.locator('.hostpanel__act[data-session="kimi2"]').click();
+  await expect.poll(() => created[1] ?? "").toBe(JSON.stringify({ label: "kimi2", command: ["tmux", "attach", "-d", "-t", "kimi2"] }));
+});
+
 
 test("the panel shows which consoles are in the fleet and which build each runs", async ({ page }) => {
   await installBridge(page);

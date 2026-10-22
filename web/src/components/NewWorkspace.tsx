@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { createWorkspace, fetchTmuxSessions, type TmuxSession } from "@/lib/herdr";
+import { createWorkspace } from "@/lib/herdr";
 
 type Props = {
   open: boolean;
@@ -9,38 +9,17 @@ type Props = {
 };
 
 /**
- * Making a workspace, and taking over a tmux session that is already running.
+ * Making a workspace: a name, and where it starts.
  *
- * herdr has no tmux integration, so an existing tmux session is taken over the
- * way a terminal would: the new workspace's pane runs `tmux attach` and the
- * session appears inside it. That is the difference between a console that
- * replaces what was running and one that can pick it up.
+ * Nothing else belongs here. Sessions that happen to be running under another
+ * multiplexer are a migration leftover, not a way to make a herdr workspace, and
+ * they live in the host panel where legacy state belongs.
  */
 export function NewWorkspace({ open, onClose, onCreated }: Props) {
   const [label, setLabel] = useState("");
   const [cwd, setCwd] = useState("");
-  const [sessions, setSessions] = useState<TmuxSession[]>([]);
-  const [tmuxMissing, setTmuxMissing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    let cancelled = false;
-    setProblem("");
-    void fetchTmuxSessions().then((result) => {
-      if (cancelled || result === null) {
-        return;
-      }
-      setSessions(result.sessions);
-      setTmuxMissing(!result.available);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [open]);
 
   useEffect(() => {
     if (!open) {
@@ -60,34 +39,13 @@ export function NewWorkspace({ open, onClose, onCreated }: Props) {
     return null;
   }
 
-  async function takeOver(session: TmuxSession): Promise<void> {
-    // tmux attach does not take a session over, it adds a client to it, and tmux
-    // then sizes the window to the client that was used last: a session that is
-    // open in a wide terminal arrives here squashed, and the agent inside looks
-    // broken rather than moved. -d detaches the other clients first, which is what
-    // "take over" means, and says so before it does it.
-    const watched = session.attached > 0;
-    if (watched) {
-      const confirmed = window.confirm(
-        `${session.name} is open in ${session.attached} other terminal${session.attached === 1 ? "" : "s"}.\n\n` +
-          "Taking it over detaches them, and the session is resized to this pane. " +
-          "The agent inside keeps running either way.",
-      );
-      if (!confirmed) {
-        return;
-      }
-    }
-    await create(["tmux", "attach", ...(watched ? ["-d"] : []), "-t", session.name]);
-  }
-
-  async function create(command?: string[]): Promise<void> {
+  async function create(): Promise<void> {
     setBusy(true);
     setProblem("");
     try {
       const made = await createWorkspace({
         label: label.trim() === "" ? undefined : label.trim(),
         cwd: cwd.trim() === "" ? undefined : cwd.trim(),
-        command,
       });
       if (made === null) {
         setProblem("the workspace could not be created");
@@ -158,36 +116,6 @@ export function NewWorkspace({ open, onClose, onCreated }: Props) {
         >
           create
         </button>
-
-        <div className="newws__tmux">
-          <div className="newws__head">tmux sessions on this machine</div>
-          <p className="newws__note">
-            herdr runs no tmux: a pane attaches one. A session nobody is watching opens as it is; one
-            that is already open has to be taken over, which detaches the terminal that has it.
-          </p>
-          {tmuxMissing ? (
-            <p className="newws__note">tmux is not installed here.</p>
-          ) : sessions.length === 0 ? (
-            <p className="newws__note">no tmux sessions are running.</p>
-          ) : (
-            sessions.map((session) => (
-              <button
-                key={session.name}
-                type="button"
-                className="newws__session"
-                data-session={session.name}
-                disabled={busy}
-                onClick={() => void takeOver(session)}
-              >
-                <span>{session.name}</span>
-                <span className="newws__dim">
-                  {session.windows} win{session.windows === 1 ? "" : "s"}
-                  {session.attached > 0 ? ` · take over (${session.attached} attached)` : " · open"}
-                </span>
-              </button>
-            ))
-          )}
-        </div>
 
         {problem !== "" && (
           <p className="newws__note newws__note--bad" role="status">
