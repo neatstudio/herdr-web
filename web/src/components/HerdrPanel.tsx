@@ -12,6 +12,8 @@ import {
 type Props = {
   open: boolean;
   onClose: () => void;
+  /** Opens the sheet that sends one prompt to several machines. */
+  onDispatch: () => void;
   /** The console's own build, so a second copy on another host is tellable apart. */
   consoleVersion: string;
 };
@@ -22,7 +24,7 @@ type Props = {
  * one fixed command on the host, so this panel never builds a command from what
  * is typed here.
  */
-export function HerdrPanel({ open, onClose, consoleVersion }: Props) {
+export function HerdrPanel({ open, onClose, onDispatch, consoleVersion }: Props) {
   const [host, setHost] = useState<HerdrHost | null>(null);
   const [fleet, setFleet] = useState<Fleet | null>(null);
   const [busy, setBusy] = useState(false);
@@ -173,6 +175,9 @@ export function HerdrPanel({ open, onClose, consoleVersion }: Props) {
                 ))
               )}
             </ul>
+            <button type="button" id="dispatch-open" className="hostpanel__act" onClick={onDispatch}>
+              send a job to the fleet
+            </button>
           </section>
         )}
 

@@ -92,6 +92,11 @@ func TestFleetFollowsANewerHubBuild(t *testing.T) {
 	}))
 	t.Cleanup(hub.Close)
 
+	// The official source is real in production and must not be reached from a
+	// test: it is stubbed to a dead address.
+	previousOfficial := selfOfficialSource
+	selfOfficialSource = "http://127.0.0.1:1/release"
+	t.Cleanup(func() { selfOfficialSource = previousOfficial })
 	var restarts int
 	previousRestart := fleetRestart
 	fleetRestart = func() error {
@@ -134,6 +139,11 @@ func TestFleetDoesNotFollowAnOlderHubBuild(t *testing.T) {
 	}))
 	t.Cleanup(hub.Close)
 
+	// The official source is real in production and must not be reached from a
+	// test: it is stubbed to a dead address.
+	previousOfficial := selfOfficialSource
+	selfOfficialSource = "http://127.0.0.1:1/release"
+	t.Cleanup(func() { selfOfficialSource = previousOfficial })
 	previousRestart := fleetRestart
 	fleetRestart = func() error {
 		// A restart here would replace a good console with a worse one.
@@ -266,6 +276,11 @@ func TestFleetDoesNotAdoptAnOlderBuildFromAPeer(t *testing.T) {
 	}))
 	t.Cleanup(peer.Close)
 
+	// The official source is real in production and must not be reached from a
+	// test: it is stubbed to a dead address.
+	previousOfficial := selfOfficialSource
+	selfOfficialSource = "http://127.0.0.1:1/release"
+	t.Cleanup(func() { selfOfficialSource = previousOfficial })
 	previousRestart := fleetRestart
 	fleetRestart = func() error {
 		t.Fatal("restarted for an older build")

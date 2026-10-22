@@ -4,6 +4,7 @@ import { PickerSheet } from "@/components/PickerSheet";
 import { Sidebar } from "@/components/Sidebar";
 import { FileViewer } from "@/components/FileViewer";
 import { HerdrPanel } from "@/components/HerdrPanel";
+import { DispatchSheet } from "@/components/DispatchSheet";
 import { NewWorkspace } from "@/components/NewWorkspace";
 import { TabStage } from "@/components/TabStage";
 import { Masthead } from "@/components/Masthead";
@@ -12,6 +13,7 @@ import { PromptBar } from "@/components/PromptBar";
 import {
   closePane,
   fetchAllPanes,
+  fetchFleet,
   fetchLayout,
   fetchSelfRelease,
   hostHas,
@@ -19,6 +21,7 @@ import {
   splitPane,
   fetchStatus,
   fetchWorkspaces,
+  type Fleet,
   type HerdrPane,
   type HerdrStatus,
   type HerdrWorkspace,
@@ -93,6 +96,8 @@ export function App() {
   const [offline, setOffline] = useState(false);
   const [hostPanel, setHostPanel] = useState(false);
   const [newWorkspace, setNewWorkspace] = useState(false);
+  const [dispatch, setDispatch] = useState(false);
+  const [fleetView, setFleetView] = useState<Fleet | null>(null);
   const [narrow, setNarrow] = useState(false);
   // Panes whose working directory is not on this host: herdr can drive panes on
   // another machine over SSH, and a preview there cannot work from here.
@@ -176,6 +181,18 @@ export function App() {
 
   // The console knows its own build without asking herdr, so the masthead still
   // says which build this is while the daemon is restarting.
+  useEffect(() => {
+    let cancelled = false;
+    void fetchFleet().then((view) => {
+      if (!cancelled) {
+        setFleetView(view);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     void fetchSelfRelease().then((release) => {
@@ -497,6 +514,7 @@ export function App() {
 
       <FileViewer path={openPath} onClose={() => setOpenPath(null)} />
 
+      <DispatchSheet open={dispatch} onClose={() => setDispatch(false)} fleet={fleetView} />
       <NewWorkspace
         open={newWorkspace}
         onClose={() => setNewWorkspace(false)}
@@ -510,6 +528,7 @@ export function App() {
       <HerdrPanel
         open={hostPanel}
         onClose={() => setHostPanel(false)}
+        onDispatch={() => setDispatch(true)}
         consoleVersion={selfVersion !== "" ? selfVersion : status?.consoleVersion ?? ""}
       />
 

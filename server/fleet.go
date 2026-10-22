@@ -422,8 +422,44 @@ func (s *Server) fleetSources() []selfCandidate {
 	for _, seed := range s.fleetSeeds {
 		add(seed, "")
 	}
-	add(selfSourceURL(""), selfOfficialVersion(context.Background()))
+	// The official source is not a console: its URL has no /release suffix, and
+	// treating it like one turned it into a dispatch target.
+	official := selfSourceURL("")
+	if !seen[official] {
+		candidates = append(candidates, selfCandidate{Source: official, Version: selfOfficialVersion(context.Background())})
+	}
 	return candidates
+}
+
+// fleetConsoles lists the machines this console can dispatch work to: peers and
+// seeds, never the release host.
+func (s *Server) fleetConsoles() []string {
+	consoles := make([]string, 0, len(s.fleetSeeds)+4)
+	seen := map[string]bool{}
+	add := func(url string) {
+		base := fleetBase(url)
+		if base == "" || seen[base] {
+			return
+		}
+		seen[base] = true
+		consoles = append(consoles, base)
+	}
+	s.fleet.mu.Lock()
+	peers := make([]fleetPeer, 0, len(s.fleet.peers))
+	for _, peer := range s.fleet.peers {
+		peers = append(peers, peer)
+	}
+	s.fleet.mu.Unlock()
+	sortFleetPeers(peers)
+	for _, peer := range peers {
+		if peer.Addr != "" {
+			add("http://" + peer.Addr)
+		}
+	}
+	for _, seed := range s.fleetSeeds {
+		add(seed)
+	}
+	return consoles
 }
 
 // fleetFollowOnce takes the newest build any source publishes, if it is newer

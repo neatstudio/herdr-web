@@ -2152,3 +2152,66 @@ body::before {
 .hostpanel__fleet-addr {
   color: var(--ink);
 }
+
+/* Dispatching one prompt to several machines: targets, then what came back. */
+.dispatch__targets {
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 3px;
+}
+
+.dispatch__targets label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--step-fine);
+}
+
+.dispatch__results {
+  margin-top: 14px;
+  border-top: var(--rule-w) solid var(--rule);
+  padding-top: 10px;
+}
+
+.dispatch__entry {
+  margin-bottom: 10px;
+}
+
+.dispatch__entry header {
+  font-size: var(--step-fine);
+  color: var(--ink-faint);
+}
+
+.dispatch__entry ul {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+}
+
+.dispatch__entry li {
+  display: grid;
+  gap: 2px;
+  padding: 5px 7px;
+  border: var(--rule-w) solid var(--rule);
+  font-size: var(--step-fine);
+}
+
+.dispatch__host {
+  color: var(--ink);
+}
+
+.dispatch__status[data-status="bad"] {
+  color: var(--warn, var(--accent));
+}
+
+.dispatch__entry pre {
+  margin: 4px 0 0;
+  max-height: 200px;
+  overflow: auto;
+  font-size: var(--step-fine);
+  white-space: pre-wrap;
+}

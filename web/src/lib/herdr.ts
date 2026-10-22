@@ -554,6 +554,71 @@ export async function updateConsole(from?: string): Promise<SelfUpdate | null> {
   return raw as SelfUpdate;
 }
 
+/** A job in flight on one machine. */
+export type DispatchedJob = {
+  host: string;
+  local: string;
+  jobId: string;
+  workspaceId: string;
+  branch?: string;
+  /** herdr's agent status: idle, working, blocked, done, unknown. */
+  status?: string;
+  output?: string;
+  error?: string;
+};
+
+export type Dispatch = {
+  id: string;
+  at: number;
+  prompt: string;
+  jobs: DispatchedJob[];
+};
+
+/** The agent kinds this host can start, from what is installed. */
+export async function fetchAgentKinds(): Promise<string[]> {
+  const raw = await getJSON("/api/v1/herdr/agents");
+  if (raw === null || typeof raw !== "object") {
+    return [];
+  }
+  const kinds = (raw as Record<string, unknown>).kinds;
+  return Array.isArray(kinds) ? kinds.filter((kind): kind is string => typeof kind === "string") : [];
+}
+
+/**
+ * Send one prompt to several machines.
+ *
+ * Each machine starts its own agent in its own workspace (a git worktree when a
+ * repository is given), so the work does not share a checkout and the state does
+ * not live on the console that sent it.
+ */
+export async function dispatchJob(options: {
+  prompt: string;
+  cwd?: string;
+  branch?: string;
+  kind: string;
+  targets: string[];
+}): Promise<{ ok: boolean; dispatch: Dispatch } | { error: string } | null> {
+  const raw = await postJSONResult("/api/v1/fleet/job", options);
+  if (raw === null) {
+    return null;
+  }
+  const record = raw as Record<string, unknown>;
+  if (typeof record.error === "object" && record.error !== null) {
+    return { error: String((record.error as Record<string, unknown>).message ?? "the dispatch failed") };
+  }
+  return { ok: true, dispatch: record.dispatch as Dispatch };
+}
+
+/** Every dispatch this console sent, with each machine's current status. */
+export async function fetchDispatches(): Promise<Dispatch[]> {
+  const raw = await getJSON("/api/v1/fleet/jobs");
+  if (raw === null || typeof raw !== "object") {
+    return [];
+  }
+  const dispatches = (raw as Record<string, unknown>).dispatches;
+  return Array.isArray(dispatches) ? (dispatches as Dispatch[]) : [];
+}
+
 /** One console in the fleet, as the hub knows it. */
 export type FleetPeer = {
   id: string;

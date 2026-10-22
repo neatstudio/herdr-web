@@ -820,6 +820,20 @@ test("a path in the output opens its preview, and Escape closes it", async ({ pa
       ),
     });
   });
+  // The image itself: without this the element is removed as soon as the real
+  // request fails, which is what the preview does when a file cannot be read.
+  // A real 1x1 PNG: the preview is an <img>, and a body the browser cannot decode
+  // is what the element's own error handler treats as "the file could not be read".
+  await page.route(/\/api\/v1\/herdr\/file\/raw/, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "image/png",
+      body: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+        "base64",
+      ),
+    }),
+  );
   await page.goto("/");
 
   // Two paths in a line are two separate links, and prose is not.
@@ -1787,4 +1801,75 @@ test("the console can go back to the build it replaced", async ({ page }) => {
   // An update that starts and then misbehaves is the failure the checksum cannot
   // catch, so the panel says what to do next.
   await expect(page.locator(".hostpanel__result")).toContainText("previous build restored");
+});
+
+test("one prompt can be sent to the whole fleet", async ({ page }) => {
+  await installBridge(page);
+  await page.route("**/api/v1/fleet", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        hub: false,
+        seeds: ["http://100.89.0.206:5000"],
+        follow: true,
+        self: { id: "me", addr: "100.89.0.116:5000", version: "v0.6.0", platform: "darwin-arm64" },
+        peers: [
+          { id: "tw1", addr: "100.89.0.4:5000", version: "v0.6.0", platform: "linux-amd64", seen: 0, stale: false },
+          { id: "m9", addr: "100.89.0.9:5000", version: "v0.6.0", platform: "linux-amd64", seen: 0, stale: false },
+        ],
+      }),
+    }),
+  );
+  await page.route("**/api/v1/herdr/agents", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ kinds: ["claude", "opencode"] }) }),
+  );
+  await page.route("**/api/v1/fleet/jobs", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ dispatches: [] }) }),
+  );
+  const sent: string[] = [];
+  await page.route("**/api/v1/fleet/job", async (route) => {
+    sent.push(route.request().postData() ?? "");
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        dispatch: {
+          id: "job-1",
+          at: 0,
+          prompt: "summarise the changelog",
+          jobs: [
+            { host: "http://100.89.0.4:5000", local: "w1:p1", jobId: "w1:p1", workspaceId: "w1", status: "working", output: "reading files" },
+            { host: "http://100.89.0.9:5000", local: "w2:p1", jobId: "w2:p1", workspaceId: "w2", status: "blocked", output: "may I rewrite this file?" },
+          ],
+        },
+      }),
+    });
+  });
+
+  await page.goto("/");
+  await page.locator("#herdr-host-open").click();
+  await page.locator("#dispatch-open").click();
+
+  const sheet = page.locator('.sheet[aria-label="Dispatch a job"]');
+  await expect(sheet).toBeVisible();
+  await expect(page.locator("#dispatch-kind")).toHaveValue("claude");
+  // Everything known is chosen by default: excluding a machine is the rarer intent.
+  await expect(sheet.locator('input[data-target="100.89.0.4:5000"]')).toBeChecked();
+  await expect(sheet.locator('input[data-target="100.89.0.9:5000"]')).toBeChecked();
+
+  await page.locator("#dispatch-prompt").fill("summarise the changelog");
+  await page.locator("#dispatch-send").click();
+  await expect.poll(() => sent.length).toBe(1);
+  expect(JSON.parse(sent[0])).toMatchObject({
+    prompt: "summarise the changelog",
+    kind: "claude",
+    targets: ["http://100.89.0.4:5000", "http://100.89.0.9:5000"],
+  });
+
+  // The status is the point: blocked means the agent wants a human, and that is
+  // what makes a fleet worth watching from one place.
+  await expect(sheet.locator('[data-host="http://100.89.0.9:5000"]')).toContainText("blocked");
+  await expect(sheet.locator('[data-host="http://100.89.0.4:5000"]')).toContainText("working");
 });

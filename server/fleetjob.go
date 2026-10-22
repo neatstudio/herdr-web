@@ -82,12 +82,7 @@ func (s *Server) handleDispatchJob(w http.ResponseWriter, r *http.Request) {
 	}
 	targets := request.Targets
 	if len(targets) == 0 {
-		for _, candidate := range s.fleetSources() {
-			if !strings.Contains(candidate.Source, "/release") {
-				continue
-			}
-			targets = append(targets, fleetBase(candidate.Source))
-		}
+		targets = s.fleetConsoles()
 	}
 	if len(targets) == 0 {
 		writeError(w, http.StatusConflict, "no_targets",
