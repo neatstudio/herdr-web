@@ -51,7 +51,13 @@ export function Masthead({ status, consoleVersion: build, choice, onChoice, onHo
         onClick={onHost}
       >
         <span className="signal" data-tone={live ? "working" : "blocked"} aria-hidden />
-        <span id="herdr-daemon-label">{label}</span>
+        {/* Split so a phone can drop the build and keep the machine: the name of
+            the machine is why a tab exists, the build is in the panel. */}
+        <span id="herdr-daemon-label">
+          <span className="masthead__host">{octet === "" ? "herdr" : `herdr(${octet})`}</span>
+          {" "}
+          <span className="masthead__version">{consoleVersion}</span>
+        </span>
         {protocol !== undefined && (
           <span
             className="cluster__dim"

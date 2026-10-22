@@ -2026,6 +2026,15 @@ body::before {
   }
 }
 
+/* A phone keeps the machine and drops the build: the label is a button, and the
+   build is the first thing in the panel it opens. Truncating both is worse than
+   showing one. */
+@media (max-width: 700px) {
+  .masthead__version {
+    display: none;
+  }
+}
+
 @media (max-width: 900px) {
   .body {
     grid-template-columns: minmax(0, 1fr);

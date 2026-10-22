@@ -1940,3 +1940,16 @@ test("on a phone the layout switch is a control you can actually hit", async ({ 
   await page.locator("#herdr-display-fit").click();
   await expect(page.locator(".scope__scroll")).toHaveAttribute("data-display", "fit");
 });
+
+test("a phone keeps the machine name and drops the build from the masthead", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installBridge(page);
+  await page.goto("/");
+
+  // The label is a button that opens the panel, and the build is the first thing
+  // in that panel: truncating "herdr(9)v0.6.6" to "herdr(9)v0.6." helps nobody.
+  await expect(page.locator(".masthead__host")).toBeVisible();
+  await expect(page.locator(".masthead__version")).toBeHidden();
+  const label = await page.locator("#herdr-daemon-label").innerText();
+  expect(label.trim()).not.toContain("…");
+});
