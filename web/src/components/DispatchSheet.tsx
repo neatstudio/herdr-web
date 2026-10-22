@@ -37,9 +37,13 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
     if (!open) {
       return;
     }
-    void fetchAgentKinds().then((list) => {
-      setKinds(list);
-      setKind((current) => current || list[0] || "");
+    // The agents to choose from are the ones the fleet can start, not the ones
+    // this machine happens to have: the hub of a fleet often runs no agent at all.
+    void fetchAgentKinds().then((local) => {
+      const fromFleet = (fleet?.peers ?? []).flatMap((peer) => peer.agents ?? []);
+      const all = Array.from(new Set([...local, ...fromFleet])).sort();
+      setKinds(all);
+      setKind((current) => current || all[0] || "");
     });
     void fetchDispatches().then(setDispatches);
   }, [open]);

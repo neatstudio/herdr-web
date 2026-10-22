@@ -58,7 +58,7 @@ type fleetPeer struct {
 	Platform string `json:"platform"`
 	// Agents are the agent kinds this machine can start. A job has to run where
 	// its agent exists, and that is not the same machine everywhere.
-	Agents []string `json:"agents,omitempty"`
+	Agents []string `json:"agents"`
 	// Seen is unix seconds; each console stamps what it hears with its own clock,
 	// which is enough for a list whose only question is "has this gone quiet".
 	Seen int64 `json:"seen"`
@@ -599,12 +599,16 @@ func (s *Server) handleFleet(w http.ResponseWriter, r *http.Request) {
 
 	out := make([]map[string]any, 0, len(peers))
 	for _, peer := range peers {
+		agents := peer.Agents
+		if agents == nil {
+			agents = []string{}
+		}
 		out = append(out, map[string]any{
 			"id":       peer.ID,
 			"addr":     peer.Addr,
 			"version":  peer.Version,
 			"platform": peer.Platform,
-			"agents":   peer.Agents,
+			"agents":   agents,
 			"seen":     peer.Seen,
 			"stale":    now-peer.Seen > int64(fleetPeerStaleAfter/time.Second),
 		})
