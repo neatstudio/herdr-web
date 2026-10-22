@@ -296,6 +296,41 @@ func (s *Server) fleetExchange(ctx context.Context, target string, payload []byt
 	s.mergeFleet(answer.Peers)
 }
 
+// pruneFleetLocked keeps one row per address.
+//
+// Rows can collide on an address when a machine changes its name or when an old
+// observation keeps circulating, and picking by timestamp alone is wrong: clocks
+// differ across a tailnet by more than the interval between two observations. The
+// newer build wins, because a build number is the same on every clock, and only
+// then the newer observation.
+func (s *Server) pruneFleetLocked(now int64) {
+	byAddr := map[string]string{}
+	for id, peer := range s.fleet.peers {
+		if peer.Addr == "" {
+			continue
+		}
+		best, found := byAddr[peer.Addr]
+		if !found {
+			byAddr[peer.Addr] = id
+			continue
+		}
+		other := s.fleet.peers[best]
+		switch {
+		case selfNewer(peer.Version, other.Version):
+			delete(s.fleet.peers, best)
+			byAddr[peer.Addr] = id
+		case selfNewer(other.Version, peer.Version):
+			delete(s.fleet.peers, id)
+		case peer.Seen > other.Seen:
+			delete(s.fleet.peers, best)
+			byAddr[peer.Addr] = id
+		default:
+			delete(s.fleet.peers, id)
+		}
+	}
+	_ = now
+}
+
 // mergeFleet takes the newest observation of every peer, never its own row, and
 // forgets machines that have been silent for a week.
 func (s *Server) mergeFleet(incoming []fleetPeer) {
@@ -314,27 +349,9 @@ func (s *Server) mergeFleet(incoming []fleetPeer) {
 		if existing, found := s.fleet.peers[peer.ID]; found && existing.Seen > peer.Seen {
 			continue
 		}
-		// One row per address. A machine that reports a new name, or an older
-		// console that reported itself under another, must not appear twice: the
-		// newest observation of that address wins.
-		superseded := false
-		if peer.Addr != "" {
-			for id, known := range s.fleet.peers {
-				if id == peer.ID || known.Addr != peer.Addr {
-					continue
-				}
-				if known.Seen > peer.Seen {
-					superseded = true
-					break
-				}
-				delete(s.fleet.peers, id)
-			}
-		}
-		if superseded {
-			continue
-		}
 		s.fleet.peers[peer.ID] = peer
 	}
+	s.pruneFleetLocked(now)
 	for id, peer := range s.fleet.peers {
 		if now-peer.Seen > int64(fleetPeerForgetAfter/time.Second) {
 			delete(s.fleet.peers, id)

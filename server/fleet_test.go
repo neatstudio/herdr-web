@@ -329,3 +329,21 @@ func TestFleetKeepsOneRowPerAddress(t *testing.T) {
 		t.Fatalf("the newest row for an address was not kept: %v", console.fleet.peers)
 	}
 }
+
+func TestFleetKeepsTheHigherBuildAtOneAddress(t *testing.T) {
+	// Clocks disagree across a tailnet, so an address collision is settled by the
+	// build number first: a row every console can compare beats a timestamp only
+	// one of them trusts.
+	console := fleetTestServer(t)
+	now := time.Now().Unix()
+	console.mergeFleet([]fleetPeer{
+		{ID: "old", Addr: "100.89.0.4:5000", Version: "dev", Seen: now},
+		{ID: "VM-4", Addr: "100.89.0.4:5000", Version: "v0.5.1", Seen: now - 3600},
+	})
+	if _, found := console.fleet.peers["VM-4"]; !found {
+		t.Fatalf("the higher build lost the address: %v", console.fleet.peers)
+	}
+	if len(console.fleet.peers) != 1 {
+		t.Fatalf("peers = %v", console.fleet.peers)
+	}
+}
