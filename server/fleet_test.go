@@ -313,3 +313,19 @@ func TestRollbackWithoutAPreviousBuildSaysSo(t *testing.T) {
 		t.Fatalf("status = %d", recorder.Code)
 	}
 }
+
+func TestFleetKeepsOneRowPerAddress(t *testing.T) {
+	// The same machine reported under two names must not look like two machines.
+	console := fleetTestServer(t)
+	now := time.Now().Unix()
+	console.mergeFleet([]fleetPeer{
+		{ID: "old-name", Addr: "100.89.0.4:5000", Version: "dev", Seen: now - 100},
+		{ID: "VM-4", Addr: "100.89.0.4:5000", Version: "v0.5.0", Seen: now},
+	})
+	if len(console.fleet.peers) != 1 {
+		t.Fatalf("peers = %v", console.fleet.peers)
+	}
+	if _, found := console.fleet.peers["VM-4"]; !found {
+		t.Fatalf("the newest row for an address was not kept: %v", console.fleet.peers)
+	}
+}

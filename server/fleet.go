@@ -314,6 +314,25 @@ func (s *Server) mergeFleet(incoming []fleetPeer) {
 		if existing, found := s.fleet.peers[peer.ID]; found && existing.Seen > peer.Seen {
 			continue
 		}
+		// One row per address. A machine that reports a new name, or an older
+		// console that reported itself under another, must not appear twice: the
+		// newest observation of that address wins.
+		superseded := false
+		if peer.Addr != "" {
+			for id, known := range s.fleet.peers {
+				if id == peer.ID || known.Addr != peer.Addr {
+					continue
+				}
+				if known.Seen > peer.Seen {
+					superseded = true
+					break
+				}
+				delete(s.fleet.peers, id)
+			}
+		}
+		if superseded {
+			continue
+		}
 		s.fleet.peers[peer.ID] = peer
 	}
 	for id, peer := range s.fleet.peers {
