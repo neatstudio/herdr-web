@@ -1709,7 +1709,9 @@ test("a workspace can be made, and a running tmux session taken over", async ({ 
   await page.locator("#herdr-new-workspace").click();
   const sheet = page.locator(".sheet");
   await expect(sheet).toBeVisible();
-  await expect(sheet).toContainText("take over a tmux session");
+  // The heading says what it is, and the note says what attaching does: herdr has
+  // no tmux of its own, so a session is a pane running tmux attach.
+  await expect(sheet).toContainText("tmux sessions on this machine");
 
   await page.locator("#workspace-label").fill("made");
   await page.locator("#workspace-cwd").fill("/tmp");
@@ -1717,13 +1719,22 @@ test("a workspace can be made, and a running tmux session taken over", async ({ 
   await expect.poll(() => created).toEqual([JSON.stringify({ label: "made", cwd: "/tmp" })]);
   await expect(page.locator(".sheet")).toHaveCount(0);
 
-  // herdr has no tmux integration, so taking a session over is a pane running
-  // tmux attach — which is what makes an old session reachable again.
+  // herdr has no tmux integration, so a session is opened by a pane running
+  // tmux attach. One nobody is watching opens as it is...
   await page.locator("#herdr-new-workspace").click();
-  await page.locator('.newws__session[data-session="codex"]').click();
+  await page.locator('.newws__session[data-session="work"]').click();
   await expect
     .poll(() => created[1] ?? "")
-    .toBe(JSON.stringify({ command: ["tmux", "attach", "-t", "codex"] }));
+    .toBe(JSON.stringify({ command: ["tmux", "attach", "-t", "work"] }));
+
+  // ...and one that is already open is taken over, which detaches the terminal
+  // that has it: sharing it would resize the session to this pane instead.
+  await page.locator("#herdr-new-workspace").click();
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.locator('.newws__session[data-session="codex"]').click();
+  await expect
+    .poll(() => created[2] ?? "")
+    .toBe(JSON.stringify({ command: ["tmux", "attach", "-d", "-t", "codex"] }));
 });
 
 test("the panel shows which consoles are in the fleet and which build each runs", async ({ page }) => {

@@ -1728,6 +1728,24 @@ body::before {
   background: var(--paper);
 }
 
+/* A dialog, not a page: the full-screen sheet is for the picker, and stretching a
+   two-field form across a 3000px viewport is what it looks like. */
+.sheet--dialog {
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: color-mix(in srgb, var(--ink) 26%, transparent);
+}
+
+.sheet__panel {
+  width: min(30rem, 100%);
+  max-height: min(82vh, 100%);
+  overflow: auto;
+  background: var(--paper);
+  border: var(--rule-w) solid var(--rule-strong);
+  box-shadow: 0 16px 48px rgb(0 0 0 / 0.22);
+}
+
 .sheet__head {
   display: flex;
   align-items: center;

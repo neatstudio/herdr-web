@@ -101,7 +101,8 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
   }
 
   return (
-    <div className="sheet" role="dialog" aria-label="Dispatch a job" aria-modal="true">
+    <div className="sheet sheet--dialog" role="dialog" aria-label="Dispatch a job" aria-modal="true">
+      <div className="sheet__panel">
       <div className="sheet__head">
         <span className="sheet__title">send a job to the fleet</span>
         <button type="button" id="dispatch-close" className="sheet__close" onClick={onClose}>
@@ -236,6 +237,7 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
             ))}
           </section>
         )}
+      </div>
       </div>
     </div>
   );

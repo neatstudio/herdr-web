@@ -60,6 +60,26 @@ export function NewWorkspace({ open, onClose, onCreated }: Props) {
     return null;
   }
 
+  async function takeOver(session: TmuxSession): Promise<void> {
+    // tmux attach does not take a session over, it adds a client to it, and tmux
+    // then sizes the window to the client that was used last: a session that is
+    // open in a wide terminal arrives here squashed, and the agent inside looks
+    // broken rather than moved. -d detaches the other clients first, which is what
+    // "take over" means, and says so before it does it.
+    const watched = session.attached > 0;
+    if (watched) {
+      const confirmed = window.confirm(
+        `${session.name} is open in ${session.attached} other terminal${session.attached === 1 ? "" : "s"}.\n\n` +
+          "Taking it over detaches them, and the session is resized to this pane. " +
+          "The agent inside keeps running either way.",
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+    await create(["tmux", "attach", ...(watched ? ["-d"] : []), "-t", session.name]);
+  }
+
   async function create(command?: string[]): Promise<void> {
     setBusy(true);
     setProblem("");
@@ -86,7 +106,8 @@ export function NewWorkspace({ open, onClose, onCreated }: Props) {
   }
 
   return (
-    <div className="sheet" role="dialog" aria-label="New workspace" aria-modal="true">
+    <div className="sheet sheet--dialog" role="dialog" aria-label="New workspace" aria-modal="true">
+      <div className="sheet__panel">
       <div className="sheet__head">
         <span className="sheet__title">new workspace</span>
         <button type="button" id="workspace-close" className="sheet__close" onClick={onClose}>
@@ -139,7 +160,11 @@ export function NewWorkspace({ open, onClose, onCreated }: Props) {
         </button>
 
         <div className="newws__tmux">
-          <div className="newws__head">take over a tmux session</div>
+          <div className="newws__head">tmux sessions on this machine</div>
+          <p className="newws__note">
+            herdr runs no tmux: a pane attaches one. A session nobody is watching opens as it is; one
+            that is already open has to be taken over, which detaches the terminal that has it.
+          </p>
           {tmuxMissing ? (
             <p className="newws__note">tmux is not installed here.</p>
           ) : sessions.length === 0 ? (
@@ -152,12 +177,12 @@ export function NewWorkspace({ open, onClose, onCreated }: Props) {
                 className="newws__session"
                 data-session={session.name}
                 disabled={busy}
-                onClick={() => void create(["tmux", "attach", "-t", session.name])}
+                onClick={() => void takeOver(session)}
               >
                 <span>{session.name}</span>
                 <span className="newws__dim">
                   {session.windows} win{session.windows === 1 ? "" : "s"}
-                  {session.attached > 0 ? " · attached" : ""}
+                  {session.attached > 0 ? ` · take over (${session.attached} attached)` : " · open"}
                 </span>
               </button>
             ))
@@ -169,6 +194,7 @@ export function NewWorkspace({ open, onClose, onCreated }: Props) {
             {problem}
           </p>
         )}
+      </div>
       </div>
     </div>
   );
