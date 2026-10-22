@@ -2117,3 +2117,38 @@ body::before {
 .newws__note--bad {
   color: var(--warn, var(--accent));
 }
+
+/* The fleet list: peers, their builds, and whether a console still reports. */
+.hostpanel__fleet {
+  margin-top: 12px;
+  border-top: var(--rule-w) solid var(--rule);
+  padding-top: 10px;
+}
+
+.hostpanel__fleet-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-size: var(--step-fine);
+  color: var(--ink-faint);
+}
+
+.hostpanel__fleet-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+}
+
+.hostpanel__fleet-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: var(--step-fine);
+}
+
+.hostpanel__fleet-addr {
+  color: var(--ink);
+}

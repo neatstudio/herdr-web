@@ -52,10 +52,21 @@ func writeBadGateway(w http.ResponseWriter, code string, err error) {
 type Server struct {
 	socketPath string
 	webFS      fs.FS
+	// fleet is the hub's peer list; fleetHub is the console this one follows
+	// (empty on the hub itself) and fleetAddr is what it reports as its own.
+	fleet     fleetState
+	fleetHub  string
+	fleetAddr string
 }
 
 func NewServer(socketPath string, webFS fs.FS) *Server {
-	return &Server{socketPath: socketPath, webFS: webFS}
+	return &Server{
+		socketPath: socketPath,
+		webFS:      webFS,
+		fleet:      fleetState{peers: map[string]fleetPeer{}},
+		fleetHub:   defaultFleetHub,
+		fleetAddr:  defaultFleetAddr,
+	}
 }
 
 func (s *Server) client() *Client {
@@ -716,6 +727,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/herdr/status", s.handleStatus)
 	// GET lists the workspaces; POST makes one. Two registrations of the same
 	// pattern panic at startup, so they share one.
+	mux.HandleFunc("/api/v1/fleet", s.handleFleet)
+	mux.HandleFunc("/api/v1/fleet/hello", s.handleFleetHello)
+
 	mux.HandleFunc("/api/v1/herdr/workspaces", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			s.handleWorkspaceCreate(w, r)

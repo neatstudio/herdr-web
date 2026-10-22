@@ -77,7 +77,7 @@ Options:
                     also sets IdentitiesOnly, so a crowded agent cannot exhaust
                     the server's authentication attempts
   --no-service      copy the binary only, do not touch the target's service
-  --herdr-service   also register herdr's headless server as a service there
+  --fleet-hub URL   also register herdr's headless server as a service there
   --dry-run         print what would happen, change nothing
   --list            list the hosts this machine can plausibly reach
   -h, --help        show this help
@@ -120,6 +120,7 @@ fi
 DRY_RUN=0
 WITH_SERVICE=1
 HERDR_SERVICE=0
+FLEET_HUB=""
 VIA=""
 JUMP=""
 IDENTITIES=()
@@ -139,6 +140,7 @@ while [[ $# -gt 0 ]]; do
     --identity) IDENTITIES+=("$2"); shift 2 ;;
     --no-service) WITH_SERVICE=0; shift ;;
     --herdr-service) HERDR_SERVICE=1; shift ;;
+    --fleet-hub) FLEET_HUB="$2"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
     --list) list_hosts; exit 0 ;;
     -h | --help) usage; exit 0 ;;
@@ -289,6 +291,7 @@ deploy_one() {
     [[ -n "$HERDR_BIN" ]] && args+=(--herdr-bin "$HERDR_BIN")
     [[ "$WITH_SERVICE" -eq 0 ]] && args+=(--no-service)
     [[ "$HERDR_SERVICE" -eq 1 ]] && args+=(--herdr-service)
+    [[ -n "$FLEET_HUB" ]] && args+=(--fleet-hub "$FLEET_HUB")
     local quoted="${args[*]:-}"
     say "  installing from $VIA"
     if ssh_run "$host" "sh -s -- --url '$VIA' $quoted" < "$root/install.sh"; then
@@ -360,7 +363,7 @@ write_service() {
   </array>
   <key>EnvironmentVariables</key>
   <dict><key>HOME</key><string>\$HOME</string>
-  <key>PATH</key><string>\$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
+  <key>PATH</key><string>\$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>$( [ -n "$FLEET_HUB" ] && printf '\n  <key>HERDR_WEB_FLEET_HUB</key><string>%s</string>' "$FLEET_HUB" )</dict>
   <key>WorkingDirectory</key><string>\$HOME</string>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
@@ -397,6 +400,7 @@ After=network-online.target
 Type=simple
 WorkingDirectory=\$HOME
 Environment=PATH=\$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+$( [ -n "$FLEET_HUB" ] && printf 'Environment=HERDR_WEB_FLEET_HUB=%s\n' "$FLEET_HUB" )
 ExecStart=$remote_bin$args
 Restart=on-failure
 RestartSec=3

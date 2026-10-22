@@ -505,6 +505,21 @@ export type SelfUpdate = {
 };
 
 /**
+ * The console's own build, straight from the console.
+ *
+ * It comes from here rather than from the daemon's status because the console's
+ * identity does not depend on herdr answering: the masthead names the machine and
+ * this build even while the daemon is down.
+ */
+export async function fetchSelfRelease(): Promise<SelfRelease | null> {
+  const raw = await getJSON("/api/v1/herdr-web/release");
+  if (raw === null || typeof raw !== "object") {
+    return null;
+  }
+  return raw as SelfRelease;
+}
+
+/**
  * Update the console itself.
  *
  * The bytes are compared rather than the version: whatever a source publishes is
@@ -518,6 +533,57 @@ export async function updateConsole(from?: string): Promise<SelfUpdate | null> {
     return null;
   }
   return raw as SelfUpdate;
+}
+
+/** One console in the fleet, as the hub knows it. */
+export type FleetPeer = {
+  id: string;
+  addr: string;
+  version: string;
+  platform: string;
+  /** Unix seconds of the last hello. */
+  seen: number;
+  /** True when it has not said hello recently. */
+  stale: boolean;
+};
+
+export type Fleet = {
+  /** True when this console is the hub itself. */
+  hub: boolean;
+  hubUrl: string;
+  /** True when this console takes the hub's build automatically. */
+  follow: boolean;
+  peers: FleetPeer[];
+  self: { id: string; addr: string; version: string; platform: string };
+};
+
+/**
+ * The fleet this console belongs to: who else is out there and which build each
+ * runs. On the hub it is the collected list; elsewhere it is the hub's answer
+ * plus this console.
+ */
+export async function fetchFleet(): Promise<Fleet | null> {
+  const raw = await getJSON("/api/v1/fleet");
+  if (raw === null || typeof raw !== "object") {
+    return null;
+  }
+  const record = raw as Record<string, unknown>;
+  const peers = Array.isArray(record.peers)
+    ? (record.peers as FleetPeer[]).filter((peer) => typeof peer?.id === "string" && peer.id !== "")
+    : [];
+  const self = (record.self ?? {}) as Record<string, unknown>;
+  return {
+    hub: record.hub === true,
+    hubUrl: typeof record.hubUrl === "string" ? record.hubUrl : "",
+    follow: record.follow === true,
+    peers,
+    self: {
+      id: typeof self.id === "string" ? self.id : "",
+      addr: typeof self.addr === "string" ? self.addr : "",
+      version: typeof self.version === "string" ? self.version : "",
+      platform: typeof self.platform === "string" ? self.platform : "",
+    },
+  };
 }
 
 /** A tmux session this host is running, for taking it over. */

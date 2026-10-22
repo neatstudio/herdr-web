@@ -5,19 +5,24 @@ import { THEME_CHOICES, type ThemeChoice } from "@/lib/theme";
 
 type Props = {
   status: HerdrStatus | null;
+  /** The build this console runs, which is not the daemon's version. */
+  consoleVersion: string;
   choice: ThemeChoice;
   onChoice: (choice: ThemeChoice) => void;
   /** Opens the panel that shows what herdr is and can install or update it. */
   onHost: () => void;
 };
 
-export function Masthead({ status, choice, onChoice, onHost }: Props) {
+export function Masthead({ status, consoleVersion: build, choice, onChoice, onHost }: Props) {
   const live = status?.status === "ok";
-  const version = status?.version ?? "—";
   const protocol = status?.protocol;
   const octet = hostOctet(typeof window === "undefined" ? "" : window.location.hostname);
-  // herdr(4:0.8.2) on a tailnet address, herdr(0.9.0) on this machine.
-  const label = octet === "" ? `herdr(${version})` : `herdr(${octet}:${version})`;
+  // The name says which machine this is and which build it runs: herdr(4)v0.3.1
+  // on a tailnet address, herdr v0.3.1 on this machine. The daemon's own version
+  // is not in it — it changes for reasons that have nothing to do with which
+  // console a tab belongs to, and the panel is where it belongs.
+  const consoleVersion = build === "" ? "—" : build;
+  const label = octet === "" ? `herdr ${consoleVersion}` : `herdr(${octet})${consoleVersion}`;
 
   // The tab strip is the one place several consoles are seen at once, and there
   // they all said "herdr": the title carries the same name as the masthead so a

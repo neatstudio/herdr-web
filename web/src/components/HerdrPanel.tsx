@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  fetchFleet,
   fetchHerdrHost,
   runHostAction,
   updateConsole,
+  type Fleet,
   type HerdrHost,
 } from "@/lib/herdr";
 
@@ -21,11 +23,19 @@ type Props = {
  */
 export function HerdrPanel({ open, onClose, consoleVersion }: Props) {
   const [host, setHost] = useState<HerdrHost | null>(null);
+  const [fleet, setFleet] = useState<Fleet | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; command: string; output: string } | null>(null);
 
   const refresh = useCallback(async (): Promise<void> => {
-    setHost(await fetchHerdrHost());
+    // Asked together and independently: a daemon that is down must not hide the
+    // fleet, which is what an operator is looking at when it is down.
+    const [hostResult, fleetResult] = await Promise.all([
+      fetchHerdrHost().catch(() => null),
+      fetchFleet().catch(() => null),
+    ]);
+    setHost(hostResult);
+    setFleet(fleetResult);
   }, []);
 
   useEffect(() => {
@@ -119,6 +129,34 @@ export function HerdrPanel({ open, onClose, consoleVersion }: Props) {
       </header>
 
       <div className="hostpanel__body">
+        {fleet !== null && (
+          <section className="hostpanel__fleet" aria-label="Fleet">
+            <div className="hostpanel__fleet-head">
+              <span>{fleet.hub ? "fleet · this console is the hub" : "fleet"}</span>
+              {!fleet.hub && (
+                <span className="hostpanel__dim">
+                  {fleet.follow ? "follows the hub" : "does not follow"}
+                </span>
+              )}
+            </div>
+            <ul id="herdr-fleet-list" className="hostpanel__fleet-list">
+              {fleet.peers.length === 0 ? (
+                <li className="hostpanel__dim">
+                  {fleet.hub ? "no console has said hello yet" : "the hub lists no peers"}
+                </li>
+              ) : (
+                fleet.peers.map((peer) => (
+                  <li key={peer.id} data-peer={peer.id}>
+                    <span className="hostpanel__fleet-addr">{peer.addr || peer.id}</span>
+                    <span className="hostpanel__dim">{peer.version || "unknown"}</span>
+                    {peer.stale && <span className="hostpanel__warn">stale</span>}
+                  </li>
+                ))
+              )}
+            </ul>
+          </section>
+        )}
+
         {host === null ? (
           <p className="hostpanel__note">asking this machine…</p>
         ) : (

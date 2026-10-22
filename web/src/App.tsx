@@ -13,6 +13,7 @@ import {
   closePane,
   fetchAllPanes,
   fetchLayout,
+  fetchSelfRelease,
   hostHas,
   resizePane,
   splitPane,
@@ -99,6 +100,9 @@ export function App() {
   // Selecting a pane in the rail also decides the workspace, so the pane list
   // has to know which workspace to show even before a pane is chosen.
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  // The console's own build, read once from the console rather than the daemon:
+  // the masthead names this build even when herdr is down.
+  const [selfVersion, setSelfVersion] = useState("");
   // The poll runs on an interval, so it reads the current workspace from a ref
   // rather than from a closure captured when the interval was created.
   const workspaceRef = useRef<string | null>(null);
@@ -169,6 +173,20 @@ export function App() {
     const timer = setInterval(() => void loadFleet(), FLEET_POLL_MS);
     return () => clearInterval(timer);
   }, [loadFleet]);
+
+  // The console knows its own build without asking herdr, so the masthead still
+  // says which build this is while the daemon is restarting.
+  useEffect(() => {
+    let cancelled = false;
+    void fetchSelfRelease().then((release) => {
+      if (!cancelled && release !== null && release.version !== "") {
+        setSelfVersion(release.version);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // A split can change while the page is open, so the layout is polled with the
   // fleet rather than fetched once per selection.
@@ -314,7 +332,12 @@ export function App() {
   return (
     <div className="shell">
       <Masthead
-        onHost={() => setHostPanel(true)} status={status} choice={choice} onChoice={chooseTheme} />
+        onHost={() => setHostPanel(true)}
+        status={status}
+        consoleVersion={selfVersion !== "" ? selfVersion : status?.consoleVersion ?? ""}
+        choice={choice}
+        onChoice={chooseTheme}
+      />
 
       <div className="body">
         <Sidebar
@@ -487,7 +510,7 @@ export function App() {
       <HerdrPanel
         open={hostPanel}
         onClose={() => setHostPanel(false)}
-        consoleVersion={status?.consoleVersion ?? ""}
+        consoleVersion={selfVersion !== "" ? selfVersion : status?.consoleVersion ?? ""}
       />
 
       <TargetMenu

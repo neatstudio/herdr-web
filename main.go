@@ -46,6 +46,9 @@ func main() {
 	localAddr := flag.String("local-addr", server.DefaultLocalAddr(),
 		"loopback listen address; \"\" to skip it")
 	socket := flag.String("herdr-socket", "", "herdr daemon socket path (default ~/.config/herdr/herdr.sock)")
+	fleetHub := flag.String("fleet-hub", os.Getenv("HERDR_WEB_FLEET_HUB"),
+		"console that collects the fleet list and publishes the build to follow;\n"+
+			"empty means this console is the hub (env HERDR_WEB_FLEET_HUB)")
 	herdrBin := flag.String("herdr-bin", "",
 		"herdr binary to inspect, install and update (default: herdr on PATH, then ~/.local/bin/herdr)")
 	flag.Usage = func() {
@@ -75,6 +78,9 @@ func main() {
 		socketPath = server.DefaultSocketPath()
 	}
 	server.SetHerdrSocket(socketPath)
+	// The hub collects the fleet list and publishes the build to follow; a
+	// console with no hub named is the hub.
+	server.SetFleet(*fleetHub, *addr)
 
 	fmt.Fprintf(os.Stderr, "herdr-web: socket %s\n", socketPath)
 	if err := server.Run([]string{*addr, *localAddr}, socketPath, webFS()); err != nil {

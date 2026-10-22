@@ -357,6 +357,11 @@ func describeCount(version string) (int, bool) {
 // every build of the same base tag looks identical and a fleet that never tags
 // could never update itself.
 func selfNewer(published, current string) bool {
+	// An unstamped build ("dev") carries no numbers, so anything numbered is a
+	// step forward from it.
+	if len(versionParts(current)) == 0 {
+		return len(versionParts(published)) > 0
+	}
 	if newerVersion(published, current) {
 		return true
 	}

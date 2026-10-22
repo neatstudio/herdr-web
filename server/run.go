@@ -20,7 +20,8 @@ const shutdownTimeout = 5 * time.Second
 // arrives, then shuts them all down. webFS may be nil: the API still serves,
 // and the static handler answers with a hint instead of mangling the routes.
 func Run(binds []string, socketPath string, webFS fs.FS) error {
-	handler := NewServer(socketPath, webFS).Handler()
+	console := NewServer(socketPath, webFS)
+	handler := console.Handler()
 	listeners, err := Listen(binds)
 	if err != nil {
 		return err
@@ -47,6 +48,12 @@ func Run(binds []string, socketPath string, webFS fs.FS) error {
 			stopped <- err
 		}(server, listeners[index])
 	}
+
+	// The heartbeats and the follow loop outlive any one request, so they run on
+	// a context that is cancelled with the process.
+	background, stopBackground := context.WithCancel(context.Background())
+	defer stopBackground()
+	console.StartFleet(background)
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)

@@ -306,9 +306,9 @@ export function orderByTone<T>(items: T[], toneOfItem: (item: T) => Tone): T[] {
 /**
  * The last octet of the address a page was opened on, or "" for loopback.
  *
- * The masthead names the daemon that answers: several consoles on several
- * machines in one tailnet need "herdr(4:0.8.2)" to be told apart at a glance,
- * while a loopback page is this machine and needs no address at all.
+ * The masthead names the machine that answers: several consoles on several hosts
+ * in one tailnet need "herdr(4)v0.3.1" to be told apart at a glance, while a
+ * loopback page is this machine and needs no address at all.
  */
 export function hostOctet(hostname: string): string {
   const host = hostname.trim();

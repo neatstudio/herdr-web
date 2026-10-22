@@ -65,6 +65,19 @@ async function installBridge(page: Page, options: FixtureOptions = {}): Promise<
     );
     return;
   }
+  await page.route("**/api/v1/herdr-web/release", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        version: "v0.3.1",
+        platform: "darwin-arm64",
+        sha256: "0".repeat(64),
+        source: "https://github.com/neatstudio/herdr-web/releases/latest/download",
+        executable: "/Users/op/.local/bin/herdr-web",
+      }),
+    }),
+  );
   await page.route("**/api/v1/herdr/status", (route) =>
     route.fulfill({
       status: 200,
@@ -74,6 +87,9 @@ async function installBridge(page: Page, options: FixtureOptions = {}): Promise<
         socket: "/Users/op/.config/herdr/herdr.sock",
         status: "ok",
         version: "0.9.0",
+        // What this console runs: the masthead names the machine and this build,
+        // not the daemon's version.
+        consoleVersion: "v0.3.1",
         protocol: 22,
         protocolTested: true,
       }),
@@ -956,7 +972,10 @@ test("a daemon restart keeps the view instead of blanking it", async ({ page }) 
   // A 502 from the bridge means the console cannot reach it at all, which the
   // cluster words as "not reachable"; a reachable bridge with a dead daemon
   // says "daemon down".
-  await expect(page.locator("#herdr-host-open")).toContainText("not reachable");
+  await expect(page.locator(".offline")).toContainText("not reachable");
+  // The machine's name does not change because the daemon is down: it is this
+  // console's build, read from the console itself.
+  await expect(page.locator("#herdr-host-open")).toContainText("herdr v0.3.1");
 });
 
 test("the daemon state opens a panel that can install or update herdr", async ({ page }) => {
@@ -1594,11 +1613,12 @@ test("the console can update itself and says how to start the new build", async 
   expect(calls).toEqual(["{}"]);
 });
 
-test("the masthead names the daemon as herdr(ip:version), without an ip on loopback", async ({ page }) => {
+test("the masthead names the machine and the console build, not the daemon", async ({ page }) => {
   await installBridge(page);
   await page.goto("/");
-  // The test page is served from 127.0.0.1, so the address is implied.
-  await expect(page.locator("#herdr-daemon-label")).toHaveText(/^herdr\(\d+\.\d+\.\d+\)$/);
+  // The test page is served from 127.0.0.1, so the address is implied and the
+  // label is just the build this console runs.
+  await expect(page.locator("#herdr-daemon-label")).toHaveText(/^herdr v\d+\.\d+\.\d+/);
 });
 
 
@@ -1606,9 +1626,9 @@ test("the masthead names the daemon as herdr(ip:version), without an ip on loopb
 test("the tab title names the machine, so consoles on several hosts differ", async ({ page }) => {
   await installBridge(page);
   await page.goto("/");
-  // Served over loopback in the test: the address is implied, the version is not.
-  await expect(page).toHaveTitle(/^herdr\(\d+\.\d+\.\d+\)$/);
-  await expect(page.locator("#herdr-daemon-label")).toHaveText(/^herdr\(\d+\.\d+\.\d+\)$/);
+  // Served over loopback in the test: the address is implied, the build is not.
+  await expect(page).toHaveTitle(/^herdr v\d+\.\d+\.\d+/);
+  await expect(page.locator("#herdr-daemon-label")).toHaveText(/^herdr v\d+\.\d+\.\d+/);
 });
 
 test("ctrl+c interrupts the pane, but copies when something is selected", async ({ page }) => {
@@ -1690,4 +1710,35 @@ test("a workspace can be made, and a running tmux session taken over", async ({ 
   await expect
     .poll(() => created[1] ?? "")
     .toBe(JSON.stringify({ command: ["tmux", "attach", "-t", "codex"] }));
+});
+
+test("the panel shows which consoles are in the fleet and which build each runs", async ({ page }) => {
+  await installBridge(page);
+  await page.route("**/api/v1/fleet", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        hub: true,
+        hubUrl: "",
+        follow: false,
+        self: { id: "bendes", addr: "100.89.0.206:5000", version: "v0.3.1", platform: "linux-amd64" },
+        peers: [
+          { id: "tw1", addr: "100.89.0.4:5000", version: "v0.3.1", platform: "linux-amd64", seen: 0, stale: false },
+          { id: "m8s", addr: "100.89.0.3:5000", version: "v0.3.0", platform: "linux-amd64", seen: 0, stale: true },
+        ],
+      }),
+    }),
+  );
+  await page.goto("/");
+
+  await page.locator("#herdr-host-open").click();
+  const list = page.locator("#herdr-fleet-list");
+  await expect(list).toBeVisible();
+  await expect(list.locator("li")).toHaveCount(2);
+  await expect(list.locator('[data-peer="tw1"]')).toContainText("100.89.0.4:5000");
+  await expect(list.locator('[data-peer="tw1"]')).toContainText("v0.3.1");
+  // A console that stopped reporting is shown as stale rather than removed: the
+  // fleet should show what is missing, not just what is there.
+  await expect(list.locator('[data-peer="m8s"]')).toContainText("stale");
 });
