@@ -18,3 +18,5 @@
 .vscode/*.log
 .DS_Store
 Thumbs.db
+# Kept by an in-place update, so a bad build can be put back.
+herdr-web.previous
