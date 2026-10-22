@@ -347,8 +347,12 @@ write_service() {
   [[ -n "$HERDR_BIN" ]] && args+=" --herdr-bin $HERDR_BIN"
 
   local target_os target_uid
-  target_os="$(ssh_run "$host" "uname -s" 2>/dev/null || echo Linux)"
-  target_uid="$(ssh_run "$host" "id -u" 2>/dev/null || echo 0)"
+  # The last line only: a login shell on some hosts prints a locale warning to
+  # stderr, which ssh_run merges in, and that once made root look like a user.
+  target_os="$(ssh_run "$host" "uname -s" 2>/dev/null | tail -1 | tr -d '[:space:]')"
+  target_uid="$(ssh_run "$host" "id -u" 2>/dev/null | tail -1 | tr -d '[:space:]')"
+  [[ -z "$target_os" ]] && target_os="Linux"
+  [[ -z "$target_uid" ]] && target_uid="0"
 
   if [[ "$target_os" == "Darwin" ]]; then
     ssh_run "$host" "mkdir -p ~/Library/LaunchAgents ~/.local/share/herdr-web && cat > ~/Library/LaunchAgents/$label.plist <<PLIST
