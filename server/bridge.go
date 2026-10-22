@@ -57,6 +57,9 @@ type Server struct {
 	fleet      fleetState
 	fleetSeeds []string
 	fleetAddr  string
+	// dispatch is what this console sent where; the jobs themselves live on the
+	// machines running them.
+	dispatch dispatchState
 }
 
 func NewServer(socketPath string, webFS fs.FS) *Server {
@@ -728,7 +731,24 @@ func (s *Server) Handler() http.Handler {
 	// GET lists the workspaces; POST makes one. Two registrations of the same
 	// pattern panic at startup, so they share one.
 	mux.HandleFunc("/api/v1/fleet", s.handleFleet)
+	mux.HandleFunc("/api/v1/fleet/job", s.handleDispatch)
+	mux.HandleFunc("/api/v1/fleet/jobs", s.handleDispatchList)
 	mux.HandleFunc("/api/v1/fleet/hello", s.handleFleetHello)
+
+	mux.HandleFunc("/api/v1/herdr/job", s.handleJobStart)
+	mux.HandleFunc("/api/v1/herdr/job/", func(w http.ResponseWriter, r *http.Request) {
+		rest := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/herdr/job/"), "/")
+		if rest == "" {
+			writeError(w, http.StatusNotFound, "not_found", "unknown job path")
+			return
+		}
+		if strings.HasSuffix(rest, "/stop") {
+			s.handleJobStop(w, r, strings.TrimSuffix(rest, "/stop"))
+			return
+		}
+		s.handleJobStatus(w, r, rest)
+	})
+	mux.HandleFunc("/api/v1/herdr/agents", s.handleAgentKinds)
 
 	mux.HandleFunc("/api/v1/herdr/workspaces", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {

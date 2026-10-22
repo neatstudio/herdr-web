@@ -240,6 +240,14 @@ a `dev.herdr-web` service that points somewhere else, so installing over a
 machine that already runs the console from a checkout cannot silently steal the
 service.
 
+### Versions count to 99
+
+A component counts to 99 and only then rolls over: small fixes bump the patch, a
+batch of features bumps the minor, and the major moves only once the minor is
+already at 99. `scripts/version.sh` does the arithmetic (`next patch|minor|major`,
+`tag`), so the version creeps upward instead of leaping to 1.0 on a good
+afternoon.
+
 ### A fleet with no centre
 
 Several consoles can know each other: `--fleet-seeds http://hub:5000` is an entry
