@@ -29,6 +29,10 @@ type dispatchedJob struct {
 	Error       string `json:"error,omitempty"`
 	Status      string `json:"status,omitempty"`
 	Output      string `json:"output,omitempty"`
+	// What the job left in its worktree: the result a dispatcher actually needs,
+	// asked of the machine that did the work.
+	Commits []string `json:"commits,omitempty"`
+	Changed []string `json:"changed,omitempty"`
 }
 
 type dispatch struct {
@@ -197,9 +201,45 @@ func (s *Server) handleDispatchList(w http.ResponseWriter, r *http.Request) {
 			}
 			job.Status = status
 			job.Output = output
+			if job.WorkspaceID != "" {
+				branch, commits, changed := getJobDiff(ctx, job.Host, job.WorkspaceID)
+				if branch != "" {
+					job.Branch = branch
+				}
+				job.Commits = commits
+				job.Changed = changed
+			}
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"dispatches": history})
+}
+
+// getJobDiff asks the machine running the job what its worktree contains.
+func getJobDiff(ctx context.Context, base, workspaceID string) (string, []string, []string) {
+	requestCtx, cancel := context.WithTimeout(ctx, jobPollTimeout)
+	defer cancel()
+	request, err := http.NewRequestWithContext(requestCtx, http.MethodGet,
+		base+"/api/v1/herdr/job/"+workspaceID+"/diff", nil)
+	if err != nil {
+		return "", nil, nil
+	}
+	response, err := selfClient.Do(request)
+	if err != nil {
+		return "", nil, nil
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		return "", nil, nil
+	}
+	var answer struct {
+		Branch  string   `json:"branch"`
+		Commits []string `json:"commits"`
+		Changed []string `json:"changed"`
+	}
+	if json.NewDecoder(response.Body).Decode(&answer) != nil {
+		return "", nil, nil
+	}
+	return answer.Branch, answer.Commits, answer.Changed
 }
 
 func getJobStatus(ctx context.Context, base, jobID string) (string, string, error) {

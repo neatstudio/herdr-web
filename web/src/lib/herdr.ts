@@ -347,6 +347,29 @@ export function parsePaneLayout(raw: unknown): PaneLayout | null {
 export type SplitDirection = "left" | "right" | "up" | "down";
 
 /** POST and read the JSON body, for the calls that answer with something. */
+/** A request whose failure reason matters: the daemon's own message, not just "no". */
+async function postJSONOutcome(
+  path: string,
+  body: unknown,
+): Promise<{ ok: boolean; body: unknown; error: string }> {
+  try {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const raw = await response.json().catch(() => null);
+    if (response.ok) {
+      return { ok: true, body: raw, error: "" };
+    }
+    const message = (raw as { error?: { message?: unknown } } | null)?.error?.message;
+    const detail = typeof message === "string" && message !== "" ? message : `HTTP ${response.status}`;
+    return { ok: false, body: raw, error: detail };
+  } catch (error) {
+    return { ok: false, body: null, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 async function postJSONResult(path: string, body: unknown): Promise<unknown> {
   try {
     const response = await fetch(path, {
@@ -596,6 +619,9 @@ export type DispatchedJob = {
   status?: string;
   output?: string;
   error?: string;
+  /** What the job's worktree holds: the branch, its commits, uncommitted files. */
+  commits?: string[];
+  changed?: string[];
 };
 
 export type Dispatch = {
@@ -750,15 +776,14 @@ export async function createWorkspace(options: {
   label?: string;
   cwd?: string;
   command?: string[];
-}): Promise<{ workspaceId: string; paneId: string; commandError?: string } | null> {
-  const raw = await postJSONResult("/api/v1/herdr/workspaces", options);
-  if (raw === null || typeof raw !== "object") {
-    return null;
-  }
-  const record = raw as Record<string, unknown>;
+}): Promise<{ ok: boolean; workspaceId: string; paneId: string; error: string; commandError?: string }> {
+  const outcome = await postJSONOutcome("/api/v1/herdr/workspaces", options);
+  const record = (outcome.body ?? {}) as Record<string, unknown>;
   return {
+    ok: outcome.ok && record.ok === true,
     workspaceId: typeof record.workspaceId === "string" ? record.workspaceId : "",
     paneId: typeof record.paneId === "string" ? record.paneId : "",
+    error: outcome.error,
     commandError: typeof record.commandError === "string" ? record.commandError : undefined,
   };
 }

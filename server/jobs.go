@@ -79,7 +79,7 @@ func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 		label = "job " + time.Now().Format("15:04:05")
 	}
 	params := map[string]any{"focus": false, "label": label}
-	if cwd := strings.TrimSpace(request.Cwd); cwd != "" {
+	if cwd := expandHome(request.Cwd); cwd != "" {
 		params["cwd"] = cwd
 	}
 	method := "workspace.create"
@@ -250,4 +250,94 @@ func jobStateDir() string {
 		return ""
 	}
 	return filepath.Join(home, ".local", "share", selfStateDirName, "jobs")
+}
+
+// jobDiff is what a job left behind in its worktree: the branch, the commits, and
+// whatever is still uncommitted. It is the half of a dispatched job that makes the
+// result worth collecting.
+type jobDiff struct {
+	OK           bool     `json:"ok"`
+	Branch       string   `json:"branch"`
+	CheckoutPath string   `json:"checkoutPath"`
+	Commits      []string `json:"commits"`
+	Changed      []string `json:"changed"`
+	Error        string   `json:"error,omitempty"`
+}
+
+// handleJobDiff reports what the job's worktree contains.
+//
+// The checkout is herdr's own worktree for that workspace, so this is read-only: it
+// runs git in a directory herdr created and reports, and never writes to the
+// operator's repository.
+func (s *Server) handleJobDiff(w http.ResponseWriter, r *http.Request, workspaceID string) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, "GET")
+		return
+	}
+	workspaceID = strings.Trim(strings.TrimSpace(workspaceID), "/")
+	if workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "workspace id is required")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	var answer struct {
+		Workspace struct {
+			Label    string `json:"label"`
+			Worktree *struct {
+				CheckoutPath string `json:"checkout_path"`
+				RepoRoot     string `json:"repo_root"`
+			} `json:"worktree"`
+		} `json:"workspace"`
+	}
+	if err := s.client().Call(ctx, "workspace.get",
+		map[string]any{"workspace_id": workspaceID}, &answer); err != nil {
+		writeBadGateway(w, "herdr_job_failed", err)
+		return
+	}
+	checkout := ""
+	if answer.Workspace.Worktree != nil {
+		checkout = strings.TrimSpace(answer.Workspace.Worktree.CheckoutPath)
+	}
+	if checkout == "" {
+		writeJSON(w, http.StatusOK, jobDiff{OK: true,
+			Error: "this workspace is not a worktree, so there is nothing to collect"})
+		return
+	}
+
+	git := func(args ...string) (string, error) {
+		command := exec.CommandContext(ctx, "git", append([]string{"-C", checkout}, args...)...)
+		output, err := command.Output()
+		return string(output), err
+	}
+
+	diff := jobDiff{OK: true, CheckoutPath: checkout}
+	if branch, err := git("rev-parse", "--abbrev-ref", "HEAD"); err == nil {
+		diff.Branch = strings.TrimSpace(branch)
+	}
+	// Recent commits on this branch, which is what the job produced. A job that
+	// commits nothing leaves an empty list and possibly a dirty tree, and both are
+	// results worth reporting.
+	if log, err := git("log", "--pretty=%h %s", "-10"); err == nil {
+		for _, line := range strings.Split(strings.TrimSpace(log), "\n") {
+			if line = strings.TrimSpace(line); line != "" {
+				diff.Commits = append(diff.Commits, line)
+			}
+		}
+	}
+	if status, err := git("status", "--porcelain"); err == nil {
+		for _, line := range strings.Split(strings.TrimSpace(status), "\n") {
+			if line = strings.TrimSpace(line); line != "" {
+				diff.Changed = append(diff.Changed, line)
+			}
+		}
+	}
+	if diff.Commits == nil {
+		diff.Commits = []string{}
+	}
+	if diff.Changed == nil {
+		diff.Changed = []string{}
+	}
+	writeJSON(w, http.StatusOK, diff)
 }

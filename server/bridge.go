@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"io/fs"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -42,6 +44,32 @@ func writeMethodNotAllowed(w http.ResponseWriter, allow string) {
 		w.Header().Set("Allow", allow)
 	}
 	writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+}
+
+// expandHome turns "~" and "~/x" into the home directory.
+//
+// The shell on the operator's side would do this before herdr saw it; a form does
+// not, and herdr takes the directory literally, so "~" arrived as a directory name
+// and the workspace could not be created.
+func expandHome(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" || !strings.HasPrefix(path, "~") {
+		return path
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return path
+	}
+	rest := strings.TrimPrefix(path, "~")
+	if rest == "" {
+		return home
+	}
+	if !strings.HasPrefix(rest, "/") {
+		// "~name" belongs to another user; leave it for the shell to reject
+		// rather than guessing whose home was meant.
+		return path
+	}
+	return filepath.Join(home, rest)
 }
 
 func writeBadGateway(w http.ResponseWriter, code string, err error) {
@@ -746,6 +774,10 @@ func (s *Server) Handler() http.Handler {
 			s.handleJobStop(w, r, strings.TrimSuffix(rest, "/stop"))
 			return
 		}
+		if strings.HasSuffix(rest, "/diff") {
+			s.handleJobDiff(w, r, strings.TrimSuffix(rest, "/diff"))
+			return
+		}
 		s.handleJobStatus(w, r, rest)
 	})
 	mux.HandleFunc("/api/v1/herdr/agents", s.handleAgentKinds)
@@ -841,7 +873,7 @@ func (s *Server) handleTabCreate(w http.ResponseWriter, r *http.Request) {
 	if workspaceID := strings.TrimSpace(request.WorkspaceID); workspaceID != "" {
 		params["workspace_id"] = workspaceID
 	}
-	if cwd := strings.TrimSpace(request.Cwd); cwd != "" {
+	if cwd := expandHome(request.Cwd); cwd != "" {
 		params["cwd"] = cwd
 	}
 	if label := strings.TrimSpace(request.Label); label != "" {
@@ -891,7 +923,7 @@ func (s *Server) handleWorkspaceCreate(w http.ResponseWriter, r *http.Request) {
 	if label := strings.TrimSpace(request.Label); label != "" {
 		params["label"] = label
 	}
-	if cwd := strings.TrimSpace(request.Cwd); cwd != "" {
+	if cwd := expandHome(request.Cwd); cwd != "" {
 		params["cwd"] = cwd
 	}
 	var created struct {

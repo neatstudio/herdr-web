@@ -257,7 +257,12 @@ export function HerdrPanel({ open, onClose, onDispatch, consoleVersion }: Props)
                           void createWorkspace({
                             label: session.name,
                             command: ["tmux", "attach", ...(watched ? ["-d"] : []), "-t", session.name],
-                          }).then(() => refresh());
+                          }).then((made) => {
+                            if (!made.ok && made.error !== "") {
+                              window.alert(made.error);
+                            }
+                            void refresh();
+                          });
                         }}
                       >
                         {session.attached > 0 ? "take over" : "open"}

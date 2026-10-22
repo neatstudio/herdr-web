@@ -2345,3 +2345,71 @@ body::before {
   white-space: pre-wrap;
   color: var(--ink);
 }
+
+/* What a job left behind: its branch, commits and uncommitted files. */
+.dispatch__commits {
+  margin: 4px 0 0;
+  padding-left: 14px;
+  display: grid;
+  gap: 2px;
+  font-size: var(--step-fine);
+  color: var(--ink-dim);
+}
+
+/* The new-workspace dialog is two fields and a button: a wide red bar and rows
+   stretched edge to edge made it look like a page, not a prompt. */
+.sheet--dialog .sheet__panel {
+  width: min(24rem, 100%);
+}
+
+.sheet--dialog .sheet__body {
+  padding: 14px 16px 16px;
+}
+
+.newws__field {
+  margin-bottom: 12px;
+}
+
+.newws__field > span {
+  font-family: var(--font-label);
+  font-size: var(--step-micro);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.newws__field input,
+.newws__field textarea,
+.newws__field select {
+  min-height: 34px;
+  padding: 6px 8px;
+  border-color: var(--rule);
+}
+
+.newws__field input:focus,
+.newws__field textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* A form submits with a button, not with a banner. */
+.sheet--dialog .newws__submit {
+  width: auto;
+  min-width: 8rem;
+  margin-left: auto;
+  display: block;
+  padding: 7px 18px;
+  font-size: var(--step-fine);
+  letter-spacing: 0.1em;
+}
+
+.sheet--dialog .newws__note--bad {
+  margin-top: 10px;
+  padding: 7px 9px;
+  border-left: 2px solid var(--accent);
+  background: var(--raised);
+  color: var(--accent);
+  font-size: var(--step-fine);
+  line-height: 1.45;
+  white-space: pre-wrap;
+}

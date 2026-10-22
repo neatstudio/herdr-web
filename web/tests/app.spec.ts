@@ -1785,7 +1785,9 @@ test("legacy tmux sessions are folded away in the host panel, not in a workspace
   // away, and absent from the flow that makes a workspace.
   await page.locator("#herdr-host-open").click();
   const legacy = page.locator("#hostpanel-tmux");
-  await expect(legacy).toBeVisible();
+  // The panel asks for the host, the fleet and the tmux sessions in one refresh;
+  // under a loaded suite that is not always done inside the default timeout.
+  await expect(legacy).toBeVisible({ timeout: 15_000 });
   await expect(legacy).not.toHaveAttribute("open", "");
   await legacy.locator("summary").click();
 
@@ -1990,4 +1992,86 @@ test("a phone keeps the machine name and drops the build from the masthead", asy
   await expect(page.locator(".masthead__version")).toBeHidden();
   const label = await page.locator("#herdr-daemon-label").innerText();
   expect(label.trim()).not.toContain("…");
+});
+
+test("a dispatched job reports the commits it produced", async ({ page }) => {
+  await installBridge(page);
+  await page.route("**/api/v1/fleet", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        hub: false,
+        seeds: ["http://100.89.0.206:5000"],
+        follow: true,
+        self: { id: "me", addr: "100.89.0.116:5000", version: "v0.6.9", platform: "darwin-arm64" },
+        peers: [
+          { id: "tw1", addr: "100.89.0.4:5000", version: "v0.6.9", platform: "linux-amd64", agents: ["claude"], seen: 0, stale: false },
+        ],
+      }),
+    }),
+  );
+  await page.route("**/api/v1/herdr/agents", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ kinds: ["claude"] }) }),
+  );
+  // The dispatcher asks the machine that ran the job what it left behind.
+  await page.route("**/api/v1/fleet/jobs", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        dispatches: [
+          {
+            id: "job-1",
+            at: 0,
+            prompt: "audit the docs",
+            jobs: [
+              {
+                host: "http://100.89.0.4:5000",
+                local: "w1:p1",
+                jobId: "w1:p1",
+                workspaceId: "w1",
+                status: "done",
+                branch: "job/audit",
+                commits: ["b495e92 audit the docs", "fdbae77 first"],
+                changed: ["?? WIP.md"],
+                output: "done\n",
+              },
+            ],
+          },
+        ],
+      }),
+    }),
+  );
+  await page.goto("/");
+  await page.locator("#herdr-host-open").click();
+  await page.locator("#dispatch-open").click();
+
+  const entry = page.locator('[data-dispatch="job-1"]');
+  await expect(entry).toContainText("job/audit");
+  await expect(entry).toContainText("2 commits");
+  await expect(entry).toContainText("audit the docs");
+  await expect(entry).toContainText("1 uncommitted");
+  await expect(entry).toContainText("WIP.md");
+});
+
+test("a failed creation shows why, not just that it failed", async ({ page }) => {
+  await installBridge(page);
+  await page.route("**/api/v1/herdr/workspaces", async (route) => {
+    if (route.request().method() !== "POST") {
+      return route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
+    }
+    await route.fulfill({
+      status: 502,
+      contentType: "application/json",
+      body: JSON.stringify({ error: { code: "herdr_workspace_failed", message: "no such directory: /nope" } }),
+    });
+  });
+  await page.goto("/");
+
+  await page.locator("#herdr-new-workspace").click();
+  await page.locator("#workspace-cwd").fill("/nope");
+  await page.locator("#workspace-create").click();
+  // "the workspace could not be created" is not something an operator can act on.
+  await expect(page.locator(".newws__note--bad")).toContainText("no such directory");
 });

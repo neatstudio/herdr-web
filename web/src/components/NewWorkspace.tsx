@@ -47,8 +47,10 @@ export function NewWorkspace({ open, onClose, onCreated }: Props) {
         label: label.trim() === "" ? undefined : label.trim(),
         cwd: cwd.trim() === "" ? undefined : cwd.trim(),
       });
-      if (made === null) {
-        setProblem("the workspace could not be created");
+      if (!made.ok) {
+        // The daemon's own reason, because "it did not work" is not something an
+        // operator can act on.
+        setProblem(made.error === "" ? "the workspace could not be created" : made.error);
         return;
       }
       if (made.commandError !== undefined) {

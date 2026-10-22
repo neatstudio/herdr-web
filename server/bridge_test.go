@@ -3,6 +3,8 @@ package server
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -656,5 +658,30 @@ func TestTmuxOutputRefusesNamesItWasNotGiven(t *testing.T) {
 		"/api/v1/herdr/tmux/output", nil))
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d", recorder.Code)
+	}
+}
+
+func TestWorkspaceCreateExpandsHome(t *testing.T) {
+	// A form sends "~" literally; a shell would have expanded it before herdr saw
+	// it. herdr takes a directory literally, so the workspace could not be made.
+	socket, state, closeFn := startFakeHerdr(t)
+	defer closeFn()
+	handler := newTestHandler(t, socket)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/herdr/workspaces",
+		strings.NewReader(`{"label":"x","cwd":"~/work"}`)))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	state.mu.Lock()
+	params := state.paramsByMethod["workspace.create"]
+	state.mu.Unlock()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("no home directory")
+	}
+	if got := params["cwd"]; got != filepath.Join(home, "work") {
+		t.Fatalf("cwd = %v, want %v", got, filepath.Join(home, "work"))
 	}
 }

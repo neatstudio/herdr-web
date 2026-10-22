@@ -224,6 +224,29 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
                       {job.branch !== undefined && job.branch !== "" && (
                         <span className="newws__dim">{job.branch}</span>
                       )}
+                      {(job.commits ?? []).length > 0 && (
+                        <details open>
+                          <summary>
+                            {job.commits!.length} commit{job.commits!.length === 1 ? "" : "s"}
+                            {job.branch !== undefined && job.branch !== "" ? ` on ${job.branch}` : ""}
+                          </summary>
+                          <ul className="dispatch__commits">
+                            {job.commits!.map((commit) => (
+                              <li key={commit}>{commit}</li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
+                      {(job.changed ?? []).length > 0 && (
+                        <details>
+                          <summary>{job.changed!.length} uncommitted</summary>
+                          <ul className="dispatch__commits">
+                            {job.changed!.map((file) => (
+                              <li key={file}>{file}</li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
                       {job.output !== undefined && job.output.trim() !== "" && (
                         <details>
                           <summary>output</summary>
