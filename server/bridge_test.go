@@ -685,3 +685,13 @@ func TestWorkspaceCreateExpandsHome(t *testing.T) {
 		t.Fatalf("cwd = %v, want %v", got, filepath.Join(home, "work"))
 	}
 }
+
+func TestDefaultSocketPathWithoutHomeStillFindsTheAccount(t *testing.T) {
+	// A system service gets no HOME from systemd. The account's home is still in
+	// /etc/passwd, and a relative "herdr.sock" made the console dial nothing.
+	t.Setenv("HOME", "")
+	path := DefaultSocketPath()
+	if !strings.HasSuffix(path, "/.config/herdr/herdr.sock") || strings.HasPrefix(path, "/.config") {
+		t.Fatalf("socket path = %q", path)
+	}
+}

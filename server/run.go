@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"os/user"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -121,9 +123,17 @@ func shutdownAll(servers []*http.Server) {
 }
 
 // DefaultSocketPath resolves the daemon socket the same way herdr does.
+//
+// A system service does not get HOME from systemd, and os.UserHomeDir then fails:
+// returning a relative "herdr.sock" made the console dial a file in its working
+// directory and report that the daemon was missing. The account's own home from
+// /etc/passwd is the right answer, and the relative name is only a last resort.
 func DefaultSocketPath() string {
-	if home, err := os.UserHomeDir(); err == nil {
-		return home + "/.config/herdr/herdr.sock"
+	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
+		return filepath.Join(home, ".config", "herdr", "herdr.sock")
+	}
+	if current, err := user.Current(); err == nil && strings.TrimSpace(current.HomeDir) != "" {
+		return filepath.Join(current.HomeDir, ".config", "herdr", "herdr.sock")
 	}
 	return "herdr.sock"
 }

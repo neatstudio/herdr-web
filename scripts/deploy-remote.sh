@@ -404,6 +404,7 @@ After=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=\$HOME
+Environment=HOME=\$HOME
 Environment=PATH=\$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
 $( [ -n "$FLEET_HUB" ] && printf 'Environment=HERDR_WEB_FLEET_SEEDS=%s\n' "$FLEET_HUB" )
 ExecStart=$remote_bin$args
