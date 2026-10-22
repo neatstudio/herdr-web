@@ -240,6 +240,20 @@ a `dev.herdr-web` service that points somewhere else, so installing over a
 machine that already runs the console from a checkout cannot silently steal the
 service.
 
+### A fleet with no centre
+
+Several consoles can know each other: `--fleet-seeds http://hub:5000` is an entry
+point, not an authority. Every console keeps its own list and exchanges it with
+its seeds and a few known peers every 30 seconds, so the list survives the loss of
+any machine, and a console started with no seeds simply knows only itself.
+
+Updates follow the same rule: any console running a strictly newer build is a
+source. A console adopts the newest build it can verify, keeping the build it
+replaced as `herdr-web.previous`; `POST /api/v1/herdr-web/rollback` puts it back,
+which is the answer to a build that starts and then misbehaves. Safe defaults:
+nothing is adopted that is not strictly newer, nothing is adopted that fails its
+checksum, and `HERDR_WEB_FLEET_FOLLOW=off` keeps a console where it is.
+
 ### When a host can reach nothing
 
 Three paths, and the tooling tries them in this order rather than stopping at the

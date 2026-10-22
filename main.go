@@ -46,9 +46,9 @@ func main() {
 	localAddr := flag.String("local-addr", server.DefaultLocalAddr(),
 		"loopback listen address; \"\" to skip it")
 	socket := flag.String("herdr-socket", "", "herdr daemon socket path (default ~/.config/herdr/herdr.sock)")
-	fleetHub := flag.String("fleet-hub", os.Getenv("HERDR_WEB_FLEET_HUB"),
-		"console that collects the fleet list and publishes the build to follow;\n"+
-			"empty means this console is the hub (env HERDR_WEB_FLEET_HUB)")
+	fleetSeeds := flag.String("fleet-seeds", fleetSeedEnv(),
+		"comma-separated consoles to start from; the fleet is exchanged peer to peer\n"+
+			"and no seed is an authority (env HERDR_WEB_FLEET_SEEDS)")
 	herdrBin := flag.String("herdr-bin", "",
 		"herdr binary to inspect, install and update (default: herdr on PATH, then ~/.local/bin/herdr)")
 	flag.Usage = func() {
@@ -78,13 +78,21 @@ func main() {
 		socketPath = server.DefaultSocketPath()
 	}
 	server.SetHerdrSocket(socketPath)
-	// The hub collects the fleet list and publishes the build to follow; a
-	// console with no hub named is the hub.
-	server.SetFleet(*fleetHub, *addr)
+	// Seeds are an entry point to the fleet, not an authority over it.
+	server.SetFleet(*fleetSeeds, *addr)
 
 	fmt.Fprintf(os.Stderr, "herdr-web: socket %s\n", socketPath)
 	if err := server.Run([]string{*addr, *localAddr}, socketPath, webFS()); err != nil {
 		fmt.Fprintln(os.Stderr, "herdr-web:", err)
 		os.Exit(1)
 	}
+}
+
+// fleetSeedEnv reads the seed list, accepting the old single-hub variable so an
+// installed unit keeps working after the rename.
+func fleetSeedEnv() string {
+	if seeds := strings.TrimSpace(os.Getenv("HERDR_WEB_FLEET_SEEDS")); seeds != "" {
+		return seeds
+	}
+	return strings.TrimSpace(os.Getenv("HERDR_WEB_FLEET_HUB"))
 }

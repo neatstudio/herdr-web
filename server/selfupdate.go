@@ -312,6 +312,14 @@ func selfUpdateFrom(ctx context.Context, execPath, source string) (selfUpdateRes
 	if err := os.Chmod(tmpPath, 0o755); err != nil {
 		return selfUpdateResult{}, err
 	}
+	// Keep what is being replaced: an update that starts and then misbehaves needs
+	// a way back that does not involve another download.
+	previousPath := execPath + ".previous"
+	if err := copyFile(execPath, previousPath); err != nil {
+		// Not fatal: the update is still verified, and a missing fallback is a
+		// smaller problem than a console that refuses to update.
+		steps = append(steps, selfStep{Step: "keep", Detail: "could not keep the old binary: " + err.Error()})
+	}
 	if err := os.Rename(tmpPath, execPath); err != nil {
 		steps = append(steps, selfStep{Step: "replace", Detail: err.Error()})
 		return selfUpdateResult{OK: false, Steps: steps}, errors.New("the new binary could not replace the old one")
@@ -339,6 +347,63 @@ func restartHint() string {
 	default:
 		return "restart the console"
 	}
+}
+
+// copyFile writes src to dst with the same permissions, replacing it.
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = in.Close() }()
+	info, err := in.Stat()
+	if err != nil {
+		return err
+	}
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode().Perm())
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
+}
+
+// handleSelfRollback puts the build that was replaced back in place. It exists
+// because an update that starts and then misbehaves is the one failure the
+// checksum cannot catch.
+func handleSelfRollback(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, "POST")
+		return
+	}
+	execPath, err := selfExecutable()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "release_unavailable", err.Error())
+		return
+	}
+	execPath, err = filepath.EvalSymlinks(execPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "release_unavailable", err.Error())
+		return
+	}
+	previous := execPath + ".previous"
+	if _, err := os.Stat(previous); err != nil {
+		writeError(w, http.StatusNotFound, "no_rollback",
+			"there is no previous build on this host: none was replaced since it was installed")
+		return
+	}
+	if err := copyFile(previous, execPath); err != nil {
+		writeError(w, http.StatusInternalServerError, "rollback_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":      true,
+		"rolled":  true,
+		"restart": restartHint(),
+	})
 }
 
 // mustSelfText reads a short text file and returns "" when it is absent.

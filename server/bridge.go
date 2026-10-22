@@ -54,9 +54,9 @@ type Server struct {
 	webFS      fs.FS
 	// fleet is the hub's peer list; fleetHub is the console this one follows
 	// (empty on the hub itself) and fleetAddr is what it reports as its own.
-	fleet     fleetState
-	fleetHub  string
-	fleetAddr string
+	fleet      fleetState
+	fleetSeeds []string
+	fleetAddr  string
 }
 
 func NewServer(socketPath string, webFS fs.FS) *Server {
@@ -64,7 +64,7 @@ func NewServer(socketPath string, webFS fs.FS) *Server {
 		socketPath: socketPath,
 		webFS:      webFS,
 		fleet:      fleetState{peers: map[string]fleetPeer{}},
-		fleetHub:   defaultFleetHub,
+		fleetSeeds: defaultFleetSeeds,
 		fleetAddr:  defaultFleetAddr,
 	}
 }
@@ -791,6 +791,7 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("/api/v1/herdr-web/release", handleSelfRelease)
 	mux.HandleFunc("/api/v1/herdr-web/update", handleSelfUpdate)
+	mux.HandleFunc("/api/v1/herdr-web/rollback", handleSelfRollback)
 	// The console is also a release source: a host that cannot reach GitHub
 	// installs from a peer that can (or from a bastion).
 	mux.HandleFunc("/release/", handleRelease)

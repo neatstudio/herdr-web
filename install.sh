@@ -44,9 +44,10 @@ Options:
   --local-addr HOST:PORT loopback address passed to the service
   --herdr-bin PATH       herdr binary the console reports and updates
   --herdr-socket PATH    herdr daemon socket
-  --fleet-hub URL        console that collects the fleet list and publishes the
-                         build this one follows (default: none, so this console
-                         is the hub)
+  --fleet-seeds LIST     comma-separated consoles to start from, e.g.
+                         http://100.89.0.206:5000. The fleet is exchanged peer to
+                         peer and no seed is an authority; without seeds this
+                         console only knows itself
   -h, --help         show this help
 
 Without --from or --url the release asset for this platform is downloaded from
@@ -135,7 +136,7 @@ while [ $# -gt 0 ]; do
     --local-addr) LOCAL_ADDR="$2"; shift 2 ;;
     --herdr-bin) HERDR_BIN="$2"; shift 2 ;;
     --herdr-socket) HERDR_SOCKET="$2"; shift 2 ;;
-    --fleet-hub) FLEET_HUB="$2"; shift 2 ;;
+    --fleet-seeds | --fleet-hub) FLEET_HUB="$2"; shift 2 ;;
     -h | --help) usage; exit 0 ;;
     *) die "unknown option: $1 (try --help)" ;;
   esac
@@ -272,7 +273,7 @@ if [ "$WITH_SERVICE" -eq 1 ]; then
     <key>HOME</key>
     <string>$HOME</string>
     <key>PATH</key>
-    <string>$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>$( [ -n "$FLEET_HUB" ] && printf '\n    <key>HERDR_WEB_FLEET_HUB</key>\n    <string>%s</string>' "$FLEET_HUB" )
+    <string>$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>$( [ -n "$FLEET_HUB" ] && printf '\n    <key>HERDR_WEB_FLEET_SEEDS</key>\n    <string>%s</string>' "$FLEET_HUB" )
   </dict>
   <key>WorkingDirectory</key>
   <string>$HOME</string>
@@ -323,7 +324,7 @@ Type=simple
 WorkingDirectory=$HOME
 Environment=HOME=$HOME
 Environment=PATH=$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
-$( [ -n "$FLEET_HUB" ] && printf 'Environment=HERDR_WEB_FLEET_HUB=%s\n' "$FLEET_HUB" )
+$( [ -n "$FLEET_HUB" ] && printf 'Environment=HERDR_WEB_FLEET_SEEDS=%s\n' "$FLEET_HUB" )
 ExecStart=$BIN$ARGS
 Restart=on-failure
 RestartSec=3

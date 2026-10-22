@@ -520,6 +520,25 @@ export async function fetchSelfRelease(): Promise<SelfRelease | null> {
 }
 
 /**
+ * Put back the build this one replaced.
+ *
+ * An update that starts and then misbehaves is the failure the checksum cannot
+ * catch, and this is the way back that does not need a download.
+ */
+export async function rollbackConsole(): Promise<{ ok: boolean; restart?: string; error?: string } | null> {
+  const raw = await postJSONResult("/api/v1/herdr-web/rollback", {});
+  if (raw === null || typeof raw !== "object") {
+    return null;
+  }
+  const record = raw as Record<string, unknown>;
+  return {
+    ok: record.ok === true,
+    restart: typeof record.restart === "string" ? record.restart : undefined,
+    error: typeof record.error === "string" ? record.error : undefined,
+  };
+}
+
+/**
  * Update the console itself.
  *
  * The bytes are compared rather than the version: whatever a source publishes is
@@ -548,9 +567,10 @@ export type FleetPeer = {
 };
 
 export type Fleet = {
-  /** True when this console is the hub itself. */
+  /** True when this console was started as an entry point, with no seeds. */
   hub: boolean;
-  hubUrl: string;
+  /** The consoles this one started from; the rest is learned by exchange. */
+  seeds: string[];
   /** True when this console takes the hub's build automatically. */
   follow: boolean;
   peers: FleetPeer[];
@@ -574,7 +594,7 @@ export async function fetchFleet(): Promise<Fleet | null> {
   const self = (record.self ?? {}) as Record<string, unknown>;
   return {
     hub: record.hub === true,
-    hubUrl: typeof record.hubUrl === "string" ? record.hubUrl : "",
+    seeds: Array.isArray(record.seeds) ? (record.seeds as string[]) : [],
     follow: record.follow === true,
     peers,
     self: {

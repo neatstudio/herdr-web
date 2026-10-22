@@ -4,6 +4,7 @@ import {
   fetchHerdrHost,
   runHostAction,
   updateConsole,
+  rollbackConsole,
   type Fleet,
   type HerdrHost,
 } from "@/lib/herdr";
@@ -59,6 +60,26 @@ export function HerdrPanel({ open, onClose, consoleVersion }: Props) {
 
   if (!open) {
     return null;
+  }
+
+  async function actRollback(): Promise<void> {
+    setBusy(true);
+    setResult(null);
+    try {
+      const done = await rollbackConsole();
+      if (done === null || !done.ok) {
+        setResult({ ok: false, command: "roll back console", output: done?.error ?? "no previous build to go back to" });
+      } else {
+        setResult({
+          ok: true,
+          command: "roll back console",
+          output: `previous build restored\nrestart to run it: ${done.restart ?? "restart the console"}`,
+        });
+      }
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function actConsole(): Promise<void> {
@@ -133,11 +154,9 @@ export function HerdrPanel({ open, onClose, consoleVersion }: Props) {
           <section className="hostpanel__fleet" aria-label="Fleet">
             <div className="hostpanel__fleet-head">
               <span>{fleet.hub ? "fleet · this console is the hub" : "fleet"}</span>
-              {!fleet.hub && (
-                <span className="hostpanel__dim">
-                  {fleet.follow ? "follows the hub" : "does not follow"}
-                </span>
-              )}
+              <span className="hostpanel__dim">
+                {fleet.follow ? "follows newer builds" : "does not follow"}
+              </span>
             </div>
             <ul id="herdr-fleet-list" className="hostpanel__fleet-list">
               {fleet.peers.length === 0 ? (
@@ -281,6 +300,25 @@ export function HerdrPanel({ open, onClose, consoleVersion }: Props) {
                 }}
               >
                 update console
+              </button>
+              <button
+                type="button"
+                id="herdr-console-rollback"
+                className="hostpanel__act"
+                title="put back the build this console replaced"
+                disabled={busy}
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Put back the previous build of this console?\n\n" +
+                        "Use it when an update starts but does not behave; it starts on the next restart.",
+                    )
+                  ) {
+                    void actRollback();
+                  }
+                }}
+              >
+                roll back
               </button>
               {host.installed && (
                 <button

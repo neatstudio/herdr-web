@@ -1742,3 +1742,49 @@ test("the panel shows which consoles are in the fleet and which build each runs"
   // fleet should show what is missing, not just what is there.
   await expect(list.locator('[data-peer="m8s"]')).toContainText("stale");
 });
+
+test("the console can go back to the build it replaced", async ({ page }) => {
+  await installBridge(page);
+  await page.route("**/api/v1/herdr/host", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        installed: true,
+        binary: "/home/op/.local/bin/herdr",
+        clientVersion: "0.9.5",
+        channel: "stable",
+        serverRunning: true,
+        serverVersion: "0.9.5",
+        serverStatus: "running",
+        compatible: true,
+        socket: "/home/op/.config/herdr/herdr.sock",
+        restartNeeded: false,
+        serverBinaryStale: false,
+        installMethod: "direct",
+        latestVersion: "0.9.5",
+        updateAvailable: false,
+        canUpdate: true,
+        error: "",
+      }),
+    }),
+  );
+  let rolled = 0;
+  await page.route("**/api/v1/herdr-web/rollback", async (route) => {
+    rolled += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, rolled: true, restart: "systemctl --user restart dev.herdr-web" }),
+    });
+  });
+  await page.goto("/");
+
+  await page.locator("#herdr-host-open").click();
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.locator("#herdr-console-rollback").click();
+  await expect.poll(() => rolled).toBe(1);
+  // An update that starts and then misbehaves is the failure the checksum cannot
+  // catch, so the panel says what to do next.
+  await expect(page.locator(".hostpanel__result")).toContainText("previous build restored");
+});

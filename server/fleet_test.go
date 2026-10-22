@@ -213,3 +213,103 @@ func TestFleetRestartMatchesTheUnitScope(t *testing.T) {
 		}
 	}
 }
+
+func TestFleetLearnsPeersItNeverSpokeTo(t *testing.T) {
+	// The exchange is the only way a console meets the fleet: A knows B, B knows
+	// C, so after they speak both lists agree. No one is the authority.
+	left := fleetTestServer(t)
+	right := fleetTestServer(t)
+	leftServer := httptest.NewServer(left.Handler())
+	t.Cleanup(leftServer.Close)
+	rightServer := httptest.NewServer(right.Handler())
+	t.Cleanup(rightServer.Close)
+	left.SetFleetForTest("", strings.TrimPrefix(leftServer.URL, "http://"))
+	right.SetFleetForTest("", strings.TrimPrefix(rightServer.URL, "http://"))
+
+	// B's view already contains a machine A has never spoken to.
+	right.fleet.mu.Lock()
+	right.fleet.peers["vn200"] = fleetPeer{
+		ID: "vn200", Addr: "100.89.0.200:5000", Version: "v0.4.1", Seen: time.Now().Unix(),
+	}
+	right.fleet.mu.Unlock()
+
+	payload, err := json.Marshal(left.fleetSelfPeer())
+	if err != nil {
+		t.Fatal(err)
+	}
+	left.fleetExchange(context.Background(), rightServer.URL, payload)
+
+	left.fleet.mu.Lock()
+	_, learned := left.fleet.peers["vn200"]
+	left.fleet.mu.Unlock()
+	if !learned {
+		t.Fatal("a peer's list did not teach this console about the rest of the fleet")
+	}
+}
+
+func TestFleetDoesNotAdoptAnOlderBuildFromAPeer(t *testing.T) {
+	previousVersion := ConsoleVersion
+	ConsoleVersion = "v0.4.1"
+	t.Cleanup(func() { ConsoleVersion = previousVersion })
+
+	current := []byte("current build")
+	path := fakeExecutable(t, string(current))
+	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/release/version":
+			_, _ = w.Write([]byte("v0.4.0\n"))
+		case strings.HasSuffix(r.URL.Path, ".sha256"):
+			_, _ = w.Write([]byte(checksum([]byte("older")) + "  " + selfPlatform() + "\n"))
+		default:
+			_, _ = w.Write([]byte("older"))
+		}
+	}))
+	t.Cleanup(peer.Close)
+
+	previousRestart := fleetRestart
+	fleetRestart = func() error {
+		t.Fatal("restarted for an older build")
+		return nil
+	}
+	t.Cleanup(func() { fleetRestart = previousRestart })
+
+	console := fleetTestServer(t)
+	console.SetFleetForTest(peer.URL, "100.89.0.4:5000")
+	updated, err := console.fleetFollowOnce(context.Background())
+	if err != nil || updated {
+		t.Fatalf("updated = %v, err = %v", updated, err)
+	}
+	got, _ := os.ReadFile(path)
+	if string(got) != string(current) {
+		t.Fatal("an older build replaced this one")
+	}
+}
+
+func TestRollbackRestoresThePreviousBuild(t *testing.T) {
+	// An update that starts and then misbehaves is the failure the checksum
+	// cannot catch, so the replaced build is kept.
+	previous := []byte("previous build")
+	path := fakeExecutable(t, "broken build")
+	if err := os.WriteFile(path+".previous", previous, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := httptest.NewRecorder()
+	handleSelfRollback(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/herdr-web/rollback", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	got, _ := os.ReadFile(path)
+	if string(got) != string(previous) {
+		t.Fatalf("binary = %q", got)
+	}
+}
+
+func TestRollbackWithoutAPreviousBuildSaysSo(t *testing.T) {
+	fakeExecutable(t, "only build")
+	recorder := httptest.NewRecorder()
+	handleSelfRollback(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/herdr-web/rollback", nil))
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("status = %d", recorder.Code)
+	}
+}
