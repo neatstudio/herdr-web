@@ -1915,3 +1915,28 @@ test("one prompt can be sent to the whole fleet", async ({ page }) => {
   await expect(sheet.locator('[data-host="http://100.89.0.9:5000"]')).toContainText("blocked");
   await expect(sheet.locator('[data-host="http://100.89.0.4:5000"]')).toContainText("working");
 });
+
+test("on a phone the layout switch is a control you can actually hit", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installBridge(page);
+  await page.goto("/");
+
+  // Three 46x20 buttons floating over the transcript are unreadable and
+  // untappable: 44px is the smallest target a finger is expected to hit.
+  for (const mode of ["wrap", "exact", "fit"]) {
+    const box = await page.locator(`#herdr-display-${mode}`).boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+    expect(box!.width).toBeGreaterThanOrEqual(96);
+  }
+
+  // And it sits above the transcript instead of on top of it: the scroll area
+  // starts below the control, so no line is hidden under it.
+  const control = await page.locator(".scope__display").boundingBox();
+  const scroll = page.locator(".scope__scroll");
+  const paddingTop = await scroll.evaluate((element) => Number.parseFloat(getComputedStyle(element).paddingTop));
+  expect(paddingTop).toBeGreaterThanOrEqual(control!.height);
+
+  await page.locator("#herdr-display-fit").click();
+  await expect(page.locator(".scope__scroll")).toHaveAttribute("data-display", "fit");
+});

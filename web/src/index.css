@@ -1977,6 +1977,55 @@ body::before {
 
 /* The sidebar folds into the header picker once the transcript needs the room;
    above this the two share the window by proportion. */
+
+/* On a phone the layout switch is not a decoration: three 46x20 buttons floating
+   over the transcript are unreadable and untappable. It becomes a full-width
+   segmented control under the pane header instead — one target per choice, at the
+   size a finger actually is, and the transcript starts below it rather than under
+   it. */
+@media (max-width: 900px), (pointer: coarse) {
+  .scope__display {
+    right: 0;
+    left: 0;
+    top: 0;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    opacity: 1;
+    background: var(--surface);
+    border-bottom: var(--rule-w) solid var(--rule-strong);
+  }
+
+  .scope__display-button {
+    min-height: 44px;
+    padding: 0 8px;
+    border: 0;
+    border-left: var(--rule-w) solid var(--rule);
+    background: none;
+    font-size: var(--step-fine);
+    letter-spacing: 0.08em;
+    touch-action: manipulation;
+  }
+
+  .scope__display-button:first-child {
+    border-left: 0;
+  }
+
+  .scope__display-button[aria-pressed="true"] {
+    background: var(--ink);
+    color: var(--paper);
+  }
+
+  /* The column count is diagnostic, and the transcript needs the width. */
+  .scope__display-hint {
+    display: none;
+  }
+
+  .scope__scroll {
+    padding-top: calc(44px + 12px);
+  }
+}
+
 @media (max-width: 900px) {
   .body {
     grid-template-columns: minmax(0, 1fr);
