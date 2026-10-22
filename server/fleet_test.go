@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -179,5 +180,36 @@ func TestFleetStalePeersAreMarkedButKept(t *testing.T) {
 	console.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/fleet", nil))
 	if !strings.Contains(recorder.Body.String(), `"stale":true`) {
 		t.Fatalf("a silent peer is not marked stale: %s", recorder.Body.String())
+	}
+}
+
+func TestFleetRestartMatchesTheUnitScope(t *testing.T) {
+	// A root console is a system unit; asking the user manager to restart it
+	// leaves the old process running the new file, which is how a fleet came to
+	// report one version and run another.
+	var args []string
+	previous := fleetSpawn
+	fleetSpawn = func(name string, argv []string) error {
+		args = append([]string{name}, argv...)
+		return nil
+	}
+	t.Cleanup(func() { fleetSpawn = previous })
+
+	if err := fleetRestart(); err != nil {
+		t.Fatalf("restart: %v", err)
+	}
+	switch runtime.GOOS {
+	case "linux":
+		want := []string{"systemctl", "--user", "restart", "dev.herdr-web"}
+		if os.Getuid() == 0 {
+			want = []string{"systemctl", "restart", "dev.herdr-web"}
+		}
+		if strings.Join(args, " ") != strings.Join(want, " ") {
+			t.Fatalf("args = %v, want %v", args, want)
+		}
+	case "darwin":
+		if len(args) == 0 || args[0] != "launchctl" || !strings.Contains(strings.Join(args, " "), "kickstart") {
+			t.Fatalf("args = %v", args)
+		}
 	}
 }

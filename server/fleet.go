@@ -222,7 +222,9 @@ func (s *Server) fleetFollowLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.fleetFollowOnce(ctx)
+			if _, err := s.fleetFollowOnce(ctx); err != nil {
+				fmt.Fprintf(os.Stderr, "herdr-web: fleet follow: %v\n", err)
+			}
 		}
 	}
 }
@@ -267,12 +269,24 @@ func (s *Server) fleetFollowOnce(ctx context.Context) (bool, error) {
 
 // fleetRestart starts the new binary through the service manager, which is the
 // only thing that can restart the process serving this request.
+//
+// The scope has to match the unit that is actually running: a root console is
+// registered as a system unit, and asking the user manager to restart it fails
+// while the files on disk are already the new build — which is how a fleet ends
+// up reporting one version and running another.
+// fleetSpawn is the detached-start seam: a test records the command instead of
+// starting a service manager.
+var fleetSpawn = spawnDetached
+
 var fleetRestart = func() error {
 	switch runtime.GOOS {
 	case "linux":
-		return spawnDetached("systemctl", []string{"--user", "restart", "dev.herdr-web"})
+		if os.Getuid() == 0 {
+			return fleetSpawn("systemctl", []string{"restart", "dev.herdr-web"})
+		}
+		return fleetSpawn("systemctl", []string{"--user", "restart", "dev.herdr-web"})
 	case "darwin":
-		return spawnDetached("launchctl", []string{"kickstart", "-k", "gui/" + currentUID() + "/dev.herdr-web"})
+		return fleetSpawn("launchctl", []string{"kickstart", "-k", "gui/" + currentUID() + "/dev.herdr-web"})
 	default:
 		return errors.New("no service manager")
 	}
