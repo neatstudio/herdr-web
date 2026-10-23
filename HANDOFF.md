@@ -198,13 +198,14 @@ splitting stays on the pane menu. Verified on `100.89.0.200`:
 `POST /api/v1/herdr/tabs {"workspaceId":"w1"}` → `{tabId:"w1:t2", paneId:"w1:p2"}`, and
 `herdr tab close w1:t2` cleaned up.
 
-**A2. DONE (`v0.6.9`/`v0.6.10`) — the work comes back.** `GET
+**A2. DONE — the work comes back.** `GET
 /api/v1/herdr/job/<workspaceId>/diff` reads herdr's worktree for that workspace
-(`workspace.get` → `worktree.checkout_path`) and reports branch, the last ten commits
-and the uncommitted files; the dispatcher asks each target for it, and the panel shows
-"2 commits on job/audit" and "1 uncommitted" per machine. Still open: a one-click
-`git fetch` hint per machine (do **not** merge into the operator's repository from a
-button).
+(`workspace.get` → `worktree.checkout_path`) and reports the branch, the commits made
+since the worktree's fork point (not the ones it inherited), and the uncommitted
+files. The dispatcher asks each target for it; the panel shows the commit count, says
+"no commits" when the job made none, and prints the `git fetch <host>:<checkout>`
+command for the operator to run. Nothing merges into the operator's repository from a
+button.
 
 **A3. Cancel.** `POST /api/v1/herdr/job/<workspaceId>/stop` exists and is untested
 from the UI. Wire it into the dispatch panel per job, with the workspace id.
