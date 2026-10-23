@@ -349,16 +349,17 @@ func jobAgentKinds() []string {
 // installed without installing one.
 var lookPath = exec.LookPath
 
-// maxJobs is the operator's concurrency cap for this machine. Zero means no
-// cap: the console does not guess how many agents a host can run.
+// maxJobs is the operator's concurrency cap for this machine. Unset or invalid
+// defaults to one: many fleet machines are 1C1G, and a coding agent plus its
+// build is the resource hog. Set HERDR_WEB_MAX_JOBS=0 explicitly for no cap.
 func maxJobs() int {
 	raw := strings.TrimSpace(os.Getenv("HERDR_WEB_MAX_JOBS"))
 	if raw == "" {
-		return 0
+		return 1
 	}
 	limit, err := strconv.Atoi(raw)
 	if err != nil || limit < 0 {
-		return 0
+		return 1
 	}
 	return limit
 }

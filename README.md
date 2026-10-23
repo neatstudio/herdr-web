@@ -304,9 +304,11 @@ checksum, and `HERDR_WEB_FLEET_FOLLOW=off` keeps a console where it is.
 
 Each hello also carries what a machine can offer a task: its agents, tools, declared
 models (`HERDR_WEB_MODELS`), and its capacity (`running` out of `maxTasks`).
-`HERDR_WEB_MAX_JOBS` is the operator's concurrency cap (zero means no cap); at the
-cap the target answers `429 at_capacity`, and the dispatch sheet shows the machine as
-full instead of preselecting it. `GET /api/v1/herdr/jobs/ledger` returns that
+`HERDR_WEB_MAX_JOBS` is the operator's concurrency cap. Unset defaults to one,
+because many fleet machines are 1C/1G and an agent plus its build is the resource
+hog; set it explicitly to zero only when you mean no cap. At the cap the target
+answers `429 at_capacity`, and the dispatch sheet shows the machine as full instead
+of preselecting it. `GET /api/v1/herdr/jobs/ledger` returns that
 machine's start/stop events. This is a capability and capacity registry, not a
 chain: there is no global queue or consensus, and the claim is the task id plus
 the offer/start gate. The ledger is an append-only JSONL file under

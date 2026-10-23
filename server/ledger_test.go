@@ -106,3 +106,20 @@ func TestLedgerSurvivesRestart(t *testing.T) {
 		t.Fatalf("stopped task still maps to a workspace")
 	}
 }
+
+func TestMaxJobsDefaultsToOne(t *testing.T) {
+	for _, testCase := range []struct {
+		value string
+		want  int
+	}{
+		{"", 1},
+		{"0", 0},
+		{"2", 2},
+		{"junk", 1},
+	} {
+		t.Setenv("HERDR_WEB_MAX_JOBS", testCase.value)
+		if got := maxJobs(); got != testCase.want {
+			t.Errorf("HERDR_WEB_MAX_JOBS=%q: got %d, want %d", testCase.value, got, testCase.want)
+		}
+	}
+}
