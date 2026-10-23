@@ -1,6 +1,6 @@
 # Handoff — herdr-web
 
-Written 2026-10-22 at `v0.6.7`, updated at `v0.6.8`. Two people are picking work up from here; the split
+Written 2026-10-22 at `v0.6.7`, updated at `v0.6.10`. Two people are picking work up from here; the split
 is at the bottom. Read the two sections above it first: the contracts are not
 negotiable without a decision, and the pitfalls have each cost a debugging session
 already.
@@ -21,9 +21,9 @@ a task to whichever machine can run it.
 
 | Thing | Value |
 | --- | --- |
-| Version | `v0.6.8` (`git describe`), tag pushed |
+| Version | `v0.6.10` (`git describe`), tag pushed |
 | Tests | `go test ./...` green; `npm --prefix web run test:unit` 102/102; Playwright 72/72 |
-| Fleet | see below, all `v0.6.8` |
+| Fleet | see below, all `v0.6.10` |
 | herdr on the fleet | 0.9.5 everywhere; **tw1's daemon is currently stopped** |
 
 Fleet as the hub reports it (`http://100.89.0.206:5000/api/v1/fleet`):
@@ -139,6 +139,12 @@ or pull deploy, fallback to push), `scripts/version.sh` (version arithmetic),
    look, `attach -d` to take over.
 10. **A tailnet clock can be off by more than the heartbeat interval**; never settle a
     conflict by timestamp alone when a build number is available.
+11. **systemd gives a system service no `HOME`.** `DefaultSocketPath` fell back to
+    the relative `herdr.sock` and the console reported a missing daemon. Resolve the
+    account's home from `/etc/passwd`, and put `Environment=HOME=` in the unit.
+12. **A form does not expand `~`.** herdr takes a directory literally, so a workspace
+    made with `~` in the field failed; the server expands a leading `~` (its own user
+    only) and the dialog shows the daemon's own error text.
 
 ## Open work
 
@@ -150,22 +156,18 @@ splitting stays on the pane menu. Verified on `100.89.0.200`:
 `POST /api/v1/herdr/tabs {"workspaceId":"w1"}` → `{tabId:"w1:t2", paneId:"w1:p2"}`, and
 `herdr tab close w1:t2` cleaned up.
 
-**A2. Close phase 2: bring the work back.** A job runs in a git worktree on the
-target machine (`worktree.create`), the agent commits to that branch. The dispatcher
-must collect it.
-
-- Add `GET /api/v1/herdr/job/<workspaceId>/diff` on the target: `git -C <checkout>
-  status --porcelain` + `git branch --show-current` + `git log base..HEAD
-  --oneline` (the worktree path is in `workspace.get` → `worktree.checkout_path`).
-- Dispatcher: `GET /api/v1/fleet/jobs` includes per-job branch and commit summary.
-- Panel: show the branch and the commits per machine; a "collect" action that prints
-  the `git fetch <host>:<checkout>` command (a real merge across hosts is a decision
-  for the operator, not a button that rewrites their repo).
-- Acceptance: a dispatched job that commits shows its branch + commits in the panel;
-  a job that commits nothing says so.
+**A2. DONE (`v0.6.9`/`v0.6.10`) — the work comes back.** `GET
+/api/v1/herdr/job/<workspaceId>/diff` reads herdr's worktree for that workspace
+(`workspace.get` → `worktree.checkout_path`) and reports branch, the last ten commits
+and the uncommitted files; the dispatcher asks each target for it, and the panel shows
+"2 commits on job/audit" and "1 uncommitted" per machine. Still open: a one-click
+`git fetch` hint per machine (do **not** merge into the operator's repository from a
+button).
 
 **A3. Cancel.** `POST /api/v1/herdr/job/<workspaceId>/stop` exists and is untested
 from the UI. Wire it into the dispatch panel per job, with the workspace id.
+Acceptance: the button asks first, the workspace disappears from the target, and the
+panel row says it was stopped rather than showing a stale status.
 
 ### Owner B — the other engineer
 
