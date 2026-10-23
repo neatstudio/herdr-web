@@ -1,6 +1,6 @@
 # Handoff — herdr-web
 
-Written 2026-10-22 at `v0.6.7`, updated at `v0.6.13`. Two people are picking work up from here; the split
+Written 2026-10-22 at `v0.6.7`, updated at `v0.6.14`. Two people are picking work up from here; the split
 is at the bottom. Read the two sections above it first: the contracts are not
 negotiable without a decision, and the pitfalls have each cost a debugging session
 already.
@@ -21,7 +21,7 @@ a task to whichever machine can run it.
 
 | Thing | Value |
 | --- | --- |
-| Version | `v0.6.13` (`git describe`), tag pushed |
+| Version | `v0.6.14` (`git describe`), tag pushed |
 | Tests | `go test ./...` green; `npm --prefix web run test:unit` 102/102; Playwright 72/72 |
 | Fleet | see below, all `v0.6.13` — except the hub, see B0 |
 | herdr on the fleet | 0.9.5 everywhere; **tw1's daemon is currently stopped** |
@@ -144,6 +144,22 @@ Recovery: the four hosts were pushed the current binary directly. The hub's *fil
 current but its **process** is still the old build, because its sshd is down (B0) and
 the old build cannot restart itself — one reboot, or one `systemctl restart
 dev.herdr-web` once ssh works, finishes it.
+
+## A phone on a relay is the real performance budget (v0.6.14)
+
+Measured at 800 ms round trip, which is what a peer behind a DERP relay looks like:
+
+| | before | after |
+| --- | --- | --- |
+| first contentful paint | 6.2 s | 1.7 s |
+| first transcript | 25.8 s | 4.8 s |
+| bundle on the wire | 292 KB | 90 KB |
+
+Two things, both in `server/compress.go` and `web/index.html`: text responses are
+gzipped (compressed build assets are remembered; binaries and small bodies are left
+alone), and the HTML paints a boot shell with the wordmark so a slow link shows
+"connecting" instead of a blank page. Any future UI work should be measured under
+`Network.emulateNetworkConditions` with 800 ms latency before it is called fast.
 
 ## Pitfalls, each of which already cost a session
 
