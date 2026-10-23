@@ -35,6 +35,7 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
   const [branch, setBranch] = useState("");
   const [kinds, setKinds] = useState<string[]>([]);
   const [kind, setKind] = useState("");
+  const [strategy, setStrategy] = useState<"fanout" | "single">("fanout");
   const [chosen, setChosen] = useState<string[]>([]);
   const [dispatches, setDispatches] = useState<Dispatch[]>([]);
   const [busy, setBusy] = useState(false);
@@ -132,6 +133,7 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
         cwd: cwd.trim() === "" ? undefined : cwd.trim(),
         branch: branch.trim() === "" ? undefined : branch.trim(),
         kind,
+        strategy,
         targets: chosen,
       });
       if (done === null) {
@@ -203,6 +205,33 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
           </select>
         </label>
 
+        <div className="newws__field">
+          <span>strategy</span>
+          <div className="dispatch__strategy" role="group" aria-label="Dispatch strategy">
+            <button
+              type="button"
+              id="dispatch-strategy-fanout"
+              aria-pressed={strategy === "fanout"}
+              onClick={() => setStrategy("fanout")}
+            >
+              every machine
+            </button>
+            <button
+              type="button"
+              id="dispatch-strategy-single"
+              aria-pressed={strategy === "single"}
+              onClick={() => setStrategy("single")}
+            >
+              one machine
+            </button>
+          </div>
+          <span className="newws__dim">
+            {strategy === "single"
+              ? "offered to all selected; the freest one runs it"
+              : "the same prompt runs independently on every selected machine"}
+          </span>
+        </div>
+
         <div className="newws__head">machines</div>
         <ul className="dispatch__targets">
           {peers.length === 0 ? (
@@ -259,7 +288,7 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
           disabled={busy || prompt.trim() === "" || kind === ""}
           onClick={() => void send()}
         >
-          send to {chosen.length} machine{chosen.length === 1 ? "" : "s"}
+          {`${strategy === "single" ? "offer to" : "send to"} ${chosen.length} machine${chosen.length === 1 ? "" : "s"}`}
         </button>
         {problem !== "" && (
           <p className="newws__note newws__note--bad" role="status">

@@ -2335,6 +2335,33 @@ body::before {
   border-color: var(--blocked);
 }
 
+.dispatch__strategy {
+  display: flex;
+}
+
+.dispatch__strategy button {
+  padding: 3px 9px;
+  border: var(--rule-w) solid var(--rule-strong);
+  border-left: 0;
+  background: var(--raised);
+  font-family: var(--font-label);
+  font-size: var(--step-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  cursor: pointer;
+}
+
+.dispatch__strategy button:first-child {
+  border-left: var(--rule-w) solid var(--rule-strong);
+}
+
+.dispatch__strategy button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+
 .dispatch__entry pre {
   margin: 4px 0 0;
   max-height: 200px;

@@ -29,6 +29,9 @@ type jobRequest struct {
 	Kind string `json:"kind"`
 	// Label names the workspace; defaults to the job id.
 	Label string `json:"label"`
+	// TaskID makes a retried start idempotent: the same task never creates a
+	// second workspace on this machine.
+	TaskID string `json:"taskId,omitempty"`
 }
 
 type jobStarted struct {
@@ -36,6 +39,8 @@ type jobStarted struct {
 	JobID       string `json:"jobId"`
 	WorkspaceID string `json:"workspaceId"`
 	PaneID      string `json:"paneId"`
+	TaskID      string `json:"taskId,omitempty"`
+	Reused      bool   `json:"reused,omitempty"`
 	Branch      string `json:"branch,omitempty"`
 	Error       string `json:"error,omitempty"`
 }
@@ -60,6 +65,20 @@ func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(request.Kind) == "" {
 		writeError(w, http.StatusBadRequest, "invalid_request", "kind is required (the agent to start)")
 		return
+	}
+	if taskID := strings.TrimSpace(request.TaskID); taskID != "" {
+		if event, running := s.ledger.runningTask(taskID); running {
+			writeJSON(w, http.StatusOK, jobStarted{
+				OK:          true,
+				JobID:       event.PaneID,
+				WorkspaceID: event.WorkspaceID,
+				PaneID:      event.PaneID,
+				TaskID:      taskID,
+				Reused:      true,
+				Branch:      strings.TrimSpace(request.Branch),
+			})
+			return
+		}
 	}
 	if limit := maxJobs(); limit > 0 && s.ledger.runningCount() >= limit {
 		writeError(w, http.StatusTooManyRequests, "at_capacity",
@@ -122,14 +141,93 @@ func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.ledger.started(created.Workspace.WorkspaceID, paneID, request.Kind, label)
+	s.ledger.started(created.Workspace.WorkspaceID, paneID, request.Kind, label, strings.TrimSpace(request.TaskID))
 	writeJSON(w, http.StatusOK, jobStarted{
 		OK:          true,
 		JobID:       paneID,
 		WorkspaceID: created.Workspace.WorkspaceID,
 		PaneID:      paneID,
+		TaskID:      strings.TrimSpace(request.TaskID),
 		Branch:      strings.TrimSpace(request.Branch),
 	})
+}
+
+// handleJobOffer is the market's admission question: can this machine take the
+// task, and how much room does it have? It is side-effect-free; only the start
+// creates a workspace, and the task id makes that start idempotent.
+func (s *Server) handleJobOffer(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, "POST")
+		return
+	}
+	var request struct {
+		TaskID string `json:"taskId"`
+		Prompt string `json:"prompt"`
+		Cwd    string `json:"cwd"`
+		Branch string `json:"branch"`
+		Kind   string `json:"kind"`
+		Label  string `json:"label"`
+	}
+	if !decodeBody(w, r, &request) {
+		return
+	}
+	taskID := strings.TrimSpace(request.TaskID)
+	kind := strings.TrimSpace(request.Kind)
+	if taskID == "" || kind == "" || strings.TrimSpace(request.Prompt) == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "taskId, prompt and kind are required")
+		return
+	}
+	if event, running := s.ledger.runningTask(taskID); running {
+		s.ledger.recordOffer(taskID, true, "already running")
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok": true, "taskId": taskID, "accept": true, "reused": true,
+			"running": s.ledger.runningCount(), "maxTasks": maxJobs(),
+			"workspaceId": event.WorkspaceID,
+		})
+		return
+	}
+	accepted := true
+	reason := ""
+	if !agentAvailable(kind) {
+		accepted, reason = false, "agent not installed"
+	} else if limit := maxJobs(); limit > 0 && s.ledger.runningCount() >= limit {
+		accepted, reason = false, "at capacity"
+	}
+	s.ledger.recordOffer(taskID, accepted, reason)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok": true, "taskId": taskID, "accept": accepted, "reason": reason,
+		"running": s.ledger.runningCount(), "maxTasks": maxJobs(),
+	})
+}
+
+// handleJobTask answers whether a task id is running here, so a dispatcher that
+// lost a start response can check before offering the task to another machine.
+func (s *Server) handleJobTask(w http.ResponseWriter, r *http.Request, taskID string) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, "GET")
+		return
+	}
+	taskID = strings.Trim(strings.TrimSpace(taskID), "/")
+	if taskID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "task id is required")
+		return
+	}
+	event, running := s.ledger.runningTask(taskID)
+	answer := map[string]any{"ok": true, "taskId": taskID, "running": running}
+	if running {
+		answer["jobId"] = event.PaneID
+		answer["workspaceId"] = event.WorkspaceID
+	}
+	writeJSON(w, http.StatusOK, answer)
+}
+
+func agentAvailable(kind string) bool {
+	for _, name := range jobAgentKinds() {
+		if name == kind {
+			return true
+		}
+	}
+	return false
 }
 
 // handleJobStatus reports how the job is doing and what the agent has said.

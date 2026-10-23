@@ -3,9 +3,14 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -39,6 +44,10 @@ type dispatchedJob struct {
 	// A cancelled job's workspace is gone; do not ask the target for a status
 	// that can only come back as an error.
 	Cancelled bool `json:"cancelled,omitempty"`
+	// TaskID and the lease are the market's claim record. The task id makes a
+	// retry idempotent; the lease says how long this assignment is valid.
+	TaskID     string `json:"taskId,omitempty"`
+	LeaseUntil int64  `json:"leaseUntil,omitempty"`
 }
 
 type dispatch struct {
@@ -67,18 +76,21 @@ func (s *Server) handleDispatch(w http.ResponseWriter, r *http.Request) {
 // Targets default to every console in the fleet. The prompt is sent verbatim to
 // each, which is the point: the same task, run in parallel on machines with
 // different models and different reachability, then compared.
+type dispatchRequest struct {
+	Prompt   string   `json:"prompt"`
+	Cwd      string   `json:"cwd"`
+	Branch   string   `json:"branch"`
+	Kind     string   `json:"kind"`
+	Strategy string   `json:"strategy"`
+	Targets  []string `json:"targets"`
+}
+
 func (s *Server) handleDispatchJob(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeMethodNotAllowed(w, "POST")
 		return
 	}
-	var request struct {
-		Prompt  string   `json:"prompt"`
-		Cwd     string   `json:"cwd"`
-		Branch  string   `json:"branch"`
-		Kind    string   `json:"kind"`
-		Targets []string `json:"targets"`
-	}
+	var request dispatchRequest
 	if !decodeBody(w, r, &request) {
 		return
 	}
@@ -97,6 +109,17 @@ func (s *Server) handleDispatchJob(w http.ResponseWriter, r *http.Request) {
 	if len(targets) == 0 {
 		writeError(w, http.StatusConflict, "no_targets",
 			"no console is known: pass targets, or start this one with --fleet-seeds")
+		return
+	}
+	switch strategy := strings.ToLower(strings.TrimSpace(request.Strategy)); strategy {
+	case "", "fanout":
+		// The original behaviour: the same prompt runs independently everywhere.
+	case "single":
+		s.dispatchMarket(w, r, request, targets)
+		return
+	default:
+		writeError(w, http.StatusBadRequest, "invalid_request",
+			"strategy must be fanout or single")
 		return
 	}
 
@@ -139,6 +162,208 @@ func (s *Server) handleDispatchJob(w http.ResponseWriter, r *http.Request) {
 	s.dispatch.mu.Unlock()
 
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "dispatch": job})
+}
+
+type jobOfferAnswer struct {
+	OK          bool   `json:"ok"`
+	TaskID      string `json:"taskId"`
+	Accept      bool   `json:"accept"`
+	Reused      bool   `json:"reused"`
+	Reason      string `json:"reason"`
+	Running     int    `json:"running"`
+	MaxTasks    int    `json:"maxTasks"`
+	WorkspaceID string `json:"workspaceId"`
+}
+
+// dispatchMarket offers one task to every selected console and starts it on the
+// best one that says yes. The offer is side-effect-free; the start carries the
+// task id, so a lost response is retried idempotently rather than duplicating
+// the workspace.
+func (s *Server) dispatchMarket(w http.ResponseWriter, r *http.Request, request dispatchRequest, targets []string) {
+	taskID := newTaskID()
+	body, err := json.Marshal(jobRequest{
+		Prompt: request.Prompt,
+		Cwd:    request.Cwd,
+		Branch: request.Branch,
+		Kind:   request.Kind,
+		Label:  "task " + taskID,
+		TaskID: taskID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "invalid_request", err.Error())
+		return
+	}
+	job := dispatch{
+		ID:     taskID,
+		At:     time.Now().Unix(),
+		Prompt: request.Prompt,
+		Jobs:   make([]dispatchedJob, len(targets)),
+	}
+
+	type offerResult struct {
+		base   string
+		answer jobOfferAnswer
+		err    error
+	}
+	results := make([]offerResult, len(targets))
+	var wait sync.WaitGroup
+	for index, target := range targets {
+		index, target := index, target
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			base := fleetBase(target)
+			results[index] = offerResult{base: base}
+			answer, err := postJobOffer(r.Context(), base, body)
+			results[index].answer, results[index].err = answer, err
+		}()
+	}
+	wait.Wait()
+
+	accepted := make([]int, 0, len(targets))
+	for index, result := range results {
+		entry := &job.Jobs[index]
+		entry.Host = result.base
+		entry.TaskID = taskID
+		if result.err != nil {
+			entry.Status = "declined"
+			entry.Error = result.err.Error()
+			continue
+		}
+		if !result.answer.Accept {
+			entry.Status = "declined"
+			entry.Error = result.answer.Reason
+			continue
+		}
+		accepted = append(accepted, index)
+	}
+	sort.SliceStable(accepted, func(left, right int) bool {
+		return offerCapacity(results[accepted[left]].answer) > offerCapacity(results[accepted[right]].answer)
+	})
+
+	startedAny := false
+	for _, index := range accepted {
+		entry := &job.Jobs[index]
+		base := results[index].base
+		started, startErr := postJobStart(r.Context(), base, body)
+		if startErr != nil {
+			running, workspaceID, jobID, queried := getJobTask(r.Context(), base, taskID)
+			if queried && running {
+				// The start took effect even though the response was lost.
+				entry.Local = jobID
+				entry.WorkspaceID = workspaceID
+				entry.TaskID = taskID
+				entry.Status = "started"
+				startedAny = true
+				break
+			}
+			entry.Error = startErr.Error()
+			entry.Status = "declined"
+			var statusErr *selfFetchError
+			if !queried && !errors.As(startErr, &statusErr) {
+				// A network failure with no answer from the target: it may have
+				// started. Do not risk a second workspace on another machine.
+				entry.Status = "unknown"
+				entry.Error = "start outcome unknown; check " + base
+				break
+			}
+			continue
+		}
+		entry.Local = started.JobID
+		entry.WorkspaceID = started.WorkspaceID
+		entry.Branch = started.Branch
+		entry.TaskID = taskID
+		entry.Status = "started"
+		entry.LeaseUntil = time.Now().Add(2 * time.Minute).Unix()
+		startedAny = true
+		break
+	}
+	for _, index := range accepted {
+		entry := &job.Jobs[index]
+		if entry.WorkspaceID == "" && entry.Status == "" {
+			entry.Status = "not selected"
+		}
+	}
+
+	s.dispatch.mu.Lock()
+	s.dispatch.dispatch = append(s.dispatch.dispatch, job)
+	if len(s.dispatch.dispatch) > 20 {
+		s.dispatch.dispatch = s.dispatch.dispatch[len(s.dispatch.dispatch)-20:]
+	}
+	s.dispatch.mu.Unlock()
+
+	writeJSON(w, http.StatusOK, map[string]any{"ok": startedAny, "dispatch": job})
+}
+
+func offerCapacity(answer jobOfferAnswer) int {
+	if answer.MaxTasks <= 0 {
+		return 1 << 30
+	}
+	free := answer.MaxTasks - answer.Running
+	if free < 0 {
+		return 0
+	}
+	return free
+}
+
+func newTaskID() string {
+	var suffix [4]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		return fmt.Sprintf("task-%d", time.Now().UnixNano())
+	}
+	return "task-" + time.Now().Format("20060102-150405") + "-" + hex.EncodeToString(suffix[:])
+}
+
+func postJobOffer(ctx context.Context, base string, body []byte) (jobOfferAnswer, error) {
+	requestCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(requestCtx, http.MethodPost,
+		base+"/api/v1/herdr/job/offer", bytes.NewReader(body))
+	if err != nil {
+		return jobOfferAnswer{}, err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := selfClient.Do(request)
+	if err != nil {
+		return jobOfferAnswer{}, err
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		return jobOfferAnswer{}, &selfFetchError{url: base, status: response.StatusCode}
+	}
+	var answer jobOfferAnswer
+	if err := json.NewDecoder(response.Body).Decode(&answer); err != nil {
+		return jobOfferAnswer{}, err
+	}
+	return answer, nil
+}
+
+func getJobTask(ctx context.Context, base, taskID string) (bool, string, string, bool) {
+	requestCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	request, err := http.NewRequestWithContext(requestCtx, http.MethodGet,
+		base+"/api/v1/herdr/job/task/"+url.PathEscape(taskID), nil)
+	if err != nil {
+		return false, "", "", false
+	}
+	response, err := selfClient.Do(request)
+	if err != nil {
+		return false, "", "", false
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		return false, "", "", false
+	}
+	var answer struct {
+		OK          bool   `json:"ok"`
+		Running     bool   `json:"running"`
+		JobID       string `json:"jobId"`
+		WorkspaceID string `json:"workspaceId"`
+	}
+	if json.NewDecoder(response.Body).Decode(&answer) != nil || !answer.OK {
+		return false, "", "", false
+	}
+	return answer.Running, answer.WorkspaceID, answer.JobID, true
 }
 
 func postJobStart(ctx context.Context, base string, body []byte) (jobStarted, error) {

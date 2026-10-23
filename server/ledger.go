@@ -22,19 +22,22 @@ type ledgerEvent struct {
 	PaneID      string `json:"paneId,omitempty"`
 	Kind        string `json:"kind,omitempty"`
 	Label       string `json:"label,omitempty"`
+	TaskID      string `json:"taskId,omitempty"`
+	Reason      string `json:"reason,omitempty"`
 }
 
 type jobLedger struct {
 	mu      sync.Mutex
 	running map[string]ledgerEvent
+	tasks   map[string]string // task id -> workspace id
 	events  []ledgerEvent
 }
 
 func newJobLedger() *jobLedger {
-	return &jobLedger{running: map[string]ledgerEvent{}}
+	return &jobLedger{running: map[string]ledgerEvent{}, tasks: map[string]string{}}
 }
 
-func (l *jobLedger) started(workspaceID, paneID, kind, label string) {
+func (l *jobLedger) started(workspaceID, paneID, kind, label, taskID string) {
 	if l == nil || workspaceID == "" {
 		return
 	}
@@ -47,8 +50,12 @@ func (l *jobLedger) started(workspaceID, paneID, kind, label string) {
 		PaneID:      paneID,
 		Kind:        kind,
 		Label:       label,
+		TaskID:      taskID,
 	}
 	l.running[workspaceID] = event
+	if taskID != "" {
+		l.tasks[taskID] = workspaceID
+	}
 	l.appendLocked(event)
 }
 
@@ -58,6 +65,9 @@ func (l *jobLedger) stopped(workspaceID string) {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if taskID := l.running[workspaceID].TaskID; taskID != "" {
+		delete(l.tasks, taskID)
+	}
 	delete(l.running, workspaceID)
 	l.appendLocked(ledgerEvent{
 		At:          time.Now().Unix(),
@@ -71,6 +81,44 @@ func (l *jobLedger) appendLocked(event ledgerEvent) {
 	if len(l.events) > ledgerEventLimit {
 		l.events = append([]ledgerEvent(nil), l.events[len(l.events)-ledgerEventLimit:]...)
 	}
+}
+
+// runningTask says whether this machine is already running a task, so an offer
+// and a start can be idempotent: a lost response must not create a second
+// workspace for the same task.
+func (l *jobLedger) runningTask(taskID string) (ledgerEvent, bool) {
+	if l == nil || taskID == "" {
+		return ledgerEvent{}, false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	workspaceID := l.tasks[taskID]
+	if workspaceID == "" {
+		return ledgerEvent{}, false
+	}
+	event, found := l.running[workspaceID]
+	return event, found
+}
+
+// recordOffer keeps the market decision in the ledger: an offer is evidence of
+// what a node was asked and whether it could take the task, even when it never
+// ran it.
+func (l *jobLedger) recordOffer(taskID string, accepted bool, reason string) {
+	if l == nil || taskID == "" {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	event := "offered"
+	if !accepted {
+		event = "declined"
+	}
+	l.appendLocked(ledgerEvent{
+		At:     time.Now().Unix(),
+		Event:  event,
+		TaskID: taskID,
+		Reason: reason,
+	})
 }
 
 func (l *jobLedger) runningCount() int {

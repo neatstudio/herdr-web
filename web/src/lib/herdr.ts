@@ -658,6 +658,8 @@ export async function dispatchJob(options: {
   cwd?: string;
   branch?: string;
   kind: string;
+  /** fanout runs everywhere; single offers to all and starts on one. */
+  strategy?: "fanout" | "single";
   targets: string[];
 }): Promise<{ ok: boolean; dispatch: Dispatch } | { error: string } | null> {
   const raw = await postJSONResult("/api/v1/fleet/job", options);

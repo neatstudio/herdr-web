@@ -769,6 +769,10 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("/api/v1/herdr/job", s.handleJobStart)
 	mux.HandleFunc("/api/v1/herdr/jobs/ledger", s.handleJobLedger)
+	mux.HandleFunc("/api/v1/herdr/job/offer", s.handleJobOffer)
+	mux.HandleFunc("/api/v1/herdr/job/task/", func(w http.ResponseWriter, r *http.Request) {
+		s.handleJobTask(w, r, strings.TrimPrefix(r.URL.Path, "/api/v1/herdr/job/task/"))
+	})
 	mux.HandleFunc("/api/v1/herdr/job/", func(w http.ResponseWriter, r *http.Request) {
 		rest := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/herdr/job/"), "/")
 		if rest == "" {

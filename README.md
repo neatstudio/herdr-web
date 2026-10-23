@@ -299,10 +299,19 @@ models (`HERDR_WEB_MODELS`), and its capacity (`running` out of `maxTasks`).
 cap the target answers `429 at_capacity`, and the dispatch sheet shows the machine as
 full instead of preselecting it. `GET /api/v1/herdr/jobs/ledger` returns that
 machine's start/stop events. This is a capability and capacity registry, not a
-scheduler or a chain: there is no global queue, claim or consensus yet; the
-dispatcher still chooses the targets. The ledger is in memory for now, so a
-console restart resets its running count (herdr keeps the workspaces); a durable
-log and leases are the next step.
+chain: there is no global queue or consensus, and the claim is the task id plus
+the offer/start gate. The ledger is in memory for now, so a console restart resets
+its running count (herdr keeps the workspaces); a durable log and task board are
+the next step.
+
+Dispatch has two strategies. `fanout` (the default) runs the same prompt
+independently on every selected machine. `single` offers the task to all selected
+machines; a target declines if it lacks the agent or is at capacity, and the
+freest accepting target runs it. A task id makes a retried start idempotent, and a
+lost start response is checked against the target's task endpoint before another
+machine is tried. A task that has already started is not silently re-run on
+another machine if its host disappears: the row shows the loss, and retrying is an
+operator decision.
 
 ### When a host can reach nothing
 

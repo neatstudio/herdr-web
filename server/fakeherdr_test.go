@@ -38,6 +38,8 @@ type fakeHerdr struct {
 	renamedWorkspace []string
 	// closedWorkspaces records workspace.close ids.
 	closedWorkspaces []string
+	// workspaceCreates counts workspace.create/worktree.create calls.
+	workspaceCreates int
 	// resized records every pane.resize direction.
 	resized []string
 	// split records every pane.split direction, closed every pane.close id,
@@ -206,6 +208,7 @@ func serveFake(conn net.Conn, state *fakeHerdr) {
 			"workspace_id": "w1", "label": "web", "worktree": worktree,
 		}}
 	case "workspace.create", "worktree.create":
+		state.workspaceCreates++
 		result = map[string]any{
 			"type":      "workspace_created",
 			"workspace": map[string]any{"workspace_id": "w1", "label": "job"},
