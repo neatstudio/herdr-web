@@ -351,6 +351,7 @@ export function App() {
     <div className="shell">
       <Masthead
         onHost={() => setHostPanel(true)}
+        onFleet={() => setDispatch(true)}
         status={status}
         consoleVersion={selfVersion !== "" ? selfVersion : status?.consoleVersion ?? ""}
         choice={choice}

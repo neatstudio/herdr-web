@@ -11,9 +11,11 @@ type Props = {
   onChoice: (choice: ThemeChoice) => void;
   /** Opens the panel that shows what herdr is and can install or update it. */
   onHost: () => void;
+  /** Opens the full-screen fleet task board. */
+  onFleet: () => void;
 };
 
-export function Masthead({ status, consoleVersion: build, choice, onChoice, onHost }: Props) {
+export function Masthead({ status, consoleVersion: build, choice, onChoice, onHost, onFleet }: Props) {
   const live = status?.status === "ok";
   const protocol = status?.protocol;
   const octet = hostOctet(typeof window === "undefined" ? "" : window.location.hostname);
@@ -67,6 +69,16 @@ export function Masthead({ status, consoleVersion: build, choice, onChoice, onHo
           </span>
         )}
         {!live && <span className="cluster__dim">{status === null ? "offline" : "down"}</span>}
+      </button>
+
+      <button
+        type="button"
+        id="herdr-fleet-open"
+        className="cluster cluster--button"
+        title="open the fleet task board"
+        onClick={onFleet}
+      >
+        fleet
       </button>
 
       <div className="switch" role="group" aria-label="Theme">

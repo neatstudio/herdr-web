@@ -162,15 +162,16 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
   }
 
   return (
-    <div className="sheet sheet--dialog" role="dialog" aria-label="Dispatch a job" aria-modal="true">
+    <div className="sheet sheet--fleet" role="dialog" aria-label="Dispatch a job" aria-modal="true">
       <div className="sheet__panel">
       <div className="sheet__head">
-        <span className="sheet__title">send a job to the fleet</span>
+        <span className="sheet__title">fleet</span>
         <button type="button" id="dispatch-close" className="sheet__close" onClick={onClose}>
           ×
         </button>
       </div>
       <div className="sheet__body">
+        <div className="dispatch__form">
         <label className="newws__field">
           <span>prompt</span>
           <textarea
@@ -307,10 +308,14 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
             {problem}
           </p>
         )}
+        </div>
 
-        {dispatches.length > 0 && (
+        <div className="dispatch__board">
           <section className="dispatch__results" aria-label="Dispatches">
-            <div className="newws__head">in flight</div>
+            <div className="newws__head">task board</div>
+            {dispatches.length === 0 && (
+              <p className="newws__note">no tasks yet — send one from the form.</p>
+            )}
             {dispatches.map((entry) => (
               <article key={entry.id} className="dispatch__entry" data-dispatch={entry.id}>
                 <header>
@@ -389,7 +394,7 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
               </article>
             ))}
           </section>
-        )}
+        </div>
       </div>
       </div>
     </div>

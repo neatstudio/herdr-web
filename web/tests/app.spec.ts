@@ -2015,6 +2015,21 @@ test("the console can go back to the build it replaced", async ({ page }) => {
   await expect(page.locator(".hostpanel__result")).toContainText("previous build restored");
 });
 
+test("the fleet has a full-screen entry, not just a dialog", async ({ page }) => {
+  await installBridge(page);
+  await page.goto("/");
+  await page.locator("#herdr-fleet-open").click();
+
+  const sheet = page.locator('.sheet[aria-label="Dispatch a job"]');
+  await expect(sheet).toBeVisible();
+  await expect(sheet).toHaveClass(/sheet--fleet/);
+  await expect(sheet.locator(".dispatch__form")).toBeVisible();
+  await expect(sheet.locator(".dispatch__board")).toContainText("no tasks yet");
+
+  await page.locator("#dispatch-close").click();
+  await expect(sheet).toHaveCount(0);
+});
+
 test("one prompt can be sent to the whole fleet", async ({ page }) => {
   await installBridge(page);
   await page.route("**/api/v1/fleet", (route) =>

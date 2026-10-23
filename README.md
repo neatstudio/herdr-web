@@ -325,8 +325,9 @@ operator decision.
 
 #### Sending a task
 
-1. Open the console, click the machine/status button in the masthead, then
-   "send a job to the fleet" in the host panel.
+1. Click **fleet** in the masthead (or the machine/status button, then "send a
+   job to the fleet"). It is a full-screen page: the form is on the left and the
+   task board on the right.
 2. Fill the prompt, the repository (optional; a worktree is created per job), the
    branch (optional) and the agent.
 3. Choose **every machine** (fanout) or **one machine** (offer). Select the
@@ -339,6 +340,18 @@ Each row shows the agent status, branch, commits, uncommitted files and the
 `retry offer` re-offers a one-machine task that never started. A target must run
 a console with the offer endpoint (the market build) for **one machine**; an older
 console can still be used with **every machine**, which uses the plain start.
+
+#### Projects and scale
+
+The fleet registers agents, tools, declared models and capacity per **machine**,
+not per project. A task carries a `cwd` and optional `branch`; the target must have
+that repository at that path. Every task becomes a herdr workspace/worktree, and
+the `HERDR_WEB_MAX_JOBS` cap is shared by all projects on that machine — there is no
+per-project quota. The dispatching console keeps the last 20 tasks; each machine's
+ledger is append-only. Many projects can run, but there is no project catalog,
+global task board, per-project quota, or MCP adapter yet. The HTTP API is small
+enough to wrap in an MCP server later; the console itself is a REST bridge, not an
+MCP server.
 
 Scripted access uses the same API: `POST /api/v1/fleet/job` with
 `{"prompt": "...", "kind": "claude", "cwd": "/repo", "branch": "job/name",

@@ -1877,6 +1877,58 @@ body::before {
   overflow-y: auto;
 }
 
+/* The fleet is a page, not a dialog. The form and the task board get real
+   columns; the whole sheet scrolls as one. */
+.sheet--fleet {
+  display: block;
+  background: var(--paper);
+}
+
+.sheet--fleet .sheet__panel {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  border: 0;
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sheet--fleet .sheet__head {
+  flex: 0 0 auto;
+}
+
+.sheet--fleet .sheet__body {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 18px var(--pad) 28px;
+  display: grid;
+  grid-template-columns: minmax(300px, 30rem) minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+
+.dispatch__form,
+.dispatch__board {
+  min-width: 0;
+}
+
+.sheet--fleet .dispatch__results {
+  margin-top: 0;
+}
+
+@media (max-width: 900px) {
+  .sheet--fleet .sheet__body {
+    display: block;
+    padding: 12px var(--pad) 24px;
+  }
+
+  .dispatch__board {
+    margin-top: 18px;
+  }
+}
+
 .sheet__workspace-name {
   display: flex;
   align-items: baseline;
