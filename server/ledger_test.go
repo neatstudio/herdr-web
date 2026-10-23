@@ -69,7 +69,7 @@ func TestFleetPeerReportsCapacityAndModels(t *testing.T) {
 	t.Setenv("HERDR_WEB_MODELS", "qwen3, claude")
 	console := NewServer("", nil)
 	console.fleetAddr = "127.0.0.1:5000"
-	console.ledger.started("w1", "w1:p1", "claude", "job")
+	console.ledger.started("w1", "w1:p1", "claude", "job", "")
 
 	peer := console.fleetSelfPeer()
 	if peer.MaxTasks != 3 || peer.Running != 1 {
