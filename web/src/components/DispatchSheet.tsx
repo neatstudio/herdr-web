@@ -7,8 +7,14 @@ import {
   type Dispatch,
   type DispatchedJob,
   type Fleet,
+  type FleetPeer,
 } from "@/lib/herdr";
 import { collectCommand } from "@/lib/fleet";
+
+/** A peer at its operator-set concurrency cap. */
+function isFull(peer: FleetPeer): boolean {
+  return (peer.maxTasks ?? 0) > 0 && (peer.running ?? 0) >= (peer.maxTasks ?? 0);
+}
 
 type Props = {
   open: boolean;
@@ -60,10 +66,28 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
     // not the same everywhere.
     setChosen(
       peers
-        .filter((peer) => (peer.agents ?? []).includes(kind) || (peer.agents ?? []).length === 0)
+        .filter(
+          (peer) =>
+            ((peer.agents ?? []).includes(kind) || (peer.agents ?? []).length === 0) && !isFull(peer),
+        )
         .map((peer) => `http://${peer.addr}`),
     );
   }, [open, peers, chosen.length, kind]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    // A fleet poll can turn a selected machine full. Drop it rather than send a
+    // job the target will refuse at its capacity gate.
+    setChosen((current) => {
+      const next = current.filter((url) => {
+        const peer = peers.find((candidate) => `http://${candidate.addr}` === url);
+        return peer === undefined || !isFull(peer);
+      });
+      return next.length === current.length ? current : next;
+    });
+  }, [open, peers]);
 
   useEffect(() => {
     if (!open) {
@@ -189,22 +213,38 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
               const on = chosen.includes(url);
               const agents = peer.agents ?? [];
               const capable = agents.length === 0 || agents.includes(kind);
+              const full = isFull(peer);
+              const capacity = (peer.maxTasks ?? 0) > 0 ? `${peer.running ?? 0}/${peer.maxTasks}` : "";
+              const models = peer.models ?? [];
+              const tools = peer.tools ?? [];
+              const detail = [
+                agents.length === 0 ? "no agent reported" : agents.join(" "),
+                capacity,
+                models.join(" "),
+              ]
+                .filter((part) => part !== "")
+                .join(" · ");
+              const tooltip = [
+                capable ? "" : `${peer.addr} has no ${kind}`,
+                full ? `${peer.addr} is at capacity` : "",
+                tools.length > 0 ? `tools: ${tools.join(" ")}` : "",
+              ]
+                .filter((part) => part !== "")
+                .join(" — ");
               return (
                 <li key={peer.id}>
-                  <label title={capable ? "" : `${peer.addr} has no ${kind}`}>
+                  <label title={tooltip}>
                     <input
                       type="checkbox"
                       data-target={peer.addr}
                       checked={on}
-                      disabled={!capable}
+                      disabled={!capable || full}
                       onChange={() =>
                         setChosen(on ? chosen.filter((item) => item !== url) : [...chosen, url])
                       }
                     />
                     <span>{peer.addr}</span>
-                    <span className="newws__dim">
-                      {agents.length === 0 ? "no agent reported" : agents.join(" ")}
-                    </span>
+                    <span className="newws__dim">{detail}</span>
                   </label>
                 </li>
               );

@@ -22,7 +22,7 @@ a task to whichever machine can run it.
 | Thing | Value |
 | --- | --- |
 | Version | `v0.6.14-7-g6105840` (`git describe`); the `v0.6.14` tag is local — remote tags stop at `v0.6.9` |
-| Tests | `go test ./...` green; `npm --prefix web run test:unit` 108/108; Playwright 81/81 |
+| Tests | `go test ./...` green; `npm --prefix web run test:unit` 108/108; Playwright 82/82 |
 | Fleet | see below, all `v0.6.13` — except the hub, see B0 |
 | herdr on the fleet | 0.9.5 everywhere; **tw1's daemon is currently stopped** |
 
@@ -58,9 +58,15 @@ so it is an entry point of one. It uses a launchd user agent, not a herdr servic
   are local only; the hub and the fleet are not on one build.
 - **Multi-node tasks.** Dispatch is manual fan-out to chosen consoles; each
   target runs its own workspace/worktree, and status/output/diff are asked of
-  the runner (the dispatcher is a client, not a scheduler). Not solved:
-  placement by health/load, queue/retry/migration, a global job registry,
-  agent-to-agent handoff, automatic result merge, and the cancel button (A3).
+  the runner (the dispatcher is a client, not a scheduler). A capacity registry
+  now exists: peer hellos carry `maxTasks`, `running`, `tools`, `models`; a
+  target refuses at its cap with `429 at_capacity` (`HERDR_WEB_MAX_JOBS`), the
+  dispatch sheet shows capacity and does not preselect a full machine, and
+  `GET /api/v1/herdr/jobs/ledger` returns the local start/stop events. Not
+  solved: placement beyond a static cap by health/load, a durable/global task
+  board, claim/lease and retries, agent-to-agent handoff, and automatic result
+  merge. A chain/consensus is not the next step at this scale; a claim/lease
+  protocol over the registry is.
 - **Commands and deploy.** `deploy-remote.sh --jump` is currently a no-op (`-J`
   is built from `$JUMP` before the flag is parsed); use an ssh alias or fix the
   script before following B0's recipe.
@@ -233,10 +239,11 @@ files. The dispatcher asks each target for it; the panel shows the commit count,
 command for the operator to run. Nothing merges into the operator's repository from a
 button.
 
-**A3. Cancel.** `POST /api/v1/herdr/job/<workspaceId>/stop` exists and is untested
-from the UI. Wire it into the dispatch panel per job, with the workspace id.
-Acceptance: the button asks first, the workspace disappears from the target, and the
-panel row says it was stopped rather than showing a stale status.
+**A3. DONE — Cancel.** The dispatch panel has a per-job `stop` that asks first and
+posts through `/api/v1/fleet/job/stop`; the browser cannot call another origin, so
+the dispatcher proxies it. The target closes the workspace, the dispatcher remembers
+`cancelled` and stops polling it, and the row says "stopped" instead of a stale
+agent status or a 404.
 
 ### Owner B — the other engineer
 

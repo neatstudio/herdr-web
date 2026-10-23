@@ -283,7 +283,8 @@ afternoon.
 Several consoles can know each other: `--fleet-seeds http://hub:5000` is an entry
 point, not an authority. Every console keeps its own list and exchanges it with
 its seeds and a few known peers every 30 seconds, so the list survives the loss of
-any machine, and a console started with no seeds simply knows only itself.
+any machine. A console started with no seeds is an entry point: it discovers the
+tailnet's consoles itself (`93a088d`), so it joins rather than standing alone.
 
 Updates follow the same rule: any console running a strictly newer build is a
 source. A console adopts the newest build it can verify, keeping the build it
@@ -291,6 +292,17 @@ replaced as `herdr-web.previous`; `POST /api/v1/herdr-web/rollback` puts it back
 which is the answer to a build that starts and then misbehaves. Safe defaults:
 nothing is adopted that is not strictly newer, nothing is adopted that fails its
 checksum, and `HERDR_WEB_FLEET_FOLLOW=off` keeps a console where it is.
+
+Each hello also carries what a machine can offer a task: its agents, tools, declared
+models (`HERDR_WEB_MODELS`), and its capacity (`running` out of `maxTasks`).
+`HERDR_WEB_MAX_JOBS` is the operator's concurrency cap (zero means no cap); at the
+cap the target answers `429 at_capacity`, and the dispatch sheet shows the machine as
+full instead of preselecting it. `GET /api/v1/herdr/jobs/ledger` returns that
+machine's start/stop events. This is a capability and capacity registry, not a
+scheduler or a chain: there is no global queue, claim or consensus yet; the
+dispatcher still chooses the targets. The ledger is in memory for now, so a
+console restart resets its running count (herdr keeps the workspaces); a durable
+log and leases are the next step.
 
 ### When a host can reach nothing
 

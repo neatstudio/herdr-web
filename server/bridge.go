@@ -88,6 +88,8 @@ type Server struct {
 	// dispatch is what this console sent where; the jobs themselves live on the
 	// machines running them.
 	dispatch dispatchState
+	// ledger is this machine's own job events and running count.
+	ledger *jobLedger
 }
 
 func NewServer(socketPath string, webFS fs.FS) *Server {
@@ -97,6 +99,7 @@ func NewServer(socketPath string, webFS fs.FS) *Server {
 		fleet:      fleetState{peers: map[string]fleetPeer{}},
 		fleetSeeds: defaultFleetSeeds,
 		fleetAddr:  defaultFleetAddr,
+		ledger:     newJobLedger(),
 	}
 }
 
@@ -765,6 +768,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/fleet/hello", s.handleFleetHello)
 
 	mux.HandleFunc("/api/v1/herdr/job", s.handleJobStart)
+	mux.HandleFunc("/api/v1/herdr/jobs/ledger", s.handleJobLedger)
 	mux.HandleFunc("/api/v1/herdr/job/", func(w http.ResponseWriter, r *http.Request) {
 		rest := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/herdr/job/"), "/")
 		if rest == "" {

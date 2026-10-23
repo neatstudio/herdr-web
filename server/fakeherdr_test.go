@@ -205,6 +205,14 @@ func serveFake(conn net.Conn, state *fakeHerdr) {
 		result = map[string]any{"type": "workspace_info", "workspace": map[string]any{
 			"workspace_id": "w1", "label": "web", "worktree": worktree,
 		}}
+	case "workspace.create", "worktree.create":
+		result = map[string]any{
+			"type":      "workspace_created",
+			"workspace": map[string]any{"workspace_id": "w1", "label": "job"},
+			"root_pane": map[string]any{"pane_id": "w1:p1"},
+		}
+	case "agent.start", "agent.prompt":
+		result = map[string]any{"type": "ok"}
 	case "workspace.close":
 		if id, ok := req.Params["workspace_id"].(string); ok {
 			state.closedWorkspaces = append(state.closedWorkspaces, id)

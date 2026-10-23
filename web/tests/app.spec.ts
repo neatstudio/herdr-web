@@ -2029,6 +2029,7 @@ test("one prompt can be sent to the whole fleet", async ({ page }) => {
         peers: [
           { id: "tw1", addr: "100.89.0.4:5000", version: "v0.6.0", platform: "linux-amd64", agents: ["claude", "opencode"], seen: 0, stale: false },
           { id: "m9", addr: "100.89.0.9:5000", version: "v0.6.0", platform: "linux-amd64", agents: ["codex"], seen: 0, stale: false },
+          { id: "full", addr: "100.89.0.200:5000", version: "v0.6.0", platform: "linux-amd64", agents: ["claude"], maxTasks: 1, running: 1, seen: 0, stale: false },
         ],
       }),
     }),
@@ -2071,6 +2072,9 @@ test("one prompt can be sent to the whole fleet", async ({ page }) => {
   // the agent is not installed can only fail.
   await expect(sheet.locator('input[data-target="100.89.0.4:5000"]')).toBeChecked();
   await expect(sheet.locator('input[data-target="100.89.0.9:5000"]')).toBeDisabled();
+  // A machine at its cap is offered but not selected: the target would decline.
+  await expect(sheet.locator('input[data-target="100.89.0.200:5000"]')).toBeDisabled();
+  await expect(sheet.locator('label[title*="at capacity"]')).toContainText("1/1");
 
   await page.locator("#dispatch-prompt").fill("summarise the changelog");
   await page.locator("#dispatch-send").click();

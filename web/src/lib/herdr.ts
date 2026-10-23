@@ -694,6 +694,14 @@ export type FleetPeer = {
   platform: string;
   /** The agent kinds this machine can start. */
   agents?: string[];
+  /** Operator-set concurrency cap; zero means no cap. */
+  maxTasks?: number;
+  /** Jobs this machine is running now, from its own ledger. */
+  running?: number;
+  /** Command-line tools it can offer a job. */
+  tools?: string[];
+  /** Model names the operator declared for this host. */
+  models?: string[];
   /** Unix seconds of the last hello. */
   seen: number;
   /** True when it has not said hello recently. */

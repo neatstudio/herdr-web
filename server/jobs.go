@@ -2,10 +2,12 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -57,6 +59,11 @@ func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.TrimSpace(request.Kind) == "" {
 		writeError(w, http.StatusBadRequest, "invalid_request", "kind is required (the agent to start)")
+		return
+	}
+	if limit := maxJobs(); limit > 0 && s.ledger.runningCount() >= limit {
+		writeError(w, http.StatusTooManyRequests, "at_capacity",
+			fmt.Sprintf("this console is already running %d jobs (HERDR_WEB_MAX_JOBS=%d)", s.ledger.runningCount(), limit))
 		return
 	}
 
@@ -115,6 +122,7 @@ func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.ledger.started(created.Workspace.WorkspaceID, paneID, request.Kind, label)
 	writeJSON(w, http.StatusOK, jobStarted{
 		OK:          true,
 		JobID:       paneID,
@@ -199,6 +207,7 @@ func (s *Server) handleJobStop(w http.ResponseWriter, r *http.Request, workspace
 		writeBadGateway(w, "herdr_job_failed", err)
 		return
 	}
+	s.ledger.stopped(workspaceID)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "workspaceId": workspaceID})
 }
 
@@ -241,6 +250,65 @@ func jobAgentKinds() []string {
 // lookPath is exec.LookPath as a variable, so a test can pretend an agent is
 // installed without installing one.
 var lookPath = exec.LookPath
+
+// maxJobs is the operator's concurrency cap for this machine. Zero means no
+// cap: the console does not guess how many agents a host can run.
+func maxJobs() int {
+	raw := strings.TrimSpace(os.Getenv("HERDR_WEB_MAX_JOBS"))
+	if raw == "" {
+		return 0
+	}
+	limit, err := strconv.Atoi(raw)
+	if err != nil || limit < 0 {
+		return 0
+	}
+	return limit
+}
+
+// selfTools lists the command-line tools this host can offer a dispatched job.
+// It is a capability advertisement, not a sandbox: the agent still runs as this
+// user and can use whatever is on PATH.
+func selfTools() []string {
+	candidates := []string{"git", "tmux", "docker", "node", "go", "python3", "bun"}
+	found := make([]string, 0, len(candidates))
+	for _, name := range candidates {
+		if _, err := lookPath(name); err == nil {
+			found = append(found, name)
+		}
+	}
+	return found
+}
+
+// selfModels is the operator's declared model set for this host, if any. herdr
+// does not report a model per agent, so this is configuration rather than
+// detection.
+func selfModels() []string {
+	raw := strings.TrimSpace(os.Getenv("HERDR_WEB_MODELS"))
+	if raw == "" {
+		return []string{}
+	}
+	models := make([]string, 0, 4)
+	for _, model := range strings.Split(raw, ",") {
+		if model = strings.TrimSpace(model); model != "" {
+			models = append(models, model)
+		}
+	}
+	return models
+}
+
+// handleJobLedger reports this machine's own events and capacity. The events are
+// in memory for now; the workspaces themselves are herdr's.
+func (s *Server) handleJobLedger(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeMethodNotAllowed(w, "GET")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"maxTasks": maxJobs(),
+		"running":  s.ledger.runningCount(),
+		"events":   s.ledger.snapshot(),
+	})
+}
 
 // jobStateDir is where a dispatched job's record is kept, so a console that
 // restarted can still report what it sent where.
