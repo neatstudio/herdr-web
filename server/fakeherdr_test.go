@@ -36,6 +36,8 @@ type fakeHerdr struct {
 	renamedTo []string
 	// renamedWorkspace records workspace.rename as "id=label".
 	renamedWorkspace []string
+	// closedWorkspaces records workspace.close ids.
+	closedWorkspaces []string
 	// resized records every pane.resize direction.
 	resized []string
 	// split records every pane.split direction, closed every pane.close id,
@@ -203,6 +205,11 @@ func serveFake(conn net.Conn, state *fakeHerdr) {
 		result = map[string]any{"type": "workspace_info", "workspace": map[string]any{
 			"workspace_id": "w1", "label": "web", "worktree": worktree,
 		}}
+	case "workspace.close":
+		if id, ok := req.Params["workspace_id"].(string); ok {
+			state.closedWorkspaces = append(state.closedWorkspaces, id)
+		}
+		result = map[string]any{"type": "ok"}
 	case "workspace.rename":
 		if id, ok := req.Params["workspace_id"].(string); ok {
 			if label, ok := req.Params["label"].(string); ok {

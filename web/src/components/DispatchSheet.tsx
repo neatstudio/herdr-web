@@ -3,7 +3,9 @@ import {
   dispatchJob,
   fetchAgentKinds,
   fetchDispatches,
+  stopDispatchJob,
   type Dispatch,
+  type DispatchedJob,
   type Fleet,
 } from "@/lib/herdr";
 import { collectCommand } from "@/lib/fleet";
@@ -73,6 +75,28 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
 
   if (!open) {
     return null;
+  }
+
+  async function stop(job: DispatchedJob): Promise<void> {
+    if (!window.confirm(`Stop ${job.workspaceId} on ${job.host}? Its worktree is discarded.`)) {
+      return;
+    }
+    setProblem("");
+    const stopped = await stopDispatchJob(job.host, job.workspaceId);
+    if (!stopped) {
+      setProblem(`could not stop ${job.workspaceId} on ${job.host}`);
+      return;
+    }
+    setDispatches((current) =>
+      current.map((entry) => ({
+        ...entry,
+        jobs: entry.jobs.map((item) =>
+          item.host === job.host && item.workspaceId === job.workspaceId
+            ? { ...item, status: "stopped", cancelled: true, error: "" }
+            : item,
+        ),
+      })),
+    );
   }
 
   async function send(): Promise<void> {
@@ -216,16 +240,23 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
                     <li key={job.host} data-host={job.host}>
                       <span className="dispatch__host">{job.host}</span>
                       <span className="dispatch__status" data-status={job.status ?? job.error ? "bad" : ""}>
-                        {job.error !== undefined && job.error !== ""
-                          ? job.error
-                          : job.status === "blocked"
-                            ? "blocked — wants you"
-                            : (job.status ?? "starting")}
+                        {job.cancelled === true || job.status === "stopped"
+                          ? "stopped"
+                          : job.error !== undefined && job.error !== ""
+                            ? job.error
+                            : job.status === "blocked"
+                              ? "blocked — wants you"
+                              : (job.status ?? "starting")}
                       </span>
+                      {job.workspaceId !== "" && job.cancelled !== true && (
+                        <button type="button" className="dispatch__stop" onClick={() => void stop(job)}>
+                          stop
+                        </button>
+                      )}
                       {job.branch !== undefined && job.branch !== "" && (
                         <span className="newws__dim">{job.branch}</span>
                       )}
-                      {job.diffReady === true && (job.commits ?? []).length === 0 && (
+                      {job.cancelled !== true && job.diffReady === true && (job.commits ?? []).length === 0 && (
                         <span className="newws__dim">no commits</span>
                       )}
                       {(job.commits ?? []).length > 0 && (
@@ -251,7 +282,7 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
                           </ul>
                         </details>
                       )}
-                      {job.diffReady === true && (job.checkoutPath ?? "") !== "" && (
+                      {job.cancelled !== true && job.diffReady === true && (job.checkoutPath ?? "") !== "" && (
                         <details className="dispatch__collect">
                           <summary>collect</summary>
                           <code>{collectCommand(job.host, job.checkoutPath ?? "", job.branch ?? "")}</code>

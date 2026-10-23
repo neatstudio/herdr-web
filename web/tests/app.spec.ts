@@ -2213,6 +2213,77 @@ test("a dispatched job reports the commits it produced", async ({ page }) => {
   await expect(empty).toContainText("no commits");
 });
 
+test("a dispatched job can be stopped after a confirmation", async ({ page }) => {
+  let stopped = false;
+  let dialogMessage = "";
+  const stopPosts: string[] = [];
+  await installBridge(page);
+  await page.route("**/api/v1/fleet", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        hub: false,
+        seeds: [],
+        follow: true,
+        self: { id: "me", addr: "100.89.0.116:5000", version: "v0.6.14", platform: "darwin-arm64" },
+        peers: [
+          { id: "tw1", addr: "100.89.0.4:5000", version: "v0.6.14", platform: "linux-amd64", agents: ["claude"], seen: 0, stale: false },
+        ],
+      }),
+    }),
+  );
+  await page.route("**/api/v1/fleet/jobs", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        dispatches: [
+          {
+            id: "job-1",
+            at: 0,
+            prompt: "audit the docs",
+            jobs: [
+              {
+                host: "http://100.89.0.4:5000",
+                local: "w1:p1",
+                jobId: "w1:p1",
+                workspaceId: "w1",
+                status: stopped ? "stopped" : "working",
+                cancelled: stopped,
+                output: "reading files",
+              },
+            ],
+          },
+        ],
+      }),
+    }),
+  );
+  await page.route("**/api/v1/fleet/job/stop", async (route) => {
+    stopPosts.push(route.request().postData() ?? "");
+    stopped = true;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+  });
+  page.on("dialog", async (dialog) => {
+    dialogMessage = dialog.message();
+    await dialog.accept();
+  });
+
+  await page.goto("/");
+  await page.locator("#herdr-host-open").click();
+  await page.locator("#dispatch-open").click();
+
+  const job = page.locator('[data-dispatch="job-1"] [data-host="http://100.89.0.4:5000"]');
+  await expect(job).toContainText("working");
+  await job.locator(".dispatch__stop").click();
+
+  await expect.poll(() => stopPosts.length).toBe(1);
+  expect(dialogMessage).toContain("discarded");
+  expect(JSON.parse(stopPosts[0])).toEqual({ host: "http://100.89.0.4:5000", workspaceId: "w1" });
+  await expect(job).toContainText("stopped");
+  await expect(job.locator(".dispatch__stop")).toHaveCount(0);
+});
+
 test("a failed creation shows why, not just that it failed", async ({ page }) => {
   await installBridge(page);
   await page.route("**/api/v1/herdr/workspaces", async (route) => {

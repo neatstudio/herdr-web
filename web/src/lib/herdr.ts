@@ -625,6 +625,8 @@ export type DispatchedJob = {
   diffReady?: boolean;
   commits?: string[];
   changed?: string[];
+  /** The dispatcher stopped this job; its workspace is gone. */
+  cancelled?: boolean;
 };
 
 export type Dispatch = {
@@ -670,6 +672,11 @@ export async function dispatchJob(options: {
 }
 
 /** Every dispatch this console sent, with each machine's current status. */
+/** Stop a dispatched job by closing its workspace on the machine running it. */
+export async function stopDispatchJob(host: string, workspaceId: string): Promise<boolean> {
+  return postJSON("/api/v1/fleet/job/stop", { host, workspaceId });
+}
+
 export async function fetchDispatches(): Promise<Dispatch[]> {
   const raw = await getJSON("/api/v1/fleet/jobs");
   if (raw === null || typeof raw !== "object") {

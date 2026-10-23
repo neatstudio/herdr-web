@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -35,6 +36,9 @@ type dispatchedJob struct {
 	DiffReady    bool     `json:"diffReady,omitempty"`
 	Commits      []string `json:"commits,omitempty"`
 	Changed      []string `json:"changed,omitempty"`
+	// A cancelled job's workspace is gone; do not ask the target for a status
+	// that can only come back as an error.
+	Cancelled bool `json:"cancelled,omitempty"`
 }
 
 type dispatch struct {
@@ -176,6 +180,71 @@ func (e errorString) Error() string { return string(e) }
 
 // handleDispatchList reports every dispatch and how each machine is doing.
 //
+// handleDispatchStop asks the machine running a job to close its workspace.
+//
+// The browser cannot call the target directly: it is another origin, and the
+// target's guard refuses cross-origin writes. The dispatcher is the same origin
+// and already speaks to every target, so it proxies the stop and remembers that
+// the job is gone instead of polling a workspace that no longer exists.
+func (s *Server) handleDispatchStop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, "POST")
+		return
+	}
+	var request struct {
+		Host        string `json:"host"`
+		WorkspaceID string `json:"workspaceId"`
+	}
+	if !decodeBody(w, r, &request) {
+		return
+	}
+	host := strings.TrimRight(strings.TrimSpace(request.Host), "/")
+	workspaceID := strings.Trim(strings.TrimSpace(request.WorkspaceID), "/")
+	if host == "" || workspaceID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "host and workspaceId are required")
+		return
+	}
+	if !strings.HasPrefix(host, "http://") && !strings.HasPrefix(host, "https://") {
+		writeError(w, http.StatusBadRequest, "invalid_request", "host must be an http(s) console address")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	target := host + "/api/v1/herdr/job/" + url.PathEscape(workspaceID) + "/stop"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, nil)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	response, err := selfClient.Do(req)
+	if err != nil {
+		writeBadGateway(w, "herdr_job_failed", err)
+		return
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		writeError(w, http.StatusBadGateway, "herdr_job_failed",
+			"the target answered "+response.Status)
+		return
+	}
+
+	s.dispatch.mu.Lock()
+	for index := range s.dispatch.dispatch {
+		for jobIndex := range s.dispatch.dispatch[index].Jobs {
+			job := &s.dispatch.dispatch[index].Jobs[jobIndex]
+			if strings.TrimRight(job.Host, "/") == host && job.WorkspaceID == workspaceID {
+				job.Cancelled = true
+				job.Status = "stopped"
+				job.Error = ""
+			}
+		}
+	}
+	s.dispatch.mu.Unlock()
+
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "host": host, "workspaceId": workspaceID})
+}
+
 // The status is asked of the machine running the job, not remembered: a console
 // that restarted, or that was never the one dispatching, still gets the truth.
 func (s *Server) handleDispatchList(w http.ResponseWriter, r *http.Request) {
@@ -185,7 +254,10 @@ func (s *Server) handleDispatchList(w http.ResponseWriter, r *http.Request) {
 	}
 	s.dispatch.mu.Lock()
 	history := make([]dispatch, len(s.dispatch.dispatch))
-	copy(history, s.dispatch.dispatch)
+	for index, entry := range s.dispatch.dispatch {
+		history[index] = entry
+		history[index].Jobs = append([]dispatchedJob(nil), entry.Jobs...)
+	}
 	s.dispatch.mu.Unlock()
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
@@ -193,6 +265,11 @@ func (s *Server) handleDispatchList(w http.ResponseWriter, r *http.Request) {
 	for index := range history {
 		for jobIndex := range history[index].Jobs {
 			job := &history[index].Jobs[jobIndex]
+			if job.Cancelled {
+				job.Status = "stopped"
+				job.Error = ""
+				continue
+			}
 			if job.Local == "" {
 				continue
 			}

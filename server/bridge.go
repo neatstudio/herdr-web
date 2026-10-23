@@ -760,6 +760,7 @@ func (s *Server) Handler() http.Handler {
 	// pattern panic at startup, so they share one.
 	mux.HandleFunc("/api/v1/fleet", s.handleFleet)
 	mux.HandleFunc("/api/v1/fleet/job", s.handleDispatch)
+	mux.HandleFunc("/api/v1/fleet/job/stop", s.handleDispatchStop)
 	mux.HandleFunc("/api/v1/fleet/jobs", s.handleDispatchList)
 	mux.HandleFunc("/api/v1/fleet/hello", s.handleFleetHello)
 
