@@ -3,6 +3,7 @@ import {
   dispatchJob,
   fetchAgentKinds,
   fetchDispatches,
+  retryDispatch,
   stopDispatchJob,
   type Dispatch,
   type DispatchedJob,
@@ -100,6 +101,16 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
 
   if (!open) {
     return null;
+  }
+
+  async function retry(id: string): Promise<void> {
+    setProblem("");
+    const ok = await retryDispatch(id);
+    if (!ok) {
+      setProblem("the task could not be re-offered");
+      return;
+    }
+    void fetchDispatches().then(setDispatches);
   }
 
   async function stop(job: DispatchedJob): Promise<void> {
@@ -303,15 +314,23 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
               <article key={entry.id} className="dispatch__entry" data-dispatch={entry.id}>
                 <header>
                   <span>{entry.id}</span>
+                  {entry.strategy === "single" &&
+                    entry.jobs.every((job) => (job.workspaceId ?? "") === "" && job.cancelled !== true) && (
+                      <button type="button" className="dispatch__retry" onClick={() => void retry(entry.id)}>
+                        retry offer
+                      </button>
+                    )}
                 </header>
                 <ul>
                   {entry.jobs.map((job) => (
                     <li key={job.host} data-host={job.host}>
                       <span className="dispatch__host">{job.host}</span>
                       <span className="dispatch__status" data-status={job.status ?? job.error ? "bad" : ""}>
-                        {job.cancelled === true || job.status === "stopped"
-                          ? "stopped"
-                          : job.error !== undefined && job.error !== ""
+                        {job.lost === true
+                          ? `lost — check ${job.host}`
+                          : job.cancelled === true || job.status === "stopped"
+                            ? "stopped"
+                            : job.error !== undefined && job.error !== ""
                             ? job.error
                             : job.status === "blocked"
                               ? "blocked — wants you"

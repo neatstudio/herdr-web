@@ -71,6 +71,7 @@ func newMarketTarget(t *testing.T, free int, failStart int, startTookEffect bool
 
 func dispatchMarketForTest(t *testing.T, targets ...*marketTarget) (bool, dispatch) {
 	t.Helper()
+	isolateState(t)
 	console := NewServer("", nil)
 	urls := make([]string, len(targets))
 	for index, target := range targets {

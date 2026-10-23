@@ -87,19 +87,24 @@ type Server struct {
 	fleetAddr  string
 	// dispatch is what this console sent where; the jobs themselves live on the
 	// machines running them.
-	dispatch dispatchState
+	dispatch *dispatchState
 	// ledger is this machine's own job events and running count.
 	ledger *jobLedger
+	// tailnetFacing is set from the listeners: a console with no Tailscale bind
+	// is local-only and must not discover or follow the tailnet.
+	tailnetFacing bool
 }
 
 func NewServer(socketPath string, webFS fs.FS) *Server {
 	return &Server{
-		socketPath: socketPath,
-		webFS:      webFS,
-		fleet:      fleetState{peers: map[string]fleetPeer{}},
-		fleetSeeds: defaultFleetSeeds,
-		fleetAddr:  defaultFleetAddr,
-		ledger:     newJobLedger(),
+		socketPath:    socketPath,
+		webFS:         webFS,
+		fleet:         fleetState{peers: map[string]fleetPeer{}},
+		fleetSeeds:    defaultFleetSeeds,
+		fleetAddr:     defaultFleetAddr,
+		ledger:        newJobLedger(),
+		dispatch:      newDispatchState(),
+		tailnetFacing: true,
 	}
 }
 
@@ -764,6 +769,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/fleet", s.handleFleet)
 	mux.HandleFunc("/api/v1/fleet/job", s.handleDispatch)
 	mux.HandleFunc("/api/v1/fleet/job/stop", s.handleDispatchStop)
+	mux.HandleFunc("/api/v1/fleet/job/retry", s.handleDispatchRetry)
 	mux.HandleFunc("/api/v1/fleet/jobs", s.handleDispatchList)
 	mux.HandleFunc("/api/v1/fleet/hello", s.handleFleetHello)
 

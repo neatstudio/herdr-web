@@ -2362,6 +2362,25 @@ body::before {
   border-color: var(--ink);
 }
 
+.dispatch__retry {
+  margin-left: auto;
+  padding: 1px 7px;
+  border: var(--rule-w) solid var(--rule-strong);
+  background: transparent;
+  font-family: var(--font-label);
+  font-size: var(--step-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  cursor: pointer;
+}
+
+.dispatch__retry:hover {
+  color: var(--paper);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
 .dispatch__entry pre {
   margin: 4px 0 0;
   max-height: 200px;

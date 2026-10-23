@@ -28,6 +28,7 @@ func TestDispatchStopClosesTheTargetAndStopsPolling(t *testing.T) {
 	}))
 	defer target.Close()
 
+	isolateState(t)
 	console := NewServer(t.TempDir()+"/h.sock", testWebFS())
 	console.dispatch.dispatch = []dispatch{{
 		ID:     "d1",

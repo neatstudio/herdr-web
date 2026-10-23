@@ -67,6 +67,7 @@ func TestJobStartRefusesAtCapacityAndFreesOnStop(t *testing.T) {
 func TestFleetPeerReportsCapacityAndModels(t *testing.T) {
 	t.Setenv("HERDR_WEB_MAX_JOBS", "3")
 	t.Setenv("HERDR_WEB_MODELS", "qwen3, claude")
+	isolateState(t)
 	console := NewServer("", nil)
 	console.fleetAddr = "127.0.0.1:5000"
 	console.ledger.started("w1", "w1:p1", "claude", "job", "")
@@ -80,5 +81,28 @@ func TestFleetPeerReportsCapacityAndModels(t *testing.T) {
 	}
 	if peer.Tools == nil {
 		t.Fatalf("tools should be an empty slice, not nil")
+	}
+}
+
+func TestLedgerSurvivesRestart(t *testing.T) {
+	isolateState(t)
+	first := newJobLedger()
+	first.started("w1", "w1:p1", "claude", "job", "task-1")
+
+	second := newJobLedger()
+	if second.runningCount() != 1 {
+		t.Fatalf("running = %d after restart", second.runningCount())
+	}
+	if event, ok := second.runningTask("task-1"); !ok || event.WorkspaceID != "w1" {
+		t.Fatalf("task = %+v, %v", event, ok)
+	}
+
+	second.stopped("w1")
+	third := newJobLedger()
+	if third.runningCount() != 0 {
+		t.Fatalf("running = %d after stop/restart", third.runningCount())
+	}
+	if _, ok := third.runningTask("task-1"); ok {
+		t.Fatalf("stopped task still maps to a workspace")
 	}
 }

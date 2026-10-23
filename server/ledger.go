@@ -1,6 +1,10 @@
 package server
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -31,10 +35,93 @@ type jobLedger struct {
 	running map[string]ledgerEvent
 	tasks   map[string]string // task id -> workspace id
 	events  []ledgerEvent
+	path    string
+}
+
+// ledgerPathOverride keeps a test's ledger out of the operator's home.
+var ledgerPathOverride string
+
+func ledgerPath() string {
+	if ledgerPathOverride != "" {
+		return ledgerPathOverride
+	}
+	dir := jobStateDir()
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, "ledger.jsonl")
 }
 
 func newJobLedger() *jobLedger {
-	return &jobLedger{running: map[string]ledgerEvent{}, tasks: map[string]string{}}
+	ledger := &jobLedger{
+		running: map[string]ledgerEvent{},
+		tasks:   map[string]string{},
+		path:    ledgerPath(),
+	}
+	ledger.load()
+	return ledger
+}
+
+// load replays the append-only file. The last event for a workspace decides
+// whether it is still running; offers and declines are history only.
+func (l *jobLedger) load() {
+	if l.path == "" {
+		return
+	}
+	raw, err := os.ReadFile(l.path)
+	if err != nil {
+		return
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var event ledgerEvent
+		if json.Unmarshal([]byte(line), &event) != nil {
+			continue
+		}
+		l.replayLocked(event)
+	}
+}
+
+func (l *jobLedger) replayLocked(event ledgerEvent) {
+	switch event.Event {
+	case "started":
+		if event.WorkspaceID != "" {
+			l.running[event.WorkspaceID] = event
+		}
+		if event.TaskID != "" && event.WorkspaceID != "" {
+			l.tasks[event.TaskID] = event.WorkspaceID
+		}
+	case "stopped":
+		if taskID := l.running[event.WorkspaceID].TaskID; taskID != "" {
+			delete(l.tasks, taskID)
+		}
+		delete(l.running, event.WorkspaceID)
+	}
+	l.events = append(l.events, event)
+	if len(l.events) > ledgerEventLimit {
+		l.events = append([]ledgerEvent(nil), l.events[len(l.events)-ledgerEventLimit:]...)
+	}
+}
+
+func (l *jobLedger) persistLocked(event ledgerEvent) {
+	if l.path == "" {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(l.path), 0o700); err != nil {
+		return
+	}
+	file, err := os.OpenFile(l.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	raw, err := json.Marshal(event)
+	if err == nil {
+		_, _ = file.Write(append(raw, '\n'))
+	}
+	_ = file.Close()
 }
 
 func (l *jobLedger) started(workspaceID, paneID, kind, label, taskID string) {
@@ -57,6 +144,7 @@ func (l *jobLedger) started(workspaceID, paneID, kind, label, taskID string) {
 		l.tasks[taskID] = workspaceID
 	}
 	l.appendLocked(event)
+	l.persistLocked(event)
 }
 
 func (l *jobLedger) stopped(workspaceID string) {
@@ -69,11 +157,13 @@ func (l *jobLedger) stopped(workspaceID string) {
 		delete(l.tasks, taskID)
 	}
 	delete(l.running, workspaceID)
-	l.appendLocked(ledgerEvent{
+	event := ledgerEvent{
 		At:          time.Now().Unix(),
 		Event:       "stopped",
 		WorkspaceID: workspaceID,
-	})
+	}
+	l.appendLocked(event)
+	l.persistLocked(event)
 }
 
 func (l *jobLedger) appendLocked(event ledgerEvent) {
@@ -113,12 +203,14 @@ func (l *jobLedger) recordOffer(taskID string, accepted bool, reason string) {
 	if !accepted {
 		event = "declined"
 	}
-	l.appendLocked(ledgerEvent{
+	entry := ledgerEvent{
 		At:     time.Now().Unix(),
 		Event:  event,
 		TaskID: taskID,
 		Reason: reason,
-	})
+	}
+	l.appendLocked(entry)
+	l.persistLocked(entry)
 }
 
 func (l *jobLedger) runningCount() int {

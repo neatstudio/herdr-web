@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -48,18 +50,104 @@ type dispatchedJob struct {
 	// retry idempotent; the lease says how long this assignment is valid.
 	TaskID     string `json:"taskId,omitempty"`
 	LeaseUntil int64  `json:"leaseUntil,omitempty"`
+	// Lost is set when a started job's machine no longer answers after its
+	// lease; it is a visible operator decision, not an automatic second run.
+	Lost bool `json:"lost,omitempty"`
 }
 
 type dispatch struct {
-	ID     string          `json:"id"`
-	At     int64           `json:"at"`
-	Prompt string          `json:"prompt"`
-	Jobs   []dispatchedJob `json:"jobs"`
+	ID     string `json:"id"`
+	At     int64  `json:"at"`
+	Prompt string `json:"prompt"`
+	// The request behind a market task, so the board can re-offer it after a
+	// restart without asking the operator to retype it.
+	Kind     string          `json:"kind,omitempty"`
+	Cwd      string          `json:"cwd,omitempty"`
+	Branch   string          `json:"branch,omitempty"`
+	Strategy string          `json:"strategy,omitempty"`
+	Targets  []string        `json:"targets,omitempty"`
+	Jobs     []dispatchedJob `json:"jobs"`
 }
 
 type dispatchState struct {
 	mu       sync.Mutex
 	dispatch []dispatch
+	path     string
+}
+
+// dispatchStatePathOverride keeps a test's task board out of the operator's home.
+var dispatchStatePathOverride string
+
+func dispatchStatePath() string {
+	if dispatchStatePathOverride != "" {
+		return dispatchStatePathOverride
+	}
+	dir := jobStateDir()
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, "dispatch.json")
+}
+
+func newDispatchState() *dispatchState {
+	state := &dispatchState{path: dispatchStatePath()}
+	state.load()
+	return state
+}
+
+func (s *dispatchState) load() {
+	if s.path == "" {
+		return
+	}
+	raw, err := os.ReadFile(s.path)
+	if err != nil {
+		return
+	}
+	var stored struct {
+		Dispatches []dispatch `json:"dispatches"`
+	}
+	if json.Unmarshal(raw, &stored) != nil {
+		return
+	}
+	s.dispatch = stored.Dispatches
+}
+
+// saveLocked writes the board atomically; a half-written task board would lose
+// the very state it exists to keep.
+func (s *dispatchState) saveLocked() {
+	if s.path == "" {
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
+		return
+	}
+	raw, err := json.Marshal(struct {
+		Dispatches []dispatch `json:"dispatches"`
+	}{Dispatches: s.dispatch})
+	if err != nil {
+		return
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(s.path), ".dispatch-*")
+	if err != nil {
+		return
+	}
+	tmpPath := tmp.Name()
+	if _, err := tmp.Write(raw); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return
+	}
+	if err := os.Chmod(tmpPath, 0o600); err != nil {
+		_ = os.Remove(tmpPath)
+		return
+	}
+	if err := os.Rename(tmpPath, s.path); err != nil {
+		_ = os.Remove(tmpPath)
+	}
 }
 
 // handleDispatch routes POST to dispatch a job and GET to list what was sent.
@@ -124,10 +212,15 @@ func (s *Server) handleDispatchJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	job := dispatch{
-		ID:     "job-" + time.Now().Format("20060102-150405"),
-		At:     time.Now().Unix(),
-		Prompt: request.Prompt,
-		Jobs:   make([]dispatchedJob, 0, len(targets)),
+		ID:       "job-" + time.Now().Format("20060102-150405"),
+		At:       time.Now().Unix(),
+		Prompt:   request.Prompt,
+		Kind:     request.Kind,
+		Cwd:      request.Cwd,
+		Branch:   request.Branch,
+		Strategy: "fanout",
+		Targets:  targets,
+		Jobs:     make([]dispatchedJob, 0, len(targets)),
 	}
 	for _, target := range targets {
 		base := fleetBase(target)
@@ -159,6 +252,7 @@ func (s *Server) handleDispatchJob(w http.ResponseWriter, r *http.Request) {
 	if len(s.dispatch.dispatch) > 20 {
 		s.dispatch.dispatch = s.dispatch.dispatch[len(s.dispatch.dispatch)-20:]
 	}
+	s.dispatch.saveLocked()
 	s.dispatch.mu.Unlock()
 
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "dispatch": job})
@@ -179,8 +273,7 @@ type jobOfferAnswer struct {
 // best one that says yes. The offer is side-effect-free; the start carries the
 // task id, so a lost response is retried idempotently rather than duplicating
 // the workspace.
-func (s *Server) dispatchMarket(w http.ResponseWriter, r *http.Request, request dispatchRequest, targets []string) {
-	taskID := newTaskID()
+func (s *Server) runMarket(ctx context.Context, request dispatchRequest, targets []string, taskID string) (dispatch, bool, error) {
 	body, err := json.Marshal(jobRequest{
 		Prompt: request.Prompt,
 		Cwd:    request.Cwd,
@@ -190,14 +283,18 @@ func (s *Server) dispatchMarket(w http.ResponseWriter, r *http.Request, request 
 		TaskID: taskID,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "invalid_request", err.Error())
-		return
+		return dispatch{}, false, err
 	}
 	job := dispatch{
-		ID:     taskID,
-		At:     time.Now().Unix(),
-		Prompt: request.Prompt,
-		Jobs:   make([]dispatchedJob, len(targets)),
+		ID:       taskID,
+		At:       time.Now().Unix(),
+		Prompt:   request.Prompt,
+		Kind:     request.Kind,
+		Cwd:      request.Cwd,
+		Branch:   request.Branch,
+		Strategy: "single",
+		Targets:  targets,
+		Jobs:     make([]dispatchedJob, len(targets)),
 	}
 
 	type offerResult struct {
@@ -214,7 +311,7 @@ func (s *Server) dispatchMarket(w http.ResponseWriter, r *http.Request, request 
 			defer wait.Done()
 			base := fleetBase(target)
 			results[index] = offerResult{base: base}
-			answer, err := postJobOffer(r.Context(), base, body)
+			answer, err := postJobOffer(ctx, base, body)
 			results[index].answer, results[index].err = answer, err
 		}()
 	}
@@ -245,9 +342,9 @@ func (s *Server) dispatchMarket(w http.ResponseWriter, r *http.Request, request 
 	for _, index := range accepted {
 		entry := &job.Jobs[index]
 		base := results[index].base
-		started, startErr := postJobStart(r.Context(), base, body)
+		started, startErr := postJobStart(ctx, base, body)
 		if startErr != nil {
-			running, workspaceID, jobID, queried := getJobTask(r.Context(), base, taskID)
+			running, workspaceID, jobID, queried := getJobTask(ctx, base, taskID)
 			if queried && running {
 				// The start took effect even though the response was lost.
 				entry.Local = jobID
@@ -285,14 +382,138 @@ func (s *Server) dispatchMarket(w http.ResponseWriter, r *http.Request, request 
 		}
 	}
 
+	return job, startedAny, nil
+}
+
+// dispatchMarket is the HTTP entry point for one market task.
+func (s *Server) dispatchMarket(w http.ResponseWriter, r *http.Request, request dispatchRequest, targets []string) {
+	job, started, err := s.runMarket(r.Context(), request, targets, newTaskID())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "invalid_request", err.Error())
+		return
+	}
+	s.storeDispatch(job)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": started, "dispatch": job})
+}
+
+func (s *Server) storeDispatch(job dispatch) {
 	s.dispatch.mu.Lock()
 	s.dispatch.dispatch = append(s.dispatch.dispatch, job)
 	if len(s.dispatch.dispatch) > 20 {
 		s.dispatch.dispatch = s.dispatch.dispatch[len(s.dispatch.dispatch)-20:]
 	}
+	s.dispatch.saveLocked()
 	s.dispatch.mu.Unlock()
+}
 
-	writeJSON(w, http.StatusOK, map[string]any{"ok": startedAny, "dispatch": job})
+// handleDispatchRetry re-runs the market for a task that never started, using
+// the same task id and targets stored on the board. If a target already has the
+// task (a lost start response), it adopts that job instead of starting another.
+func (s *Server) handleDispatchRetry(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeMethodNotAllowed(w, "POST")
+		return
+	}
+	var request struct {
+		ID string `json:"id"`
+	}
+	if !decodeBody(w, r, &request) {
+		return
+	}
+	id := strings.TrimSpace(request.ID)
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "id is required")
+		return
+	}
+	s.dispatch.mu.Lock()
+	index := -1
+	var entry dispatch
+	for candidate, known := range s.dispatch.dispatch {
+		if known.ID == id {
+			index = candidate
+			entry = known
+			break
+		}
+	}
+	s.dispatch.mu.Unlock()
+	if index < 0 {
+		writeNotFound(w)
+		return
+	}
+	if entry.Strategy != "single" {
+		writeError(w, http.StatusConflict, "not_a_market", "only single-machine tasks can be re-offered")
+		return
+	}
+	for _, job := range entry.Jobs {
+		if job.WorkspaceID != "" {
+			writeError(w, http.StatusConflict, "already_started",
+				"this task already started; retrying it would risk two workspaces")
+			return
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	// A lost start response may have created a workspace. Adopt it; never
+	// start a second one for the same task.
+	for _, job := range entry.Jobs {
+		if job.Host == "" {
+			continue
+		}
+		running, workspaceID, jobID, ok := getJobTask(ctx, job.Host, entry.ID)
+		if !ok || !running {
+			continue
+		}
+		s.dispatch.mu.Lock()
+		for candidate := range s.dispatch.dispatch {
+			if s.dispatch.dispatch[candidate].ID != id {
+				continue
+			}
+			for jobIndex := range s.dispatch.dispatch[candidate].Jobs {
+				if s.dispatch.dispatch[candidate].Jobs[jobIndex].Host == job.Host {
+					s.dispatch.dispatch[candidate].Jobs[jobIndex].Local = jobID
+					s.dispatch.dispatch[candidate].Jobs[jobIndex].WorkspaceID = workspaceID
+					s.dispatch.dispatch[candidate].Jobs[jobIndex].TaskID = entry.ID
+					s.dispatch.dispatch[candidate].Jobs[jobIndex].Status = "started"
+				}
+			}
+		}
+		s.dispatch.saveLocked()
+		s.dispatch.mu.Unlock()
+		updated, _ := s.dispatchByID(id)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "dispatch": updated})
+		return
+	}
+
+	market := dispatchRequest{
+		Prompt: entry.Prompt, Cwd: entry.Cwd, Branch: entry.Branch,
+		Kind: entry.Kind, Strategy: "single", Targets: entry.Targets,
+	}
+	updated, started, err := s.runMarket(ctx, market, entry.Targets, entry.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "invalid_request", err.Error())
+		return
+	}
+	s.dispatch.mu.Lock()
+	for candidate := range s.dispatch.dispatch {
+		if s.dispatch.dispatch[candidate].ID == id {
+			s.dispatch.dispatch[candidate] = updated
+		}
+	}
+	s.dispatch.saveLocked()
+	s.dispatch.mu.Unlock()
+	writeJSON(w, http.StatusOK, map[string]any{"ok": started, "dispatch": updated})
+}
+
+func (s *Server) dispatchByID(id string) (dispatch, bool) {
+	s.dispatch.mu.Lock()
+	defer s.dispatch.mu.Unlock()
+	for _, entry := range s.dispatch.dispatch {
+		if entry.ID == id {
+			return entry, true
+		}
+	}
+	return dispatch{}, false
 }
 
 func offerCapacity(answer jobOfferAnswer) int {
@@ -465,6 +686,7 @@ func (s *Server) handleDispatchStop(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	s.dispatch.saveLocked()
 	s.dispatch.mu.Unlock()
 
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "host": host, "workspaceId": workspaceID})
@@ -501,6 +723,9 @@ func (s *Server) handleDispatchList(w http.ResponseWriter, r *http.Request) {
 			status, output, err := getJobStatus(ctx, job.Host, job.Local)
 			if err != nil {
 				job.Error = err.Error()
+				if job.WorkspaceID != "" && job.LeaseUntil > 0 && time.Now().Unix() > job.LeaseUntil {
+					job.Lost = true
+				}
 				continue
 			}
 			job.Status = status

@@ -627,12 +627,16 @@ export type DispatchedJob = {
   changed?: string[];
   /** The dispatcher stopped this job; its workspace is gone. */
   cancelled?: boolean;
+  /** A started job whose machine stopped answering after its lease. */
+  lost?: boolean;
 };
 
 export type Dispatch = {
   id: string;
   at: number;
   prompt: string;
+  /** fanout runs everywhere; single offers the task and runs it once. */
+  strategy?: "fanout" | "single";
   jobs: DispatchedJob[];
 };
 
@@ -677,6 +681,11 @@ export async function dispatchJob(options: {
 /** Stop a dispatched job by closing its workspace on the machine running it. */
 export async function stopDispatchJob(host: string, workspaceId: string): Promise<boolean> {
   return postJSON("/api/v1/fleet/job/stop", { host, workspaceId });
+}
+
+/** Re-offer a market task that never started, on its stored target list. */
+export async function retryDispatch(id: string): Promise<boolean> {
+  return postJSON("/api/v1/fleet/job/retry", { id });
 }
 
 export async function fetchDispatches(): Promise<Dispatch[]> {

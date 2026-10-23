@@ -2289,6 +2289,85 @@ test("a dispatched job reports the commits it produced", async ({ page }) => {
   await expect(empty).toContainText("no commits");
 });
 
+test("a market task says when it is lost and can be re-offered", async ({ page }) => {
+  let retried = false;
+  const retryPosts: string[] = [];
+  await installBridge(page);
+  await page.route("**/api/v1/fleet", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        hub: false,
+        seeds: [],
+        follow: true,
+        self: { id: "me", addr: "100.89.0.116:5000", version: "v0.6.14", platform: "darwin-arm64" },
+        peers: [{ id: "tw1", addr: "100.89.0.4:5000", version: "v0.6.14", platform: "linux-amd64", agents: ["claude"], seen: 0, stale: false }],
+      }),
+    }),
+  );
+  await page.route("**/api/v1/fleet/jobs", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        dispatches: [
+          {
+            id: "task-lost",
+            at: 0,
+            prompt: "lost work",
+            strategy: "single",
+            jobs: [
+              {
+                host: "http://100.89.0.4:5000",
+                local: "w1:p1",
+                jobId: "w1:p1",
+                workspaceId: "w1",
+                taskId: "task-lost",
+                status: "lost",
+                lost: true,
+                error: "connection refused",
+              },
+            ],
+          },
+          {
+            id: "task-waiting",
+            at: 0,
+            prompt: "waiting work",
+            strategy: "single",
+            jobs: [
+              {
+                host: "http://100.89.0.4:5000",
+                taskId: "task-waiting",
+                status: "declined",
+                error: "at capacity",
+              },
+            ],
+          },
+        ],
+      }),
+    }),
+  );
+  await page.route("**/api/v1/fleet/job/retry", async (route) => {
+    retryPosts.push(route.request().postData() ?? "");
+    retried = true;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+  });
+
+  await page.goto("/");
+  await page.locator("#herdr-host-open").click();
+  await page.locator("#dispatch-open").click();
+  const lost = page.locator('[data-dispatch="task-lost"]');
+  await expect(lost).toContainText("lost — check http://100.89.0.4:5000");
+  const waiting = page.locator('[data-dispatch="task-waiting"]');
+  // A started task is not offered a retry; the unstarted one is.
+  await expect(lost.locator(".dispatch__retry")).toHaveCount(0);
+  await waiting.locator(".dispatch__retry").click();
+  await expect.poll(() => retryPosts.length).toBe(1);
+  expect(JSON.parse(retryPosts[0])).toEqual({ id: "task-waiting" });
+  expect(retried).toBe(true);
+});
+
 test("a dispatched job can be stopped after a confirmation", async ({ page }) => {
   let stopped = false;
   let dialogMessage = "";

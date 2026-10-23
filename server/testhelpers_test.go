@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -17,8 +18,23 @@ func testWebFS() fs.FS {
 	}
 }
 
+// isolateState gives one test its own durable ledger and task board, so a job
+// started here cannot leak into the next test through the operator's state dir.
+func isolateState(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	previousLedger, previousDispatch := ledgerPathOverride, dispatchStatePathOverride
+	ledgerPathOverride = filepath.Join(dir, "ledger.jsonl")
+	dispatchStatePathOverride = filepath.Join(dir, "dispatch.json")
+	t.Cleanup(func() {
+		ledgerPathOverride = previousLedger
+		dispatchStatePathOverride = previousDispatch
+	})
+}
+
 func newTestHandler(t *testing.T, socket string) http.Handler {
 	t.Helper()
+	isolateState(t)
 	return NewServer(socket, testWebFS()).Handler()
 }
 
