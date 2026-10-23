@@ -520,6 +520,20 @@ body::before {
   font-weight: 400;
 }
 
+/* Below this width the rail is ~175px and the fixed agent column plus the
+   workspace tag left a pane title four characters wide ("Add…"). The title is
+   the identity; the workspace is context and the row's title still names both,
+   so drop it here and give the width to the title. */
+@media (max-width: 1150px) {
+  .side--agents .row {
+    grid-template-columns: minmax(0, 3.4rem) minmax(0, 1fr);
+  }
+
+  .side--agents .row__workspace {
+    display: none;
+  }
+}
+
 /* Where it lives: context, not identity. */
 .row__workspace {
   overflow: hidden;
