@@ -23,11 +23,11 @@ const shutdownTimeout = 5 * time.Second
 // and the static handler answers with a hint instead of mangling the routes.
 func Run(binds []string, socketPath string, webFS fs.FS) error {
 	console := NewServer(socketPath, webFS)
-	handler := console.Handler()
 	listeners, err := Listen(binds)
 	if err != nil {
 		return err
 	}
+	handler := GuardRequests(console.Handler(), listeners)
 	servers := make([]*http.Server, 0, len(listeners))
 	for _, listener := range listeners {
 		fmt.Fprintf(os.Stderr, "herdr-web: listening on http://%s\n", listener.Addr())

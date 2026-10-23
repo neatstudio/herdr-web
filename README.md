@@ -205,6 +205,14 @@ panes. Keep it on loopback or a private link. The file endpoints are read-only
 and refuse anything that is not a regular file, and SVG is never served as an
 image (it can carry script), but the console is as powerful as a shell.
 
+The browser boundary is checked separately: a request must address a host this
+console answers on (the bound address, `localhost`, a single-label LAN name,
+MagicDNS/`.local`, or a name in `HERDR_WEB_ALLOWED_HOSTS`), and browser
+mutations must be same-origin and `application/json`. That keeps a visited page
+or a DNS-rebinding name from driving the API; it does not authenticate a
+tailnet peer that can reach the port directly. A reverse proxy that forwards a
+different Host needs that name in `HERDR_WEB_ALLOWED_HOSTS`.
+
 ## Files
 
 Attachments are written to `herdr-web-uploads` under the system temp directory
