@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { HerdrPane } from "@/lib/herdr";
 import { paneListName, paneOwnHasName, shortPaneId, toneOf } from "@/lib/fleet";
 import { longPressHandlers } from "@/lib/press";
@@ -35,17 +35,33 @@ export function PaneTabs({
   canSplit,
 }: Props) {
   const activeRef = useRef<HTMLButtonElement | null>(null);
+  const stripRef = useRef<HTMLDivElement | null>(null);
   // A strip that overflows shows its first tabs, not the one being read. Keep
   // the selected tab in view; "nearest" means no scrolling when it already is.
   useEffect(() => {
     activeRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [activeTabId]);
 
+  // Scrolled, the leftmost tab is a fragment cut mid-glyph. Fading that edge
+  // says "there is more to the left" instead of leaving a stray character.
+  const [scrolled, setScrolled] = useState(false);
+
   if (panes.length === 0) {
     return null;
   }
   return (
-    <div className="strip" role="tablist" aria-label="Panes">
+    <div
+      className={scrolled ? "strip strip--scrolled" : "strip"}
+      role="tablist"
+      aria-label="Panes"
+      ref={stripRef}
+      onScroll={() => {
+        const left = stripRef.current?.scrollLeft ?? 0;
+        if (left > 4 !== scrolled) {
+          setScrolled(left > 4);
+        }
+      }}
+    >
       {panes.map((pane, index) => {
         const active = pane.tabId === activeTabId;
         const tone = toneOf(pane.agentStatus);

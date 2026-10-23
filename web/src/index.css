@@ -790,6 +790,14 @@ body::before {
   display: none;
 }
 
+/* Scrolled away from the start, the first tab is a fragment cut mid-glyph.
+   Fading that edge reads as "more to the left" instead of as a stray character.
+   The fade only appears once there is something to scroll back to. */
+.strip--scrolled {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 14px);
+  mask-image: linear-gradient(to right, transparent 0, #000 14px);
+}
+
 .tab {
   display: flex;
   align-items: center;
