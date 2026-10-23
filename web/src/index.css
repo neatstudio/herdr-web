@@ -1937,12 +1937,14 @@ body::before {
   flex: 0 0 auto;
 }
 
+/* The machine list needs the width for one line per host: at 30rem the longest
+   row's capabilities were cut off on a desktop too. */
 .sheet--fleet .sheet__body {
   flex: 1 1 auto;
   overflow: auto;
   padding: 18px var(--pad) 28px;
   display: grid;
-  grid-template-columns: minmax(300px, 30rem) minmax(0, 1fr);
+  grid-template-columns: minmax(300px, 36rem) minmax(0, 1fr);
   gap: 22px;
   align-items: start;
 }
@@ -2418,7 +2420,14 @@ body::before {
 }
 
 /* One line per machine. The address never shrinks; the detail does, and the
-   part that does not fit is in the row's title. */
+   part that does not fit is in the row's title. Every box in the chain needs
+   min-width: 0, or the nowrap detail sets the column width and the row runs
+   off the side of a phone. */
+.dispatch__targets li,
+.dispatch__targets label {
+  min-width: 0;
+}
+
 .dispatch__targets label > span:nth-child(2) {
   flex: 0 0 auto;
   font-family: var(--font-mono);
