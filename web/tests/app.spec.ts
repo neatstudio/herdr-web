@@ -792,7 +792,7 @@ test("a local pane carries no remote mark", async ({ page }) => {
 
 test("the transcript layout switches between wrap, exact and fit", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 780 });
-  const wide = `${ESC}[48;2;20;20;20m${"x".repeat(120)}${ESC}[0m`;
+  const wide = `${ESC}[48;2;20;20;20m${"x".repeat(60)}${ESC}[0m`;
   await installBridge(page, { readText: `${wide}\n${wide}\n` });
   await page.goto("/");
 
@@ -1438,6 +1438,31 @@ test("raw mode forwards every key to the pane, so completion and Ctrl work", asy
   await expect(page.locator(".prompt")).not.toHaveAttribute("data-raw", "on");
 });
 
+test("shift+tab reaches a TUI from the composer and from raw mode", async ({ page }) => {
+  const keyPosts: string[] = [];
+  await installBridge(page);
+  await page.route("**/api/v1/herdr/panes/*/keys", async (route) => {
+    keyPosts.push(route.request().postData() ?? "");
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+  });
+  await page.goto("/");
+  const input = page.locator("#herdr-input");
+  await input.click();
+
+  // Tab is completion here, but Shift+Tab is the agent's own mode switch:
+  // "accept edits" in the prompt is a BackTab, not a browser focus move.
+  await input.press("Shift+Tab");
+  await expect.poll(() => keyPosts).toEqual([JSON.stringify({ keys: ["shift+tab"] })]);
+  await expect(page.locator(".prompt")).not.toHaveAttribute("data-raw", "on");
+
+  // In raw mode the same chord goes through the shared mapping.
+  await input.press("Escape");
+  await expect(page.locator(".prompt")).toHaveAttribute("data-raw", "on");
+  await input.press("Shift+Tab");
+  await expect.poll(() => keyPosts).toHaveLength(2);
+  expect(JSON.parse(keyPosts[1])).toEqual({ keys: ["shift+tab"] });
+});
+
 test("opening a pane puts the caret in the prompt", async ({ page }) => {
   await installBridge(page);
   await page.goto("/");
@@ -1642,6 +1667,39 @@ test("plain output rewraps to a phone-sized viewport", async ({ page }) => {
   expect(overflow, "plain output must not overflow sideways on a phone").toBe(false);
 });
 
+
+test("a horizontal rule stays one line in wrap mode", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 780 });
+  await installBridge(page, { readText: `before\n${"-".repeat(160)}\nafter\n` });
+  await page.goto("/");
+
+  const feed = page.locator("#herdr-feed-text");
+  await expect(feed).toHaveAttribute("data-display", "wrap");
+  const rule = page.locator(".scope__line--rule");
+  await expect(rule).toHaveCount(1);
+  const layout = await rule.evaluate((node) => ({
+    whiteSpace: getComputedStyle(node).whiteSpace,
+    height: node.getBoundingClientRect().height,
+    lineHeight: Number.parseFloat(getComputedStyle(node).lineHeight) || 15,
+  }));
+  // One row, clipped, not three lines of dashes.
+  expect(layout.whiteSpace).toBe("pre");
+  expect(layout.height).toBeLessThan(layout.lineHeight * 2);
+  expect(await feed.evaluate((node) => node.scrollWidth > node.clientWidth + 1)).toBe(false);
+});
+
+test("fit stops at a readable size and scrolls instead of shrinking to nothing", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 780 });
+  await installBridge(page, { readText: `${"x".repeat(200)}\n` });
+  await page.goto("/");
+  await page.locator("#herdr-display-fit").click();
+
+  const feed = page.locator("#herdr-feed-text");
+  const fontSize = await feed.evaluate((node) => Number.parseFloat(getComputedStyle(node).fontSize));
+  expect(fontSize).toBeGreaterThanOrEqual(10);
+  expect(await feed.evaluate((node) => node.scrollWidth > node.clientWidth + 1)).toBe(true);
+  await expect(page.locator(".scope__display-hint")).toContainText("200c");
+});
 
 test("the console can update itself and says how to start the new build", async ({ page }) => {
   await installBridge(page);

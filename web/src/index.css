@@ -872,7 +872,23 @@ body::before {
      highlighted lines look like a stack of separate bars. */
   line-height: normal;
   tab-size: 8;
+  scrollbar-width: thin;
   animation: settle 0.22s ease-out both;
+}
+
+/* A narrow macOS overlay scrollbar hides the only way to read a wide terminal
+   in exact mode. Make it a thin, always-visible rail instead. */
+.scope__scroll::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+.scope__scroll::-webkit-scrollbar-thumb {
+  background: var(--rule-strong);
+}
+
+.scope__scroll::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /* A full-screen app reads horizontally and draws with spaces, so wrapping it
@@ -894,6 +910,22 @@ body::before {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   min-height: 1lh;
+}
+
+/* A rule or a box border is one long unbreakable token. Wrapping 120 dashes
+   turns a separator into three lines of noise, so keep it on one row and clip
+   it at the pane's edge. Exact mode keeps the full width and scrolls it. */
+.scope__line--rule {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.scope__scroll[data-wrap="on"] .scope__line--rule {
+  white-space: pre;
+}
+
+.scope__scroll[data-display="exact"] .scope__line--rule {
+  max-width: none;
 }
 
 /* Transcript layout switch: wrap the text, keep terminal rows exact, or

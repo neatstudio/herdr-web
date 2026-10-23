@@ -127,3 +127,20 @@ test("a space is a named key, not a character", () => {
   assert.equal(herdr.keyForChar("a"), "a");
   assert.equal(herdr.keyForChar("|"), "|");
 });
+
+test("terminalKeyName keeps the modifiers a TUI needs", () => {
+  // Measured against the daemon: shift+tab sends CSI Z (BackTab), and the
+  // daemon rejects the BackTab spelling itself.
+  assert.equal(herdr.terminalKeyName({ key: "Tab", shiftKey: true }), "shift+tab");
+  assert.equal(herdr.terminalKeyName({ key: "Tab" }), "Tab");
+  assert.equal(herdr.terminalKeyName({ key: "Enter", shiftKey: true }), "shift+enter");
+  assert.equal(herdr.terminalKeyName({ key: "ArrowUp", shiftKey: true }), "shift+up");
+  assert.equal(herdr.terminalKeyName({ key: "A", ctrlKey: true, shiftKey: true }), "ctrl+shift+a");
+  assert.equal(herdr.terminalKeyName({ key: "a", altKey: true }), "alt+a");
+  assert.equal(herdr.terminalKeyName({ key: " ", ctrlKey: true }), "ctrl+space");
+  // Cmd belongs to the browser.
+  assert.equal(herdr.terminalKeyName({ key: "a", metaKey: true }), null);
+  // A shifted printable key is already the character the terminal wants.
+  assert.equal(herdr.terminalKeyName({ key: "A", shiftKey: true }), "A");
+  assert.equal(herdr.terminalKeyName({ key: "Escape" }), "esc");
+});

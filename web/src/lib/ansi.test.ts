@@ -9,6 +9,7 @@ import {
   colour256,
   canvasTone,
   inkOn,
+  isHorizontalRule,
   stripAnsi,
 } from "./ansi.ts";
 
@@ -376,4 +377,13 @@ test("a realistic TUI line renders identically before and after caching", () => 
   assert.ok(cold.includes("Build finished in 1.2s"), cold);
   assert.ok(cold.includes(" ".repeat(120)), cold);
   assert.ok(!cold.includes(ESC), cold);
+});
+
+test("isHorizontalRule tells a rule from prose", () => {
+  assert.equal(isHorizontalRule("-".repeat(80)), true);
+  assert.equal(isHorizontalRule(`${ESC}[38;5;6m${"─".repeat(40)}${ESC}[0m`), true);
+  assert.equal(isHorizontalRule(`╭${"─".repeat(40)}╮`), true);
+  assert.equal(isHorizontalRule("---"), false);
+  assert.equal(isHorizontalRule("--- next ---"), false);
+  assert.equal(isHorizontalRule("a line of plain text"), false);
 });

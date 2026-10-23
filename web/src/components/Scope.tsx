@@ -1,5 +1,5 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ansiLineToHtml, canvasBackdrop, canvasTone } from "@/lib/ansi";
+import { ansiLineToHtml, canvasBackdrop, canvasTone, isHorizontalRule } from "@/lib/ansi";
 import { READ_LINES, readPane } from "@/lib/herdr";
 import { canvasModeFor, splitLines, type PageTheme } from "@/lib/fleet";
 import { DISPLAY_MODES, type DisplayMode } from "@/lib/theme";
@@ -24,11 +24,11 @@ const TAIL_SLOP_PX = 48;
 const MONO_ADVANCE = 0.6;
 const BASE_FONT_PX = 12.5;
 /**
- * Floor for fit-to-width. A phone reports a device pixel ratio near 3, so 4px
- * of CSS text is still about 12 device pixels; below that a 300-column pane
- * would be a grey smear, so those panes scroll instead of pretending to fit.
+ * Floor for fit-to-width. Scaling a 300-column pane to 4px makes a grey smear;
+ * below a readable size the transcript keeps the floor and scrolls sideways
+ * instead of pretending to fit.
  */
-const MIN_FIT_PX = 4;
+const MIN_FIT_PX = 10;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -187,7 +187,13 @@ function ScopeView({ paneId, theme, display, onDisplay, onOpenPath }: Props) {
   // A wrapped transcript needs the canvas behind every row, so the backdrop is
   // the pane's own canvas, mirrored when the page theme disagrees with it.
   const backdrop = canvasBackdrop(paintCanvas, mode);
-  const columns = lines.reduce((widest, line) => Math.max(widest, stripLength(line)), 0);
+  // A rule is decoration, not a column the reader needs; letting a 120-dash
+  // separator decide the fit size would shrink every word around it.
+  const rules = useMemo(() => lines.map(isHorizontalRule), [lines]);
+  const columns = lines.reduce(
+    (widest, line, index) => (rules[index] ? widest : Math.max(widest, stripLength(line))),
+    0,
+  );
   const fitScale = columns > 0 && width > 0 ? width / (columns * MONO_ADVANCE) : BASE_FONT_PX;
   const fontPx =
     display === "fit"
@@ -243,7 +249,7 @@ function ScopeView({ paneId, theme, display, onDisplay, onOpenPath }: Props) {
         {rendered.map((html, index) => (
           <div
             key={index}
-            className="scope__line"
+            className={`scope__line${rules[index] ? " scope__line--rule" : ""}`}
             // Renderer output only: ANSI escape sequences become spans, and
             // text is HTML-escaped before any markup is added.
             dangerouslySetInnerHTML={{ __html: html }}
@@ -267,16 +273,16 @@ function ScopeView({ paneId, theme, display, onDisplay, onOpenPath }: Props) {
                 ? "reflow to the screen width"
                 : item === "exact"
                   ? "one row per terminal line, scroll sideways"
-                  : `scale so all ${columns} columns fit`
+                  : `scale down to ${MIN_FIT_PX}px, then scroll sideways (${columns} columns)`
             }
             onClick={() => onDisplay(item)}
           >
             {item}
           </button>
         ))}
-        {overflows && display !== "fit" && (
+        {overflows && (
           <span className="scope__display-hint" aria-hidden>
-            {columns}c
+            {columns}c ↔
           </span>
         )}
       </div>

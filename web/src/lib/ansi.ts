@@ -479,3 +479,16 @@ export function canvasTone(lines: string[]): CanvasTone {
 export function stripAnsi(text: string): string {
   return text.replace(CSI_RE, "").replace(/\r/g, "");
 }
+
+/**
+ * True for a line that is only a horizontal rule or a box border.
+ *
+ * A TUI draws these as one long unbreakable token. Wrapping 120 dashes at the
+ * viewport turns a separator into three lines of noise, so the transcript
+ * clips these lines instead of reflowing them; exact mode still scrolls them
+ * because it preserves terminal geometry.
+ */
+export function isHorizontalRule(line: string): boolean {
+  const text = stripAnsi(line).trim();
+  return text.length >= 8 && /^[-─━═⎯_=╭╮╰╯┌┐└┘├┤┬┴┼]+$/.test(text);
+}

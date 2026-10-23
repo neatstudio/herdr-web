@@ -814,6 +814,61 @@ export function keyForChar(char: string): string {
   return char === " " ? "space" : char;
 }
 
+export type KeyStroke = {
+  key: string;
+  ctrlKey?: boolean;
+  altKey?: boolean;
+  shiftKey?: boolean;
+  metaKey?: boolean;
+};
+
+/**
+ * herdr's name for one browser key, or null when the key means nothing to a
+ * terminal. Modifiers are part of the protocol: a TUI's Shift+Tab is BackTab
+ * (`\x1b[Z`) at the other end, and the daemon takes `shift+tab` for it.
+ *
+ * Meta is left to the browser: Cmd+W must close a tab, not reach a pane. A
+ * shifted printable key is already the character the terminal wants ("A"), but
+ * a shifted named key has to spell the modifier out.
+ */
+export function terminalKeyName(stroke: KeyStroke): string | null {
+  if (stroke.metaKey === true) {
+    return null;
+  }
+  if (stroke.key.length === 1) {
+    if (!stroke.ctrlKey && !stroke.altKey) {
+      return stroke.key === " " ? "space" : stroke.key;
+    }
+    const base = stroke.key === " " ? "space" : stroke.shiftKey ? stroke.key.toLowerCase() : stroke.key;
+    const prefix = `${stroke.ctrlKey ? "ctrl+" : ""}${stroke.altKey ? "alt+" : ""}${stroke.shiftKey ? "shift+" : ""}`;
+    return `${prefix}${base}`;
+  }
+  const named: Record<string, string> = {
+    Enter: "Enter",
+    Tab: "Tab",
+    Backspace: "Backspace",
+    Delete: "Delete",
+    Escape: "esc",
+    ArrowUp: "Up",
+    ArrowDown: "Down",
+    ArrowLeft: "Left",
+    ArrowRight: "Right",
+    Home: "Home",
+    End: "End",
+    PageUp: "PageUp",
+    PageDown: "PageDown",
+  };
+  const base = named[stroke.key];
+  if (base === undefined) {
+    return null;
+  }
+  if (!stroke.ctrlKey && !stroke.altKey && !stroke.shiftKey) {
+    return base;
+  }
+  const prefix = `${stroke.ctrlKey ? "ctrl+" : ""}${stroke.altKey ? "alt+" : ""}${stroke.shiftKey ? "shift+" : ""}`;
+  return `${prefix}${base.toLowerCase()}`;
+}
+
 /**
  * Type text into a pane one key at a time, then Enter.
  *

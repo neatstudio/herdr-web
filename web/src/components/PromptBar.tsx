@@ -3,6 +3,7 @@ import {
   quotePath,
   sendPaneKeys,
   sendPaneText,
+  terminalKeyName,
   typePaneText,
   uploadFile,
 } from "@/lib/herdr";
@@ -20,57 +21,6 @@ const MAX_ROWS = 8;
  */
 function canType(text: string): boolean {
   return text.length > 0 && text.length <= TYPE_LIMIT && /^[\x20-\x7e]+$/.test(text);
-}
-
-/**
- * herdr's name for one browser key, or null when the key means nothing to a
- * terminal. Raw mode forwards these one by one, which is how completion,
- * history and a TUI's own menus keep working.
- */
-function terminalKey(event: React.KeyboardEvent): string | null {
-  if (event.ctrlKey && !event.altKey && !event.metaKey && event.key.length === 1) {
-    return `ctrl+${event.key.toLowerCase()}`;
-  }
-  if (event.metaKey || event.altKey) {
-    return null;
-  }
-  if (event.key === " ") {
-    // The daemon rejects " " and takes "space" for it.
-    return "space";
-  }
-  if (event.key.length === 1) {
-    return event.key;
-  }
-  switch (event.key) {
-    case "Enter":
-      return "Enter";
-    case "Tab":
-      return "Tab";
-    case "Backspace":
-      return "Backspace";
-    case "Delete":
-      return "Delete";
-    case "Escape":
-      return "esc";
-    case "ArrowUp":
-      return "Up";
-    case "ArrowDown":
-      return "Down";
-    case "ArrowLeft":
-      return "Left";
-    case "ArrowRight":
-      return "Right";
-    case "Home":
-      return "Home";
-    case "End":
-      return "End";
-    case "PageUp":
-      return "PageUp";
-    case "PageDown":
-      return "PageDown";
-    default:
-      return null;
-  }
 }
 
 /**
@@ -262,7 +212,7 @@ export function PromptBar({ paneId }: { paneId: string }) {
       setRaw(false);
       return;
     }
-    const key = terminalKey(event);
+    const key = terminalKeyName(event);
     if (key === null) {
       return;
     }
@@ -298,6 +248,15 @@ export function PromptBar({ paneId }: { paneId: string }) {
     }
     if (event.key === "Tab") {
       event.preventDefault();
+      // Tab completes here; Shift+Tab is a TUI's own mode switch (accept edits,
+      // cycle agents), so it belongs to the pane even before raw mode is on.
+      if (event.shiftKey) {
+        const key = terminalKeyName(event);
+        if (key !== null) {
+          void sendPaneKeys(paneId, [key]);
+        }
+        return;
+      }
       void complete();
       return;
     }
