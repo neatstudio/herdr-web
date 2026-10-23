@@ -2226,6 +2226,17 @@ body::before {
     opacity: 1;
   }
 
+  /* The dispatch form is taller than a phone screen, so its one action sat
+     below the fold and had to be hunted for. Pin it; it comes to rest in its
+     own place once the form is scrolled that far. */
+  .sheet--fleet #dispatch-send {
+    position: sticky;
+    bottom: 0;
+    margin-top: 12px;
+    padding: 12px 6px;
+    box-shadow: 0 -1px 0 var(--rule);
+  }
+
   .prompt__hints {
     display: none;
   }
