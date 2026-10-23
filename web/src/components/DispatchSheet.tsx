@@ -94,7 +94,14 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
     if (!open) {
       return;
     }
-    const timer = setInterval(() => void fetchDispatches().then(setDispatches), 5000);
+    const timer = setInterval(() => {
+      // A hidden tab should not make every target run git/status for a board
+      // nobody is looking at.
+      if (document.visibilityState === "hidden") {
+        return;
+      }
+      void fetchDispatches().then(setDispatches);
+    }, 5000);
     return () => clearInterval(timer);
   }, [open]);
 
