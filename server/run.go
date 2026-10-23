@@ -18,6 +18,22 @@ import (
 
 const shutdownTimeout = 5 * time.Second
 
+// hasTailnetListener reports whether this console is reachable on the tailnet.
+// A loopback-only process is local-only: it must not discover or follow peers.
+func hasTailnetListener(listeners []net.Listener) bool {
+	for _, listener := range listeners {
+		address, ok := listener.Addr().(*net.TCPAddr)
+		if ok && isTailnetAddress(address.IP) {
+			return true
+		}
+	}
+	return false
+}
+
+func isTailnetAddress(ip net.IP) bool {
+	return ip != nil && tailscaleNetwork.Contains(ip)
+}
+
 // Run serves the console on every address in binds until SIGINT or SIGTERM
 // arrives, then shuts them all down. webFS may be nil: the API still serves,
 // and the static handler answers with a hint instead of mangling the routes.
@@ -27,6 +43,8 @@ func Run(binds []string, socketPath string, webFS fs.FS) error {
 	if err != nil {
 		return err
 	}
+	console.tailnetFacing = hasTailnetListener(listeners)
+	tailnetDiscoveryEnabled = console.tailnetFacing
 	handler := GuardRequests(console.Handler(), listeners)
 	servers := make([]*http.Server, 0, len(listeners))
 	for _, listener := range listeners {

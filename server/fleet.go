@@ -185,6 +185,11 @@ func fleetFollowEnabled() bool {
 
 // StartFleet begins the exchange and the follow loop. Both stop with ctx.
 func (s *Server) StartFleet(ctx context.Context) {
+	if !s.tailnetFacing {
+		// A loopback-only console is an entry point of one. It updates from the
+		// official source or an explicit source; it does not touch the tailnet.
+		return
+	}
 	s.loadFleet()
 	go s.fleetHeartbeatLoop(ctx)
 	if fleetFollowEnabled() {
@@ -721,7 +726,7 @@ func (s *Server) handleFleet(w http.ResponseWriter, r *http.Request) {
 		// convenience, not a role.
 		"hub":    len(s.fleetSeeds) == 0,
 		"seeds":  s.fleetSeeds,
-		"follow": fleetFollowEnabled(),
+		"follow": s.tailnetFacing && fleetFollowEnabled(),
 		"peers":  out,
 	})
 }

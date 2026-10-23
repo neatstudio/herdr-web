@@ -53,6 +53,10 @@ type selfState struct {
 	GitHubFailedAt int64 `json:"githubFailedAt,omitempty"`
 }
 
+// tailnetDiscoveryEnabled is set from the listeners at startup. A loopback-only
+// console must not probe the tailnet; tests default to enabled.
+var tailnetDiscoveryEnabled = true
+
 // selfTailnetPeers returns the addresses of tailnet peers worth probing. A seam
 // so tests do not depend on a tailnet being present.
 var selfTailnetPeers = discoverTailnetPeers
@@ -159,15 +163,19 @@ func selfCandidates(ctx context.Context, explicit string) []selfCandidate {
 		time.Since(time.Unix(state.GitHubFailedAt, 0)) < selfGitHubQuiet
 
 	if githubRecent {
-		for _, peer := range selfTailnetPeers(ctx) {
-			add(peer.Source, peer.Version)
+		if tailnetDiscoveryEnabled {
+			for _, peer := range selfTailnetPeers(ctx) {
+				add(peer.Source, peer.Version)
+			}
 		}
 		add(official, selfOfficialVersion(ctx))
 		return candidates
 	}
 	add(official, selfOfficialVersion(ctx))
-	for _, peer := range selfTailnetPeers(ctx) {
-		add(peer.Source, peer.Version)
+	if tailnetDiscoveryEnabled {
+		for _, peer := range selfTailnetPeers(ctx) {
+			add(peer.Source, peer.Version)
+		}
 	}
 	return candidates
 }
