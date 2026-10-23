@@ -137,8 +137,12 @@ async function installBridge(page: Page, options: FixtureOptions = {}): Promise<
     // Echo the workspace that was asked for: the strip is grouped by workspace,
     // and a fixture that always answers w1 would hide a bug on every other one.
     const workspaceId = (JSON.parse(body || "{}") as { workspaceId?: string }).workspaceId ?? "w1";
+    // The pane id carries its workspace, as herdr's do: a fixture that always
+    // answered w1:p9 gave the w2 strip a tab whose own id named w1, which hid
+    // exactly the kind of mistake this test exists to catch.
+    const paneId = `${workspaceId}:p9`;
     created.push({
-      id: "w1:p9",
+      id: paneId,
       workspaceId,
       tabId: `${workspaceId}:t9`,
       focused: false,
@@ -148,7 +152,7 @@ async function installBridge(page: Page, options: FixtureOptions = {}): Promise<
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ ok: true, tabId: `${workspaceId}:t9`, paneId: "w1:p9", workspaceId }),
+      body: JSON.stringify({ ok: true, tabId: `${workspaceId}:t9`, paneId, workspaceId }),
     });
   });
   await page.route("**/api/v1/herdr/panes/*/split", async (route) => {
@@ -950,14 +954,44 @@ test("a phone's + adds a tab, exactly as it does on a desktop", async ({ page })
   await installBridge(page);
   await page.goto("/");
 
+  // Count the tabs, not the + that sits beside them, and count before the
+  // click: the button inserts its tab optimistically, so a count taken after
+  // the click already includes the result it is meant to measure.
+  const strip = page.locator(".strip .tab[data-pane-id]");
+  await expect(strip.first()).toBeVisible();
+  const before = await strip.count();
+  const shownWorkspace = (await strip.first().getAttribute("data-pane-id"))?.split(":")[0] ?? "";
+
   // The phone changes the layout, not the meaning of the button.
-  await page.locator('#herdr-new-tab').click();
-  const before = await page.locator(".strip .tab").count();
+  await page.locator("#herdr-new-tab").click();
   const tabs = (page as Page & { tabs?: string[] }).tabs ?? [];
   const splits = (page as Page & { splits?: string[] }).splits ?? [];
-  await expect.poll(() => tabs.length).toBe(1);
+  await expect.poll(() => tabs).toEqual([JSON.stringify({ workspaceId: shownWorkspace })]);
   expect(splits).toEqual([]);
-  await expect(page.locator(".strip .tab")).toHaveCount(before + 1);
+
+  // A tab in the workspace that is on screen, and it is the one in front.
+  await expect(strip).toHaveCount(before + 1);
+  await expect(page.locator(`.strip .tab[data-pane-id="${shownWorkspace}:p9"]`)).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+});
+
+test("a phone reaches split through the strip, because the sidebar is gone", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 780 });
+  await installBridge(page);
+  await page.goto("/");
+
+  // Below 900px the sidebar is hidden, so the strip's own menu is the phone's
+  // way to the pane actions. A long press and a right click both open it.
+  const tab = page.locator('.strip .tab[data-pane-id="w2:p1"]');
+  await tab.click({ button: "right" });
+  const menu = page.locator('[role="menu"]');
+  await expect(menu).toContainText("Split down");
+
+  await page.getByRole("menuitem", { name: /Split down/ }).click();
+  const sent = (page as Page & { splits?: string[] }).splits ?? [];
+  await expect.poll(() => sent).toEqual([JSON.stringify({ direction: "down" })]);
 });
 
 
