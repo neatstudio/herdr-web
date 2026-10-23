@@ -2199,6 +2199,8 @@ test("a one-machine fleet can send a task to itself", async ({ page }) => {
           running: 0,
           tools: ["git"],
           models: [],
+          cpus: 2,
+          memAvailableMB: 1024,
           seen: 0,
           stale: false,
         },
@@ -2237,6 +2239,9 @@ test("a one-machine fleet can send a task to itself", async ({ page }) => {
   const self = sheet.locator('input[data-target="100.89.0.116:5000"]');
   await expect(self).toBeChecked();
   await expect(sheet.locator('label[title*="tools: git"]')).toContainText("0/2");
+  await expect(sheet.locator('label[title*="tools: git"]')).toContainText("2c");
+  await expect(sheet.locator('label[title*="tools: git"]')).toContainText("1G free");
+  await page.locator("#dispatch-weight").selectOption("heavy");
   await page.locator("#dispatch-strategy-single").click();
   await page.locator("#dispatch-prompt").fill("local task");
   await page.locator("#dispatch-send").click();
@@ -2245,6 +2250,7 @@ test("a one-machine fleet can send a task to itself", async ({ page }) => {
     prompt: "local task",
     kind: "claude",
     strategy: "single",
+    weight: "heavy",
     targets: ["http://100.89.0.116:5000"],
   });
 });

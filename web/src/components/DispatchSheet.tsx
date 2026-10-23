@@ -37,6 +37,7 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
   const [kinds, setKinds] = useState<string[]>([]);
   const [kind, setKind] = useState("");
   const [strategy, setStrategy] = useState<"fanout" | "single">("fanout");
+  const [weight, setWeight] = useState<"light" | "standard" | "heavy">("standard");
   const [chosen, setChosen] = useState<string[]>([]);
   const [dispatches, setDispatches] = useState<Dispatch[]>([]);
   const [busy, setBusy] = useState(false);
@@ -151,6 +152,7 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
         branch: branch.trim() === "" ? undefined : branch.trim(),
         kind,
         strategy,
+        weight,
         targets: chosen,
       });
       if (done === null) {
@@ -223,6 +225,22 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
           </select>
         </label>
 
+        <label className="newws__field">
+          <span>weight</span>
+          <select
+            id="dispatch-weight"
+            value={weight}
+            onChange={(event) => setWeight(event.target.value as "light" | "standard" | "heavy")}
+          >
+            <option value="light">light — edits, no build</option>
+            <option value="standard">standard</option>
+            <option value="heavy">heavy — build/tests, 2+ CPUs</option>
+          </select>
+          <span className="newws__dim">
+            a placement hint; the target also checks free memory
+          </span>
+        </label>
+
         <div className="newws__field">
           <span>strategy</span>
           <div className="dispatch__strategy" role="group" aria-label="Dispatch strategy">
@@ -266,9 +284,18 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
               const capacity = (peer.maxTasks ?? 0) > 0 ? `${peer.running ?? 0}/${peer.maxTasks}` : "";
               const models = peer.models ?? [];
               const tools = peer.tools ?? [];
+              const hardware = [
+                peer.cpus !== undefined && peer.cpus > 0 ? `${peer.cpus}c` : "",
+                peer.memAvailableMB !== undefined && peer.memAvailableMB > 0
+                  ? `${Math.round((peer.memAvailableMB / 1024) * 10) / 10}G free`
+                  : "",
+              ]
+                .filter((part) => part !== "")
+                .join(" ");
               const detail = [
                 agents.length === 0 ? "no agent reported" : agents.join(" "),
                 capacity,
+                hardware,
                 models.join(" "),
               ]
                 .filter((part) => part !== "")
@@ -327,6 +354,7 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
               <article key={entry.id} className="dispatch__entry" data-dispatch={entry.id}>
                 <header>
                   <span>{entry.id}</span>
+                  {entry.weight !== undefined && <span className="newws__dim">{entry.weight}</span>}
                   {entry.strategy === "single" &&
                     entry.jobs.every((job) => (job.workspaceId ?? "") === "" && job.cancelled !== true) && (
                       <button type="button" className="dispatch__retry" onClick={() => void retry(entry.id)}>

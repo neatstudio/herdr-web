@@ -629,6 +629,7 @@ export type DispatchedJob = {
   cancelled?: boolean;
   /** A started job whose machine stopped answering after its lease. */
   lost?: boolean;
+  weight?: "light" | "standard" | "heavy";
 };
 
 export type Dispatch = {
@@ -637,6 +638,8 @@ export type Dispatch = {
   prompt: string;
   /** fanout runs everywhere; single offers the task and runs it once. */
   strategy?: "fanout" | "single";
+  /** The operator's weight hint for the task. */
+  weight?: "light" | "standard" | "heavy";
   jobs: DispatchedJob[];
 };
 
@@ -664,6 +667,8 @@ export async function dispatchJob(options: {
   kind: string;
   /** fanout runs everywhere; single offers to all and starts on one. */
   strategy?: "fanout" | "single";
+  /** light/standard/heavy; a placement hint, not a sandbox. */
+  weight?: "light" | "standard" | "heavy";
   targets: string[];
 }): Promise<{ ok: boolean; dispatch: Dispatch } | { error: string } | null> {
   const raw = await postJSONResult("/api/v1/fleet/job", options);
@@ -713,6 +718,11 @@ export type FleetPeer = {
   tools?: string[];
   /** Model names the operator declared for this host. */
   models?: string[];
+  /** Hardware the host can offer; absent on older consoles. */
+  cpus?: number;
+  memTotalMB?: number;
+  memAvailableMB?: number;
+  load1?: number;
   /** Unix seconds of the last hello. */
   seen: number;
   /** True when it has not said hello recently. */
@@ -761,6 +771,10 @@ export async function fetchFleet(): Promise<Fleet | null> {
       running: typeof self.running === "number" ? self.running : undefined,
       tools: Array.isArray(self.tools) ? (self.tools as string[]) : [],
       models: Array.isArray(self.models) ? (self.models as string[]) : [],
+      cpus: typeof self.cpus === "number" ? self.cpus : undefined,
+      memTotalMB: typeof self.memTotalMB === "number" ? self.memTotalMB : undefined,
+      memAvailableMB: typeof self.memAvailableMB === "number" ? self.memAvailableMB : undefined,
+      load1: typeof self.load1 === "number" ? self.load1 : undefined,
       seen: typeof self.seen === "number" ? self.seen : 0,
       stale: self.stale === true,
     },

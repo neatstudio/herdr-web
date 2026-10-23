@@ -332,9 +332,14 @@ operator decision.
    task board on the right.
 2. Fill the prompt, the repository (optional; a worktree is created per job), the
    branch (optional) and the agent.
-3. Choose **every machine** (fanout) or **one machine** (offer). Select the
-   machines; this console is in the list too, so a one-machine fleet can run a
-   task locally. A full machine or one without the agent is disabled.
+3. Choose a **weight** — `light` (edits, no build), `standard`, or `heavy`
+   (build/tests) — and **every machine** (fanout) or **one machine** (offer).
+   The weight is a placement hint: a target declines when its free memory is
+   below the floor, and the market ranks heavy work onto bigger machines and
+   light work onto smaller free ones. It is not a sandbox; an agent can still
+   start a build under a light task. Select the machines; this console is in the
+   list too, so a one-machine fleet can run a task locally. A full machine or one
+   without the agent is disabled.
 4. Send. The task appears under "in flight" and polls every five seconds.
 
 Each row shows the agent status, branch, commits, uncommitted files and the
@@ -351,7 +356,15 @@ that repository at that path. Every task becomes a herdr workspace/worktree, and
 the `HERDR_WEB_MAX_JOBS` cap is shared by all projects on that machine — there is no
 per-project quota. The dispatching console keeps the last 20 tasks; each machine's
 ledger is append-only. Many projects can run, but there is no project catalog,
-global task board, per-project quota, or MCP adapter yet. The HTTP API is small
+global task board, per-project quota, or MCP adapter yet.
+
+Weight is a declaration, not a measurement of what the agent will do. The floors
+are: `light` 128 MiB free, `standard` 256 MiB, `heavy` 768 MiB and at least two
+CPUs. They are checked when the offer is made and again when the job starts; an
+unknown memory reading (a Mac) is not treated as zero. The agent runtime itself
+is the baseline: a Node agent can sit around 200 MB before it does anything, so a
+1C1G machine should run one light agent and no build; 2C2G is a realistic floor
+for one heavy coding task. The HTTP API is small
 enough to wrap in an MCP server later; the console itself is a REST bridge, not an
 MCP server.
 

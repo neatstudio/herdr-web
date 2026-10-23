@@ -15,6 +15,10 @@ func TestMain(m *testing.M) {
 	}
 	ledgerPathOverride = filepath.Join(dir, "ledger.jsonl")
 	dispatchStatePathOverride = filepath.Join(dir, "dispatch.json")
+	// Tests must not depend on how busy the machine running them is.
+	readHostResources = func() hostResources {
+		return hostResources{CPUs: 4, MemTotalMB: 8192, MemAvailableMB: 4096}
+	}
 	code := m.Run()
 	_ = os.RemoveAll(dir)
 	os.Exit(code)

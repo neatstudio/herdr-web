@@ -13,6 +13,8 @@ import (
 type marketTarget struct {
 	server     *httptest.Server
 	free       int
+	cpus       int
+	memMB      int
 	offerCalls atomic.Int32
 	startCalls atomic.Int32
 	started    atomic.Bool
@@ -34,7 +36,8 @@ func newMarketTarget(t *testing.T, free int, failStart int, startTookEffect bool
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			target.lastTask.Store(body.TaskID)
 			_, _ = w.Write([]byte(`{"ok":true,"accept":true,"running":0,"maxTasks":` +
-				strconv.Itoa(target.free) + `}`))
+				strconv.Itoa(target.free) + `,"cpus":` + strconv.Itoa(target.cpus) +
+				`,"memAvailableMB":` + strconv.Itoa(target.memMB) + `}`))
 		case r.URL.Path == "/api/v1/herdr/job":
 			target.startCalls.Add(1)
 			var body struct {
@@ -71,6 +74,11 @@ func newMarketTarget(t *testing.T, free int, failStart int, startTookEffect bool
 
 func dispatchMarketForTest(t *testing.T, targets ...*marketTarget) (bool, dispatch) {
 	t.Helper()
+	return dispatchMarketWithWeight(t, "", targets...)
+}
+
+func dispatchMarketWithWeight(t *testing.T, weight string, targets ...*marketTarget) (bool, dispatch) {
+	t.Helper()
 	isolateState(t)
 	console := NewServer("", nil)
 	urls := make([]string, len(targets))
@@ -78,7 +86,8 @@ func dispatchMarketForTest(t *testing.T, targets ...*marketTarget) (bool, dispat
 		urls[index] = target.server.URL
 	}
 	body, err := json.Marshal(map[string]any{
-		"prompt": "audit the docs", "kind": "claude", "strategy": "single", "targets": urls,
+		"prompt": "audit the docs", "kind": "claude", "strategy": "single",
+		"weight": weight, "targets": urls,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -95,6 +104,33 @@ func dispatchMarketForTest(t *testing.T, targets ...*marketTarget) (bool, dispat
 		t.Fatal(err)
 	}
 	return answer.OK, answer.Dispatch
+}
+
+func TestDispatchMarketSendsHeavyToBigAndLightToSmall(t *testing.T) {
+	small := newMarketTarget(t, 2, 0, false)
+	small.cpus, small.memMB = 1, 512
+	large := newMarketTarget(t, 2, 0, false)
+	large.cpus, large.memMB = 4, 4096
+
+	ok, job := dispatchMarketWithWeight(t, "heavy", small, large)
+	if !ok || large.startCalls.Load() != 1 || small.startCalls.Load() != 0 {
+		t.Fatalf("heavy: ok=%v starts small=%d large=%d", ok, small.startCalls.Load(), large.startCalls.Load())
+	}
+	if job.Jobs[1].Host != large.server.URL || job.Jobs[1].Weight != "heavy" {
+		t.Fatalf("heavy job = %+v", job.Jobs[1])
+	}
+
+	small2 := newMarketTarget(t, 2, 0, false)
+	small2.cpus, small2.memMB = 1, 512
+	large2 := newMarketTarget(t, 2, 0, false)
+	large2.cpus, large2.memMB = 4, 4096
+	ok, job = dispatchMarketWithWeight(t, "light", small2, large2)
+	if !ok || small2.startCalls.Load() != 1 || large2.startCalls.Load() != 0 {
+		t.Fatalf("light: ok=%v starts small=%d large=%d", ok, small2.startCalls.Load(), large2.startCalls.Load())
+	}
+	if job.Jobs[0].Weight != "light" {
+		t.Fatalf("light job = %+v", job.Jobs[0])
+	}
 }
 
 func TestDispatchMarketPicksTheFreestTarget(t *testing.T) {

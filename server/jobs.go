@@ -32,6 +32,9 @@ type jobRequest struct {
 	// TaskID makes a retried start idempotent: the same task never creates a
 	// second workspace on this machine.
 	TaskID string `json:"taskId,omitempty"`
+	// Weight is the operator's declaration: light, standard or heavy. It is a
+	// placement hint, not a sandbox; an agent can still start a build.
+	Weight string `json:"weight,omitempty"`
 }
 
 type jobStarted struct {
@@ -83,6 +86,11 @@ func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 	if limit := maxJobs(); limit > 0 && s.ledger.runningCount() >= limit {
 		writeError(w, http.StatusTooManyRequests, "at_capacity",
 			fmt.Sprintf("this console is already running %d jobs (HERDR_WEB_MAX_JOBS=%d)", s.ledger.runningCount(), limit))
+		return
+	}
+	weight := normalizeWeight(request.Weight)
+	if admitted, reason := weightAdmission(weight, readHostResources()); !admitted {
+		writeError(w, http.StatusTooManyRequests, "insufficient_resources", reason)
 		return
 	}
 
@@ -167,6 +175,7 @@ func (s *Server) handleJobOffer(w http.ResponseWriter, r *http.Request) {
 		Branch string `json:"branch"`
 		Kind   string `json:"kind"`
 		Label  string `json:"label"`
+		Weight string `json:"weight"`
 	}
 	if !decodeBody(w, r, &request) {
 		return
@@ -186,17 +195,23 @@ func (s *Server) handleJobOffer(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	weight := normalizeWeight(request.Weight)
+	resources := readHostResources()
 	accepted := true
 	reason := ""
 	if !agentAvailable(kind) {
 		accepted, reason = false, "agent not installed"
 	} else if limit := maxJobs(); limit > 0 && s.ledger.runningCount() >= limit {
 		accepted, reason = false, "at capacity"
+	} else if ok, why := weightAdmission(weight, resources); !ok {
+		accepted, reason = false, why
 	}
 	s.ledger.recordOffer(taskID, accepted, reason)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok": true, "taskId": taskID, "accept": accepted, "reason": reason,
-		"running": s.ledger.runningCount(), "maxTasks": maxJobs(),
+		"weight": weight, "running": s.ledger.runningCount(), "maxTasks": maxJobs(),
+		"cpus": resources.CPUs, "memTotalMB": resources.MemTotalMB,
+		"memAvailableMB": resources.MemAvailableMB, "load1": resources.Load1,
 	})
 }
 

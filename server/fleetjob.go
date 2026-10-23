@@ -49,6 +49,7 @@ type dispatchedJob struct {
 	// TaskID and the lease are the market's claim record. The task id makes a
 	// retry idempotent; the lease says how long this assignment is valid.
 	TaskID     string `json:"taskId,omitempty"`
+	Weight     string `json:"weight,omitempty"`
 	LeaseUntil int64  `json:"leaseUntil,omitempty"`
 	// Lost is set when a started job's machine no longer answers after its
 	// lease; it is a visible operator decision, not an automatic second run.
@@ -65,6 +66,7 @@ type dispatch struct {
 	Cwd      string          `json:"cwd,omitempty"`
 	Branch   string          `json:"branch,omitempty"`
 	Strategy string          `json:"strategy,omitempty"`
+	Weight   string          `json:"weight,omitempty"`
 	Targets  []string        `json:"targets,omitempty"`
 	Jobs     []dispatchedJob `json:"jobs"`
 }
@@ -169,6 +171,7 @@ type dispatchRequest struct {
 	Cwd      string   `json:"cwd"`
 	Branch   string   `json:"branch"`
 	Kind     string   `json:"kind"`
+	Weight   string   `json:"weight"`
 	Strategy string   `json:"strategy"`
 	Targets  []string `json:"targets"`
 }
@@ -219,17 +222,19 @@ func (s *Server) handleDispatchJob(w http.ResponseWriter, r *http.Request) {
 		Cwd:      request.Cwd,
 		Branch:   request.Branch,
 		Strategy: "fanout",
+		Weight:   normalizeWeight(request.Weight),
 		Targets:  targets,
 		Jobs:     make([]dispatchedJob, 0, len(targets)),
 	}
 	for _, target := range targets {
 		base := fleetBase(target)
-		entry := dispatchedJob{Host: base}
+		entry := dispatchedJob{Host: base, Weight: normalizeWeight(request.Weight)}
 		body, err := json.Marshal(jobRequest{
 			Prompt: request.Prompt,
 			Cwd:    request.Cwd,
 			Branch: request.Branch,
 			Kind:   request.Kind,
+			Weight: normalizeWeight(request.Weight),
 		})
 		if err != nil {
 			entry.Error = err.Error()
@@ -259,14 +264,18 @@ func (s *Server) handleDispatchJob(w http.ResponseWriter, r *http.Request) {
 }
 
 type jobOfferAnswer struct {
-	OK          bool   `json:"ok"`
-	TaskID      string `json:"taskId"`
-	Accept      bool   `json:"accept"`
-	Reused      bool   `json:"reused"`
-	Reason      string `json:"reason"`
-	Running     int    `json:"running"`
-	MaxTasks    int    `json:"maxTasks"`
-	WorkspaceID string `json:"workspaceId"`
+	OK             bool    `json:"ok"`
+	TaskID         string  `json:"taskId"`
+	Accept         bool    `json:"accept"`
+	Reused         bool    `json:"reused"`
+	Reason         string  `json:"reason"`
+	Running        int     `json:"running"`
+	MaxTasks       int     `json:"maxTasks"`
+	WorkspaceID    string  `json:"workspaceId"`
+	CPUs           int     `json:"cpus"`
+	MemTotalMB     int     `json:"memTotalMB"`
+	MemAvailableMB int     `json:"memAvailableMB"`
+	Load1          float64 `json:"load1"`
 }
 
 // dispatchMarket offers one task to every selected console and starts it on the
@@ -281,6 +290,7 @@ func (s *Server) runMarket(ctx context.Context, request dispatchRequest, targets
 		Kind:   request.Kind,
 		Label:  "task " + taskID,
 		TaskID: taskID,
+		Weight: normalizeWeight(request.Weight),
 	})
 	if err != nil {
 		return dispatch{}, false, err
@@ -293,6 +303,7 @@ func (s *Server) runMarket(ctx context.Context, request dispatchRequest, targets
 		Cwd:      request.Cwd,
 		Branch:   request.Branch,
 		Strategy: "single",
+		Weight:   normalizeWeight(request.Weight),
 		Targets:  targets,
 		Jobs:     make([]dispatchedJob, len(targets)),
 	}
@@ -317,11 +328,13 @@ func (s *Server) runMarket(ctx context.Context, request dispatchRequest, targets
 	}
 	wait.Wait()
 
+	weight := normalizeWeight(request.Weight)
 	accepted := make([]int, 0, len(targets))
 	for index, result := range results {
 		entry := &job.Jobs[index]
 		entry.Host = result.base
 		entry.TaskID = taskID
+		entry.Weight = weight
 		if result.err != nil {
 			entry.Status = "declined"
 			entry.Error = result.err.Error()
@@ -335,7 +348,7 @@ func (s *Server) runMarket(ctx context.Context, request dispatchRequest, targets
 		accepted = append(accepted, index)
 	}
 	sort.SliceStable(accepted, func(left, right int) bool {
-		return offerCapacity(results[accepted[left]].answer) > offerCapacity(results[accepted[right]].answer)
+		return marketScore(results[accepted[left]].answer, weight) > marketScore(results[accepted[right]].answer, weight)
 	})
 
 	startedAny := false
@@ -487,7 +500,7 @@ func (s *Server) handleDispatchRetry(w http.ResponseWriter, r *http.Request) {
 
 	market := dispatchRequest{
 		Prompt: entry.Prompt, Cwd: entry.Cwd, Branch: entry.Branch,
-		Kind: entry.Kind, Strategy: "single", Targets: entry.Targets,
+		Kind: entry.Kind, Weight: entry.Weight, Strategy: "single", Targets: entry.Targets,
 	}
 	updated, started, err := s.runMarket(ctx, market, entry.Targets, entry.ID)
 	if err != nil {
@@ -525,6 +538,23 @@ func offerCapacity(answer jobOfferAnswer) int {
 		return 0
 	}
 	return free
+}
+
+// marketScore ranks accepted offers. Free capacity dominates; then a heavy task
+// prefers a big machine, while a light task prefers a small one so the big
+// machines stay available for heavy work. A target that cannot take the weight
+// has already declined at its own gate.
+func marketScore(answer jobOfferAnswer, weight string) int {
+	score := offerCapacity(answer) * 1_000_000
+	switch weight {
+	case "heavy":
+		score += answer.CPUs*10_000 + answer.MemAvailableMB
+	case "light":
+		score -= answer.CPUs*10_000 + answer.MemAvailableMB
+	default:
+		score += answer.MemAvailableMB
+	}
+	return score
 }
 
 func newTaskID() string {

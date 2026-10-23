@@ -62,10 +62,14 @@ type fleetPeer struct {
 	Agents []string `json:"agents"`
 	// What this machine can offer a task market: its operator-set concurrency
 	// cap, what it is running now, the tools on PATH and the models it declares.
-	MaxTasks int      `json:"maxTasks,omitempty"`
-	Running  int      `json:"running,omitempty"`
-	Tools    []string `json:"tools,omitempty"`
-	Models   []string `json:"models,omitempty"`
+	MaxTasks       int      `json:"maxTasks,omitempty"`
+	Running        int      `json:"running,omitempty"`
+	Tools          []string `json:"tools,omitempty"`
+	Models         []string `json:"models,omitempty"`
+	CPUs           int      `json:"cpus,omitempty"`
+	MemTotalMB     int      `json:"memTotalMB,omitempty"`
+	MemAvailableMB int      `json:"memAvailableMB,omitempty"`
+	Load1          float64  `json:"load1,omitempty"`
 	// Seen is unix seconds; each console stamps what it hears with its own clock,
 	// which is enough for a list whose only question is "has this gone quiet".
 	Seen int64 `json:"seen"`
@@ -281,17 +285,22 @@ func (s *Server) fleetDiscoverOnce(ctx context.Context) int {
 
 // fleetSelfPeer is what this console tells others about itself.
 func (s *Server) fleetSelfPeer() fleetPeer {
+	resources := readHostResources()
 	return fleetPeer{
-		ID:       s.fleetSelfID(),
-		Addr:     s.fleetAddr,
-		Version:  ConsoleVersion,
-		Platform: runtime.GOOS + "-" + runtime.GOARCH,
-		Agents:   selfAgentKinds(),
-		MaxTasks: maxJobs(),
-		Running:  s.ledger.runningCount(),
-		Tools:    selfTools(),
-		Models:   selfModels(),
-		Seen:     time.Now().Unix(),
+		ID:             s.fleetSelfID(),
+		Addr:           s.fleetAddr,
+		Version:        ConsoleVersion,
+		Platform:       runtime.GOOS + "-" + runtime.GOARCH,
+		Agents:         selfAgentKinds(),
+		MaxTasks:       maxJobs(),
+		Running:        s.ledger.runningCount(),
+		Tools:          selfTools(),
+		Models:         selfModels(),
+		CPUs:           resources.CPUs,
+		MemTotalMB:     resources.MemTotalMB,
+		MemAvailableMB: resources.MemAvailableMB,
+		Load1:          resources.Load1,
+		Seen:           time.Now().Unix(),
 	}
 }
 
@@ -707,17 +716,21 @@ func (s *Server) handleFleet(w http.ResponseWriter, r *http.Request) {
 			models = []string{}
 		}
 		out = append(out, map[string]any{
-			"id":       peer.ID,
-			"addr":     peer.Addr,
-			"version":  peer.Version,
-			"platform": peer.Platform,
-			"agents":   agents,
-			"maxTasks": peer.MaxTasks,
-			"running":  peer.Running,
-			"tools":    tools,
-			"models":   models,
-			"seen":     peer.Seen,
-			"stale":    now-peer.Seen > int64(fleetPeerStaleAfter/time.Second),
+			"id":             peer.ID,
+			"addr":           peer.Addr,
+			"version":        peer.Version,
+			"platform":       peer.Platform,
+			"agents":         agents,
+			"maxTasks":       peer.MaxTasks,
+			"running":        peer.Running,
+			"tools":          tools,
+			"models":         models,
+			"cpus":           peer.CPUs,
+			"memTotalMB":     peer.MemTotalMB,
+			"memAvailableMB": peer.MemAvailableMB,
+			"load1":          peer.Load1,
+			"seen":           peer.Seen,
+			"stale":          now-peer.Seen > int64(fleetPeerStaleAfter/time.Second),
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{

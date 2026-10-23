@@ -61,7 +61,10 @@ so it is an entry point of one. It uses a launchd user agent, not a herdr servic
   the runner (the dispatcher is a client, not a scheduler). A capacity registry
   and an offer/claim path now exist: peer hellos carry `maxTasks`, `running`,
   `tools`, `models`; a target refuses at its cap with `429 at_capacity`
-  (`HERDR_WEB_MAX_JOBS`); `strategy:"single"` offers the task to every selected
+  (`HERDR_WEB_MAX_JOBS`, unset = 1); tasks carry a `light|standard|heavy` weight,
+  targets report CPUs/free memory and decline below the floor, and the market
+  ranks heavy onto bigger machines and light onto smaller free ones;
+  `strategy:"single"` offers the task to every selected
   machine and starts it on the freest acceptor; the task id makes a retried start
   idempotent, and a lost start response is checked at the target before another
   machine is tried. `fanout` remains the default, and
