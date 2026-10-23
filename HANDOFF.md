@@ -1,6 +1,6 @@
 # Handoff — herdr-web
 
-Written 2026-10-22 at `v0.6.7`, updated at `v0.6.10`. Two people are picking work up from here; the split
+Written 2026-10-22 at `v0.6.7`, updated at `v0.6.13`. Two people are picking work up from here; the split
 is at the bottom. Read the two sections above it first: the contracts are not
 negotiable without a decision, and the pitfalls have each cost a debugging session
 already.
@@ -21,9 +21,9 @@ a task to whichever machine can run it.
 
 | Thing | Value |
 | --- | --- |
-| Version | `v0.6.10` (`git describe`), tag pushed |
+| Version | `v0.6.13` (`git describe`), tag pushed |
 | Tests | `go test ./...` green; `npm --prefix web run test:unit` 102/102; Playwright 72/72 |
-| Fleet | see below, all `v0.6.10` |
+| Fleet | see below, all `v0.6.13` — except the hub, see B0 |
 | herdr on the fleet | 0.9.5 everywhere; **tw1's daemon is currently stopped** |
 
 Fleet as the hub reports it (`http://100.89.0.206:5000/api/v1/fleet`):
@@ -119,6 +119,32 @@ or pull deploy, fallback to push), `scripts/version.sh` (version arithmetic),
    when sessions exist. Reading a session uses `capture-pane` (no client, no resize);
    attaching is a deliberate takeover with `-d`.
 
+## The downgrade incident (2026-10-23), and what came out of it
+
+Four machines — the hub, `cc1`, `vn`, `vn200` — were running a month-old build for
+about an hour. The chain:
+
+1. A macOS console advertises `/release/version` with **its own** version.
+2. Asked for `herdr-web-linux-amd64`, it served a **stale file** from its release
+   directory (the asset it cannot run itself).
+3. A Linux console compared the advertised version (new), downloaded the stale file
+   with a **valid** checksum, and installed it.
+
+Three fixes, all in `v0.6.12`/`v0.6.13`, and each is now a rule:
+
+- **What a console advertises is the version of the files it serves.** The
+  `version` file in the release directory decides; `make release-publish` writes it.
+- **A downloaded binary is run with `-version` before it replaces anything**, and
+  refused when it disagrees with the version the source published. A checksum proves
+  a download is intact, never that the source published the build it named.
+- **A development build (`-dirty`) is never adopted**, so a developer's machine that
+  joins the fleet cannot publish its work in progress to everyone.
+
+Recovery: the four hosts were pushed the current binary directly. The hub's *file* is
+current but its **process** is still the old build, because its sshd is down (B0) and
+the old build cannot restart itself — one reboot, or one `systemctl restart
+dev.herdr-web` once ssh works, finishes it.
+
 ## Pitfalls, each of which already cost a session
 
 1. **launchd/systemd do not inherit `PATH`.** Always pass absolute paths; this has
@@ -171,7 +197,10 @@ panel row says it was stopped rather than showing a stale status.
 
 ### Owner B — the other engineer
 
-**B0. The hub's sshd is down (found `v0.6.8`).** `43.153.207.224` answers ping and
+**B0. The hub's sshd is down (found at `v0.6.8`, still down at `v0.6.13`).** It also
+means the hub is the one machine still **running** an old build: its binary is
+current, its process is not, and the old build has no way to restart itself. One
+reboot settles it. `43.153.207.224` answers ping and
 serves `:5000`, but `:22` is refused — the machine is fine, sshd is not. The console
 kept working and even updated itself from a peer and restarted through systemd with
 no login at all, which is the design working; the host still needs its sshd back
