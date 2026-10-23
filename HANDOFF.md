@@ -176,7 +176,9 @@ alone), and the HTML paints a boot shell with the wordmark so a slow link shows
    releases publish one; a peer serves it automatically.
 7. **Playwright** runs against a vite dev server: an `<img>` preview needs a real
    (tiny) PNG mocked, otherwise it fires `onError` and disappears mid-assertion.
-8. **herdr keys** are validated as a batch; `space` is `"space"`, not `" "`.
+8. **herdr keys** are validated as a batch; `space` is `"space"`, not `" "`, and
+   Shift+Tab is `"shift+tab"` — `BackTab`/`BTab` are rejected even though the
+   terminal receives CSI Z.
 9. **tmux `attach` resizes the session** to the newest client. Use `capture-pane` to
    look, `attach -d` to take over.
 10. **A tailnet clock can be off by more than the heartbeat interval**; never settle a

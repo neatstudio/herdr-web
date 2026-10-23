@@ -40,8 +40,8 @@ The window is three things: a sidebar, a transcript, and a prompt.
   Dragging a tile edge asks herdr to move the split: herdr owns the step size
   and clamps at its own minimum, so the edge lands where herdr puts it.
 - **The prompt sends to the pane you clicked**, and the caret is already in it.
-  `+` splits the open pane (right on a wide window, down on a phone) and
-  selects the new one. `Enter` sends, `Tab` flushes the line and asks the shell
+  `+` adds a tab in the open workspace and selects its root pane. `Enter` sends,
+  `Tab` flushes the line and asks the shell
   to complete it, `↑`/`↓` walk the send history.
 - **Attachments by path.** herdr can only send text, so a dropped, pasted or
   picked file is stored under the system temp directory and its absolute path
@@ -84,12 +84,27 @@ and the design leans on two things to pay them:
   then `Ctrl-C` means copy.
 - **Raw mode is one key away.** Press `Esc` and every key goes to the pane
   instead: Tab completes, arrows walk the shell's history, Ctrl-C interrupts, and
-  a TUI's own menus are driven from there. `Shift+Esc` leaves raw mode — plain
-  `Esc` is forwarded, because it is how a menu is cancelled and how insert mode
-  is left, and taking it here made a slash command impossible to back out of.
+  a TUI's own menus are driven from there. A TUI's own mode switch is
+  `Shift+Tab` (BackTab, `^[[Z` at the pane): it is forwarded here and from the
+  composer, and the daemon takes it as `shift+tab`. `Shift+Esc` leaves raw
+  mode — plain `Esc` is forwarded, because it is how a menu is cancelled and how
+  insert mode is left, and taking it here made a slash command impossible to
+  back out of.
 
 Enter sends, Shift+Enter writes a newline, and the box wraps and grows, so a
 long message is readable before it goes out.
+
+### Wide panes
+
+The transcript has three layouts. **wrap** reflows text to the viewport;
+**exact** keeps one terminal row per line and scrolls sideways; **fit** scales
+down to a 10px floor and then scrolls, showing the column count. A full-screen
+TUI's box drawing cannot be reflowed without breaking it, so rule and border
+lines are clipped to one row in wrap and fit, and exact keeps them scrollable.
+herdr owns the pane's terminal width (`pane.read` has no width argument, and
+`pane.resize` moves a split rather than setting columns), so a pane much wider
+than the window is best read in exact mode; narrow the pane or split in herdr
+if the TUI itself should reflow.
 
 ## herdr runs its own server, headless
 
