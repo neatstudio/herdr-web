@@ -176,42 +176,10 @@ func selfCandidates(ctx context.Context, explicit string) []selfCandidate {
 // tailnet. Only peers that answer as a console are returned, and they are probed
 // in parallel because each probe is a network round trip.
 func discoverTailnetPeers(ctx context.Context) []selfCandidate {
-	raw, err := tailnetStatus(ctx)
-	if err != nil {
-		return nil
-	}
-	var status struct {
-		Peer map[string]struct {
-			HostName     string   `json:"HostName"`
-			TailscaleIPs []string `json:"TailscaleIPs"`
-			Online       bool     `json:"Online"`
-		} `json:"Peer"`
-	}
-	if json.Unmarshal(raw, &status) != nil {
-		return nil
-	}
-
-	addresses := make([]string, 0, len(status.Peer))
-	for _, peer := range status.Peer {
-		if !peer.Online {
-			continue
-		}
-		for _, ip := range peer.TailscaleIPs {
-			parsed := net.ParseIP(ip)
-			if parsed == nil || parsed.To4() == nil || !isPrivateV4(parsed) {
-				continue
-			}
-			addresses = append(addresses, ip)
-			break
-		}
-		if len(addresses) >= selfPeerLimit {
-			break
-		}
-	}
+	addresses := tailnetConsoles(ctx)
 	if len(addresses) == 0 {
 		return nil
 	}
-
 	// Parallel, because a tailnet peer that is asleep must not cost the whole
 	// list its timeout.
 	var (
@@ -266,6 +234,43 @@ func tailnetStatus(ctx context.Context) ([]byte, error) {
 		return deps.run(ctx, app, "status", "--json")
 	}
 	return nil, fmt.Errorf("tailscale status is not available")
+}
+
+// tailnetConsoles lists the addresses of online tailnet peers, which is what a
+// console looks at when it has to find the rest of the fleet by itself.
+func tailnetConsoles(ctx context.Context) []string {
+	raw, err := tailnetStatus(ctx)
+	if err != nil {
+		return nil
+	}
+	var status struct {
+		Peer map[string]struct {
+			HostName     string   `json:"HostName"`
+			TailscaleIPs []string `json:"TailscaleIPs"`
+			Online       bool     `json:"Online"`
+		} `json:"Peer"`
+	}
+	if json.Unmarshal(raw, &status) != nil {
+		return nil
+	}
+	addresses := make([]string, 0, len(status.Peer))
+	for _, peer := range status.Peer {
+		if !peer.Online {
+			continue
+		}
+		for _, ip := range peer.TailscaleIPs {
+			parsed := net.ParseIP(ip)
+			if parsed == nil || parsed.To4() == nil || !isPrivateV4(parsed) {
+				continue
+			}
+			addresses = append(addresses, ip)
+			break
+		}
+		if len(addresses) >= selfPeerLimit {
+			break
+		}
+	}
+	return addresses
 }
 
 // isPrivateV4 reports whether an address is inside one of the ranges a console is

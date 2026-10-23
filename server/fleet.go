@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -201,6 +202,72 @@ func (s *Server) fleetHeartbeatLoop(ctx context.Context) {
 	}
 }
 
+// fleetConsoleURLs lists the consoles to look for when this one knows nobody. A
+// seam, so a test can put a console at a URL it controls.
+var fleetConsoleURLs = func(ctx context.Context) []string {
+	addresses := tailnetConsoles(ctx)
+	urls := make([]string, 0, len(addresses))
+	for _, ip := range addresses {
+		urls = append(urls, "http://"+net.JoinHostPort(ip, selfPeerPort))
+	}
+	return urls
+}
+
+// fleetDiscoverOnce looks for consoles on the tailnet.
+//
+// Seeds are an entry point, and an entry point that is gone must not stop a console
+// from joining: any console that answers /api/v1/fleet can introduce the rest. This
+// is what makes the fleet self-forming rather than dependent on one advertised
+// address surviving.
+func (s *Server) fleetDiscoverOnce(ctx context.Context) int {
+	addresses := fleetConsoleURLs(ctx)
+	if len(addresses) == 0 {
+		return 0
+	}
+	var (
+		wait  sync.WaitGroup
+		mu    sync.Mutex
+		found int
+	)
+	for _, ip := range addresses {
+		wait.Add(1)
+		go func(ip string) {
+			defer wait.Done()
+			probeCtx, cancel := context.WithTimeout(ctx, selfPeerProbeTimeout)
+			defer cancel()
+			request, err := http.NewRequestWithContext(probeCtx, http.MethodGet,
+				strings.TrimRight(ip, "/")+"/api/v1/fleet", nil)
+			if err != nil {
+				return
+			}
+			response, err := selfClient.Do(request)
+			if err != nil {
+				return
+			}
+			defer func() { _ = response.Body.Close() }()
+			if response.StatusCode != http.StatusOK {
+				return
+			}
+			var answer struct {
+				Self  fleetPeer   `json:"self"`
+				Peers []fleetPeer `json:"peers"`
+			}
+			if json.NewDecoder(response.Body).Decode(&answer) != nil {
+				return
+			}
+			if answer.Self.ID == "" {
+				return
+			}
+			s.mergeFleet(append([]fleetPeer{answer.Self}, answer.Peers...))
+			mu.Lock()
+			found++
+			mu.Unlock()
+		}(ip)
+	}
+	wait.Wait()
+	return found
+}
+
 // fleetSelfPeer is what this console tells others about itself.
 func (s *Server) fleetSelfPeer() fleetPeer {
 	return fleetPeer{
@@ -265,6 +332,12 @@ func (s *Server) fleetTargets() []string {
 // target's view, which is how a console learns about machines it has never
 // spoken to directly.
 func (s *Server) fleetHeartbeat(ctx context.Context) {
+	// A console that knows nobody has no one to say hello to. Rather than waiting
+	// for a seed that may never come back, it looks around: the fleet is the set of
+	// consoles that answer, not the set that was configured.
+	if s.fleetPeerCount() == 0 {
+		s.fleetDiscoverOnce(ctx)
+	}
 	payload, err := json.Marshal(s.fleetSelfPeer())
 	if err != nil {
 		return
@@ -374,6 +447,13 @@ func (s *Server) mergeFleet(incoming []fleetPeer) {
 		}
 	}
 	s.saveFleetLocked()
+}
+
+// fleetPeerCount is how many consoles this one knows right now.
+func (s *Server) fleetPeerCount() int {
+	s.fleet.mu.Lock()
+	defer s.fleet.mu.Unlock()
+	return len(s.fleet.peers)
 }
 
 func (s *Server) fleetFollowLoop(ctx context.Context) {

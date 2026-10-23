@@ -362,3 +362,55 @@ func TestFleetKeepsTheHigherBuildAtOneAddress(t *testing.T) {
 		t.Fatalf("peers = %v", console.fleet.peers)
 	}
 }
+
+func TestFleetFormsItselfWithoutASeed(t *testing.T) {
+	// A console started with no seeds and no idea who exists finds the fleet by
+	// looking: any console that answers /api/v1/fleet can introduce the rest, so
+	// losing the machine that used to be the entry point is not fatal.
+	host := fleetTestServer(t)
+	host.SetFleetForTest("", "100.89.0.4:5000")
+	server := httptest.NewServer(host.Handler())
+	t.Cleanup(server.Close)
+
+	// Another console it will meet through the first one.
+	host.fleet.mu.Lock()
+	host.fleet.peers["vn"] = fleetPeer{
+		ID: "vn", Addr: "100.89.0.2:5000", Version: "v0.6.10", Seen: time.Now().Unix(),
+	}
+	host.fleet.mu.Unlock()
+
+	seeker := fleetTestServer(t)
+	seeker.SetFleetForTest("", "100.89.0.116:5000")
+	previous := fleetConsoleURLs
+	fleetConsoleURLs = func(context.Context) []string { return []string{server.URL} }
+	t.Cleanup(func() { fleetConsoleURLs = previous })
+
+	if found := seeker.fleetDiscoverOnce(context.Background()); found == 0 {
+		t.Fatal("discovery found nothing")
+	}
+	// The two consoles in this test share a host name, which a real fleet does not,
+	// so the one that answered introduces its peers rather than itself.
+	seeker.fleet.mu.Lock()
+	_, learnedPeer := seeker.fleet.peers["vn"]
+	seeker.fleet.mu.Unlock()
+	if !learnedPeer {
+		t.Fatalf("fleet after discovery = %v", seeker.fleet.peers)
+	}
+}
+
+func TestFleetDiscoveryToleratesSilence(t *testing.T) {
+	// A tailnet address that answers nothing must not hang the heartbeat.
+	seeker := fleetTestServer(t)
+	seeker.SetFleetForTest("", "100.89.0.116:5000")
+	previous := fleetConsoleURLs
+	fleetConsoleURLs = func(context.Context) []string { return []string{"http://127.0.0.1:1"} }
+	t.Cleanup(func() { fleetConsoleURLs = previous })
+
+	started := time.Now()
+	if found := seeker.fleetDiscoverOnce(context.Background()); found != 0 {
+		t.Fatalf("found = %d", found)
+	}
+	if elapsed := time.Since(started); elapsed > 5*time.Second {
+		t.Fatalf("discovery took %s", elapsed)
+	}
+}
