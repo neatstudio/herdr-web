@@ -21,8 +21,8 @@ a task to whichever machine can run it.
 
 | Thing | Value |
 | --- | --- |
-| Version | `v0.6.14` (`git describe`), tag pushed |
-| Tests | `go test ./...` green; `npm --prefix web run test:unit` 102/102; Playwright 72/72 |
+| Version | `v0.6.14-7-g6105840` (`git describe`); the `v0.6.14` tag is local — remote tags stop at `v0.6.9` |
+| Tests | `go test ./...` green; `npm --prefix web run test:unit` 108/108; Playwright 81/81 |
 | Fleet | see below, all `v0.6.13` — except the hub, see B0 |
 | herdr on the fleet | 0.9.5 everywhere; **tw1's daemon is currently stopped** |
 
@@ -42,14 +42,37 @@ Fleet as the hub reports it (`http://100.89.0.206:5000/api/v1/fleet`):
 The laptop (`100.89.0.116`) runs its own console as a development instance: no seeds,
 so it is an entry point of one. It uses a launchd user agent, not a herdr service.
 
+### Notes, 2026-10-23
+
+- **Transcript.** `auto` is the default layout now: wrap ordinary output, keep a
+  pane with its own full-screen canvas (three or more lines) in exact. `wrap`
+  clips rules/borders to one row, `fit` stops at 10px and scrolls, and `exact`
+  has a visible horizontal scrollbar. Absolute truecolor is contrast-pulled
+  against the page (a bright agent green becomes dark on paper); a line's
+  dominant background is painted on the row, so wrapped rows have no seams.
+- **Decentralised update.** The mesh itself works: no leader, 30 s exchange,
+  3 min follow, version + checksum, `.previous`/rollback, self-discovery. It is
+  **tailnet-trusted, not authenticated**: a peer can inject a hello address,
+  `POST /update {"from": …}` still takes a source from the CLI side, and
+  `POST /release/*` writes the relay without a token. Tags `v0.6.10`–`v0.6.14`
+  are local only; the hub and the fleet are not on one build.
+- **Multi-node tasks.** Dispatch is manual fan-out to chosen consoles; each
+  target runs its own workspace/worktree, and status/output/diff are asked of
+  the runner (the dispatcher is a client, not a scheduler). Not solved:
+  placement by health/load, queue/retry/migration, a global job registry,
+  agent-to-agent handoff, automatic result merge, and the cancel button (A3).
+- **Commands and deploy.** `deploy-remote.sh --jump` is currently a no-op (`-J`
+  is built from `$JUMP` before the flag is parsed); use an ssh alias or fix the
+  script before following B0's recipe.
+
 ## Working in it
 
 ```sh
-make go-build                 # build web + go, embed, produce ./herdr-web
-make release-archives         # dist/release/* for both arches + .sha256
-make go-test                  # go test ./...
+make build                    # web + go, embed, produce ./herdr-web
+make release-archives         # dist/release/* for four targets + .sha256
+make test-go                  # go test ./...
 npm --prefix web run test:unit
-cd web && npx playwright test # 72 browser tests; starts its own vite dev server
+cd web && npx playwright test # 81 browser tests; starts its own vite dev server
 ./scripts/install-service.sh restart   # this machine's launchd unit
 sh scripts/version.sh next patch       # version arithmetic (components count to 99)
 sh scripts/version.sh tag patch        # annotated tag
@@ -59,14 +82,15 @@ Deploy:
 
 ```sh
 # the hub is the release source: push to it first, followers pull on their own
+# (tailnet address; public 43.153.207.224:22/:5000 are refused, see B0)
 scp -i ~/.ssh/server-zeabur dist/release/herdr-web-linux-amd64{,.sha256} install.sh \
-    root@43.153.207.224:/root/hw-dist/
-ssh -i ~/.ssh/server-zeabur root@43.153.207.224 \
+    root@100.89.0.206:/root/hw-dist/
+ssh -i ~/.ssh/server-zeabur root@100.89.0.206 \
     'cd /root/hw-dist && sh install.sh --from ./herdr-web-linux-amd64'
 
 # a member that can reach the hub (either --via pull, or push when it cannot)
-./scripts/deploy-remote.sh --jump root@43.153.207.224 \
-    --identity ~/.ssh/server-zeabur --via http://100.89.0.206:5000/release \
+./scripts/deploy-remote.sh --identity ~/.ssh/server-zeabur \
+    --via http://100.89.0.206:5000/release \
     --fleet-seeds http://100.89.0.206:5000 root@100.89.0.11
 
 # a member that cannot reach anything (m8s): push, compressed, resumable
@@ -225,6 +249,12 @@ kept working and even updated itself from a peer and restarted through systemd w
 no login at all, which is the design working; the host still needs its sshd back
 (`systemctl status sshd` on the console's own pane, or out-of-band access).
 
+Checked 2026-10-23: sshd itself is up on the tailnet (`ssh.service`; port 22 on
+`100.89.0.206` accepts the documented key). Public `43.153.207.224:22` and `:5000`
+are refused, and the console listens only on the tailnet address. Use the tailnet
+address for deploys or open the cloud security group; `systemctl status sshd`
+checks the wrong unit on Ubuntu.
+
 
 **B1. `100.89.0.10` is not in the fleet.** It cannot reach the seeds, so it neither
 reports nor follows. Give it a seed it can reach (it can reach the laptop and this
@@ -258,6 +288,11 @@ plus `version` (`.github/workflows/release.yml`).
 **B6. Unify herdr.** All hosts report 0.9.5, but tw1's daemon is **stopped** while
 its binary is installed — that is a support question before it is a bug: check
 `journalctl --user -u dev.herdr` (or the system unit) on `100.89.0.4`.
+
+Checked 2026-10-23: the console reports `socket: "herdr.sock"` (relative) while the
+host's herdr socket is `/tmp/herdr/herdr.sock`. Start the daemon **and** set the
+console unit's `-herdr-socket` to the absolute path; otherwise it still fails
+after the daemon is up.
 
 ## Verification before shipping anything
 
