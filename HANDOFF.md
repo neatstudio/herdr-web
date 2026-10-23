@@ -21,8 +21,8 @@ a task to whichever machine can run it.
 
 | Thing | Value |
 | --- | --- |
-| Version | `v0.6.14-10-g4d8cf88` (`git describe`); the `v0.6.14` tag is local — remote tags stop at `v0.6.9` |
-| Tests | `go test ./...` green; `npm --prefix web run test:unit` 108/108; Playwright 83/83 |
+| Version | `v0.6.14-15-g65a010c` (`git describe`); the `v0.6.14` tag is local — remote tags stop at `v0.6.9` |
+| Tests | `go test ./...` green; `npm --prefix web run test:unit` 108/108; Playwright 84/84 |
 | Fleet | see below, all `v0.6.13` — except the hub, see B0 |
 | herdr on the fleet | 0.9.5 everywhere; **tw1's daemon is currently stopped** |
 
@@ -66,11 +66,17 @@ so it is an entry point of one. It uses a launchd user agent, not a herdr servic
   idempotent, and a lost start response is checked at the target before another
   machine is tried. `fanout` remains the default, and
   `GET /api/v1/herdr/jobs/ledger` returns the local events. Not solved: a
-  durable/global task board, automatic re-offer after a started target
+  durable/global task board (the per-node board and ledger now survive a
+  restart; a global view does not), automatic re-offer after a started target
   disappears (deliberately an operator decision), load/health placement beyond
   the static cap, signed capacity claims, agent-to-agent handoff, and automatic
-  result merge. A chain/consensus is not the next step at this scale; a durable
-  board plus leases is.
+  result merge. A chain/consensus is not the next step at this scale.
+- **Discovery follows the listener.** A Tailscale bind makes a console a fleet
+  member (discovery and follow); a loopback-only console does not discover or
+  follow and updates from GitHub/`HERDR_WEB_RELEASE_SOURCE`. A tailnet-facing
+  console reached via `127.0.0.1` is still the same member; run a separate
+  loopback-only instance for local-only work. A one-machine tailnet has no peer
+  update source.
 - **Commands and deploy.** `deploy-remote.sh --jump` is currently a no-op (`-J`
   is built from `$JUMP` before the flag is parsed); use an ssh alias or fix the
   script before following B0's recipe.
@@ -249,10 +255,14 @@ the dispatcher proxies it. The target closes the workspace, the dispatcher remem
 `cancelled` and stops polling it, and the row says "stopped" instead of a stale
 agent status or a 404.
 
-**A4. Durable task board and safe re-offer.** Persist tasks and leases, not just
-the in-memory ledger; re-offer a task that never started; make a lost task that
-did start a visible operator decision rather than an automatic second run.
-Without this, "no task is left behind" holds only inside one dispatch call.
+**A4. DONE — durable board and safe re-offer.** The ledger is append-only JSONL
+and the dispatch board is `dispatch.json`; both reload on restart. A market task
+that never started shows `retry offer`, which re-offers the stored targets with
+the same task id; before starting it asks each target whether it already has the
+task, so a lost start response is adopted rather than duplicated. A started task
+whose machine stops answering after its lease is marked `lost`; it is not
+re-run automatically. Automatic re-offer on a timer remains a decision, not a
+default.
 
 ### Owner B — the other engineer
 

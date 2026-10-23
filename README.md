@@ -286,6 +286,15 @@ its seeds and a few known peers every 30 seconds, so the list survives the loss 
 any machine. A console started with no seeds is an entry point: it discovers the
 tailnet's consoles itself (`93a088d`), so it joins rather than standing alone.
 
+The listener is the switch. A console with a Tailscale bind is a fleet member: it
+discovers peers and may follow a newer build. A console with only loopback binds
+is local-only: it does not run the heartbeat/follow loops, does not probe the
+tailnet for updates, and updates from GitHub or `HERDR_WEB_RELEASE_SOURCE`. A
+tailnet-facing console accessed through `127.0.0.1` is still the same fleet
+member; for a truly local-only instance bind `-addr 127.0.0.1 -local-addr ''`.
+A one-machine tailnet has no peer source: its update comes from GitHub, an
+explicit source, or a seeded release.
+
 Updates follow the same rule: any console running a strictly newer build is a
 source. A console adopts the newest build it can verify, keeping the build it
 replaced as `herdr-web.previous`; `POST /api/v1/herdr-web/rollback` puts it back,
@@ -300,9 +309,10 @@ cap the target answers `429 at_capacity`, and the dispatch sheet shows the machi
 full instead of preselecting it. `GET /api/v1/herdr/jobs/ledger` returns that
 machine's start/stop events. This is a capability and capacity registry, not a
 chain: there is no global queue or consensus, and the claim is the task id plus
-the offer/start gate. The ledger is in memory for now, so a console restart resets
-its running count (herdr keeps the workspaces); a durable log and task board are
-the next step.
+the offer/start gate. The ledger is an append-only JSONL file under
+`~/.local/share/herdr-web/jobs`, and the dispatch board is `dispatch.json`; both
+are loaded on restart, so the running count and the task board survive a console
+restart (herdr keeps the workspaces).
 
 Dispatch has two strategies. `fanout` (the default) runs the same prompt
 independently on every selected machine. `single` offers the task to all selected
