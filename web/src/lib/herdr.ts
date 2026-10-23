@@ -727,7 +727,8 @@ export type Fleet = {
   /** True when this console takes the hub's build automatically. */
   follow: boolean;
   peers: FleetPeer[];
-  self: { id: string; addr: string; version: string; platform: string };
+  /** This console is a dispatch target too: a one-machine fleet sends to itself. */
+  self: FleetPeer;
 };
 
 /**
@@ -755,6 +756,13 @@ export async function fetchFleet(): Promise<Fleet | null> {
       addr: typeof self.addr === "string" ? self.addr : "",
       version: typeof self.version === "string" ? self.version : "",
       platform: typeof self.platform === "string" ? self.platform : "",
+      agents: Array.isArray(self.agents) ? (self.agents as string[]) : [],
+      maxTasks: typeof self.maxTasks === "number" ? self.maxTasks : undefined,
+      running: typeof self.running === "number" ? self.running : undefined,
+      tools: Array.isArray(self.tools) ? (self.tools as string[]) : [],
+      models: Array.isArray(self.models) ? (self.models as string[]) : [],
+      seen: typeof self.seen === "number" ? self.seen : 0,
+      stale: self.stale === true,
     },
   };
 }

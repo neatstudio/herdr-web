@@ -42,7 +42,9 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
 
-  const peers = fleet?.peers ?? [];
+  // This console is a target as well. Without it, a one-machine fleet has an
+  // empty "machines" list and cannot send a task at all.
+  const peers = fleet === null ? [] : [fleet.self, ...fleet.peers];
 
   useEffect(() => {
     if (!open) {
@@ -68,10 +70,7 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
     // not the same everywhere.
     setChosen(
       peers
-        .filter(
-          (peer) =>
-            ((peer.agents ?? []).includes(kind) || (peer.agents ?? []).length === 0) && !isFull(peer),
-        )
+        .filter((peer) => (peer.agents ?? []).includes(kind) && !isFull(peer))
         .map((peer) => `http://${peer.addr}`),
     );
   }, [open, peers, chosen.length, kind]);
@@ -252,7 +251,9 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
               const url = `http://${peer.addr}`;
               const on = chosen.includes(url);
               const agents = peer.agents ?? [];
-              const capable = agents.length === 0 || agents.includes(kind);
+              // Only a machine that reported the agent is offered. An older
+              // console with no agents field is unknown, not "can run anything".
+              const capable = agents.includes(kind);
               const full = isFull(peer);
               const capacity = (peer.maxTasks ?? 0) > 0 ? `${peer.running ?? 0}/${peer.maxTasks}` : "";
               const models = peer.models ?? [];

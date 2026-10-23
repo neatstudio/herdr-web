@@ -22,7 +22,7 @@ a task to whichever machine can run it.
 | Thing | Value |
 | --- | --- |
 | Version | `v0.6.14-15-g65a010c` (`git describe`); the `v0.6.14` tag is local — remote tags stop at `v0.6.9` |
-| Tests | `go test ./...` green; `npm --prefix web run test:unit` 108/108; Playwright 84/84 |
+| Tests | `go test ./...` green; `npm --prefix web run test:unit` 108/108; Playwright 85/85 |
 | Fleet | see below, all `v0.6.13` — except the hub, see B0 |
 | herdr on the fleet | 0.9.5 everywhere; **tw1's daemon is currently stopped** |
 

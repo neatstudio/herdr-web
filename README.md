@@ -323,6 +323,30 @@ machine is tried. A task that has already started is not silently re-run on
 another machine if its host disappears: the row shows the loss, and retrying is an
 operator decision.
 
+#### Sending a task
+
+1. Open the console, click the machine/status button in the masthead, then
+   "send a job to the fleet" in the host panel.
+2. Fill the prompt, the repository (optional; a worktree is created per job), the
+   branch (optional) and the agent.
+3. Choose **every machine** (fanout) or **one machine** (offer). Select the
+   machines; this console is in the list too, so a one-machine fleet can run a
+   task locally. A full machine or one without the agent is disabled.
+4. Send. The task appears under "in flight" and polls every five seconds.
+
+Each row shows the agent status, branch, commits, uncommitted files and the
+`collect` fetch command. `stop` closes the workspace and discards its worktree;
+`retry offer` re-offers a one-machine task that never started. A target must run
+a console with the offer endpoint (the market build) for **one machine**; an older
+console can still be used with **every machine**, which uses the plain start.
+
+Scripted access uses the same API: `POST /api/v1/fleet/job` with
+`{"prompt": "...", "kind": "claude", "cwd": "/repo", "branch": "job/name",
+"strategy": "single", "targets": ["http://host:5000"]}`. `GET
+/api/v1/fleet/jobs` on the dispatching console returns the board; the target's
+`/api/v1/herdr/job/<workspace>` and `/job/<workspace>/diff` are the runner's own
+status and result, and `/api/v1/herdr/jobs/ledger` is its local event log.
+
 ### When a host can reach nothing
 
 Three paths, and the tooling tries them in this order rather than stopping at the

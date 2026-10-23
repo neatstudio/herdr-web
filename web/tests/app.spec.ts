@@ -2163,6 +2163,77 @@ test("a task can be offered to the fleet instead of run everywhere", async ({ pa
   await expect(sheet.locator('[data-dispatch="task-abc"]')).toContainText("started");
 });
 
+test("a one-machine fleet can send a task to itself", async ({ page }) => {
+  const sent: string[] = [];
+  await installBridge(page);
+  await page.route("**/api/v1/fleet", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        hub: true,
+        seeds: [],
+        follow: false,
+        self: {
+          id: "me",
+          addr: "100.89.0.116:5000",
+          version: "v0.6.14",
+          platform: "darwin-arm64",
+          agents: ["claude"],
+          maxTasks: 2,
+          running: 0,
+          tools: ["git"],
+          models: [],
+          seen: 0,
+          stale: false,
+        },
+        peers: [],
+      }),
+    }),
+  );
+  await page.route("**/api/v1/herdr/agents", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ kinds: ["claude"] }) }),
+  );
+  await page.route("**/api/v1/fleet/jobs", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ dispatches: [] }) }),
+  );
+  await page.route("**/api/v1/fleet/job", async (route) => {
+    sent.push(route.request().postData() ?? "");
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        dispatch: {
+          id: "task-self",
+          at: 0,
+          prompt: "local task",
+          strategy: "single",
+          jobs: [{ host: "http://100.89.0.116:5000", local: "w1:p1", jobId: "w1:p1", workspaceId: "w1", status: "started" }],
+        },
+      }),
+    });
+  });
+
+  await page.goto("/");
+  await page.locator("#herdr-host-open").click();
+  await page.locator("#dispatch-open").click();
+  const sheet = page.locator('.sheet[aria-label="Dispatch a job"]');
+  const self = sheet.locator('input[data-target="100.89.0.116:5000"]');
+  await expect(self).toBeChecked();
+  await expect(sheet.locator('label[title*="tools: git"]')).toContainText("0/2");
+  await page.locator("#dispatch-strategy-single").click();
+  await page.locator("#dispatch-prompt").fill("local task");
+  await page.locator("#dispatch-send").click();
+  await expect.poll(() => sent.length).toBe(1);
+  expect(JSON.parse(sent[0])).toMatchObject({
+    prompt: "local task",
+    kind: "claude",
+    strategy: "single",
+    targets: ["http://100.89.0.116:5000"],
+  });
+});
+
 test("on a phone the layout switch is a control you can actually hit", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await installBridge(page);
