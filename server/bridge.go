@@ -850,7 +850,10 @@ func (s *Server) Handler() http.Handler {
 	// installs from a peer that can (or from a bastion).
 	mux.HandleFunc("/release/", handleRelease)
 	mux.HandleFunc("/", s.handleStatic)
-	return mux
+	// Everything this console sends is text on a link that may be a relay: the
+	// bundle arrived in thirteen seconds uncompressed, and pane reads are the bulk
+	// of every poll.
+	return withGzip(mux)
 }
 
 // handleTabCreate adds a tab to a workspace: a new shell beside the ones that are
