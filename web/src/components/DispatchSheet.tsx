@@ -281,6 +281,7 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
               // console with no agents field is unknown, not "can run anything".
               const capable = agents.includes(kind);
               const full = isFull(peer);
+              const usable = capable && !full;
               const capacity = (peer.maxTasks ?? 0) > 0 ? `${peer.running ?? 0}/${peer.maxTasks}` : "";
               const models = peer.models ?? [];
               const tools = peer.tools ?? [];
@@ -292,10 +293,12 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
               ]
                 .filter((part) => part !== "")
                 .join(" ");
-              // Load first: a row is cut off long before its end, and how busy a
-              // machine is decides whether to send to it. The agent list follows
-              // the numbers for the same reason.
+              // A box the operator cannot tick has to say why before the row is
+              // cut off, and the reason is the first thing in the detail. Load
+              // follows: how busy a machine is decides whether to send to it,
+              // and the agent list comes last.
               const detail = [
+                capable || kind === "" ? "" : `no ${kind}`,
                 capacity,
                 hardware,
                 models.join(" "),
@@ -313,12 +316,17 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
                 .join(" — ");
               return (
                 <li key={peer.id}>
-                  <label title={tooltip}>
+                  <label
+                    title={tooltip}
+                    // Not a target: no box to tick reads as a missing control
+                    // unless the whole row says it is unavailable.
+                    data-unavailable={usable ? undefined : "true"}
+                  >
                     <input
                       type="checkbox"
                       data-target={peer.addr}
                       checked={on}
-                      disabled={!capable || full}
+                      disabled={!usable}
                       onChange={() =>
                         setChosen(on ? chosen.filter((item) => item !== url) : [...chosen, url])
                       }

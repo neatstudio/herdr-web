@@ -2465,6 +2465,18 @@ body::before {
   text-overflow: ellipsis;
 }
 
+/* A machine that cannot run the chosen agent, or is at its cap, is not a
+   target. Without this the box was simply dead: same row, same colour, no
+   response. The reason is in the row's detail and title. */
+.dispatch__targets label[data-unavailable="true"] {
+  color: var(--ink-faint);
+  cursor: default;
+}
+
+.dispatch__targets label[data-unavailable="true"] .newws__dim {
+  opacity: 0.8;
+}
+
 .dispatch__results {
   margin-top: 14px;
   border-top: var(--rule-w) solid var(--rule);
