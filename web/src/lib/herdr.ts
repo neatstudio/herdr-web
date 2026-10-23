@@ -620,6 +620,9 @@ export type DispatchedJob = {
   output?: string;
   error?: string;
   /** What the job's worktree holds: the branch, its commits, uncommitted files. */
+  checkoutPath?: string;
+  /** True when the target answered the diff question; false means unknown. */
+  diffReady?: boolean;
   commits?: string[];
   changed?: string[];
 };

@@ -297,8 +297,10 @@ func (s *Server) handleJobDiff(w http.ResponseWriter, r *http.Request, workspace
 		return
 	}
 	checkout := ""
+	repoRoot := ""
 	if answer.Workspace.Worktree != nil {
 		checkout = strings.TrimSpace(answer.Workspace.Worktree.CheckoutPath)
+		repoRoot = strings.TrimSpace(answer.Workspace.Worktree.RepoRoot)
 	}
 	if checkout == "" {
 		writeJSON(w, http.StatusOK, jobDiff{OK: true,
@@ -306,20 +308,53 @@ func (s *Server) handleJobDiff(w http.ResponseWriter, r *http.Request, workspace
 		return
 	}
 
-	git := func(args ...string) (string, error) {
-		command := exec.CommandContext(ctx, "git", append([]string{"-C", checkout}, args...)...)
+	gitIn := func(dir string, args ...string) (string, error) {
+		command := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
 		output, err := command.Output()
 		return string(output), err
 	}
+	git := func(args ...string) (string, error) {
+		return gitIn(checkout, args...)
+	}
 
 	diff := jobDiff{OK: true, CheckoutPath: checkout}
-	if branch, err := git("rev-parse", "--abbrev-ref", "HEAD"); err == nil {
+	if branch, err := git("branch", "--show-current"); err == nil {
 		diff.Branch = strings.TrimSpace(branch)
 	}
-	// Recent commits on this branch, which is what the job produced. A job that
-	// commits nothing leaves an empty list and possibly a dirty tree, and both are
-	// results worth reporting.
-	if log, err := git("log", "--pretty=%h %s", "-10"); err == nil {
+
+	// The commits the job made, not the commits it inherited. The worktree was
+	// forked from the repository's current HEAD, so the merge base with that
+	// checkout is the fork point. A worktree that has no fork point of its own
+	// falls back to the repository's mainline; a job that committed nothing
+	// leaves an empty list, which is a result worth saying out loud.
+	base := ""
+	if repoRoot != "" && !sameDir(repoRoot, checkout) {
+		if rootHead, err := gitIn(repoRoot, "rev-parse", "HEAD"); err == nil {
+			if fork, err := git("merge-base", "HEAD", strings.TrimSpace(rootHead)); err == nil {
+				base = strings.TrimSpace(fork)
+			}
+		}
+	}
+	if base == "" {
+		for _, candidate := range []string{"main", "master", "trunk", "develop"} {
+			if _, err := git("rev-parse", "--verify", "--quiet", candidate+"^{commit}"); err == nil {
+				base = candidate
+				break
+			}
+		}
+	}
+	if base == "" {
+		if upstream, err := git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"); err == nil {
+			base = strings.TrimSpace(upstream)
+		}
+	}
+	logArgs := []string{"log", "--pretty=%h %s"}
+	if base == "" {
+		logArgs = append(logArgs, "-10")
+	} else {
+		logArgs = append(logArgs, base+"..HEAD")
+	}
+	if log, err := git(logArgs...); err == nil {
 		for _, line := range strings.Split(strings.TrimSpace(log), "\n") {
 			if line = strings.TrimSpace(line); line != "" {
 				diff.Commits = append(diff.Commits, line)
@@ -327,8 +362,10 @@ func (s *Server) handleJobDiff(w http.ResponseWriter, r *http.Request, workspace
 		}
 	}
 	if status, err := git("status", "--porcelain"); err == nil {
-		for _, line := range strings.Split(strings.TrimSpace(status), "\n") {
-			if line = strings.TrimSpace(line); line != "" {
+		// Keep the two status columns: " M" and "M " mean different things, and
+		// the panel shows the file exactly as git reports it.
+		for _, line := range strings.Split(strings.TrimRight(status, "\n"), "\n") {
+			if strings.TrimSpace(line) != "" {
 				diff.Changed = append(diff.Changed, line)
 			}
 		}
@@ -340,4 +377,13 @@ func (s *Server) handleJobDiff(w http.ResponseWriter, r *http.Request, workspace
 		diff.Changed = []string{}
 	}
 	writeJSON(w, http.StatusOK, diff)
+}
+
+// sameDir reports whether two paths name the same directory. It is only used to
+// decide whether the repository root is a second checkout (the usual worktree
+// case) or the worktree itself.
+func sameDir(left, right string) bool {
+	leftPath, leftErr := filepath.Abs(left)
+	rightPath, rightErr := filepath.Abs(right)
+	return leftErr == nil && rightErr == nil && leftPath == rightPath
 }

@@ -6,6 +6,7 @@ import {
   type Dispatch,
   type Fleet,
 } from "@/lib/herdr";
+import { collectCommand } from "@/lib/fleet";
 
 type Props = {
   open: boolean;
@@ -224,6 +225,9 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
                       {job.branch !== undefined && job.branch !== "" && (
                         <span className="newws__dim">{job.branch}</span>
                       )}
+                      {job.diffReady === true && (job.commits ?? []).length === 0 && (
+                        <span className="newws__dim">no commits</span>
+                      )}
                       {(job.commits ?? []).length > 0 && (
                         <details open>
                           <summary>
@@ -245,6 +249,12 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
                               <li key={file}>{file}</li>
                             ))}
                           </ul>
+                        </details>
+                      )}
+                      {job.diffReady === true && (job.checkoutPath ?? "") !== "" && (
+                        <details className="dispatch__collect">
+                          <summary>collect</summary>
+                          <code>{collectCommand(job.host, job.checkoutPath ?? "", job.branch ?? "")}</code>
                         </details>
                       )}
                       {job.output !== undefined && job.output.trim() !== "" && (

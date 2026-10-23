@@ -211,3 +211,27 @@ test("the daemon label keeps the last octet and drops loopback", () => {
   // A name that is not an address is kept whole rather than mangled.
   assert.equal(fleet.hostOctet("m9.local"), "m9.local");
 });
+
+test("collectCommand names the machine, the checkout and the branch", () => {
+  assert.equal(
+    fleet.collectCommand("http://100.89.0.4:5000", "/home/g/.herdr/worktrees/web", "job/audit"),
+    "git fetch 100.89.0.4:/home/g/.herdr/worktrees/web job/audit",
+  );
+  // A detached job still has a HEAD to fetch.
+  assert.equal(
+    fleet.collectCommand("http://100.89.0.4:5000", "/home/g/.herdr/worktrees/web", ""),
+    "git fetch 100.89.0.4:/home/g/.herdr/worktrees/web HEAD",
+  );
+  // Without a checkout there is nothing to collect.
+  assert.equal(fleet.collectCommand("http://100.89.0.4:5000", "", "job/audit"), "");
+  // A path with a space stays one argument.
+  assert.equal(
+    fleet.collectCommand("http://m9.local:5000", "/tmp/a b", "job/x"),
+    "git fetch 'm9.local:/tmp/a b' job/x",
+  );
+  // A host written without a scheme loses the console port, not the hostname.
+  assert.equal(
+    fleet.collectCommand("100.89.0.4:5000", "/srv/wt", "job/x"),
+    "git fetch 100.89.0.4:/srv/wt job/x",
+  );
+});

@@ -44,8 +44,9 @@ type fakeHerdr struct {
 	closed      []string
 	focusedTabs []string
 	// checkoutPath is what workspace.get reports as the worktree, so the job diff
-	// has a real directory to run git in.
+	// has a real directory to run git in. repoRoot defaults to the same path.
 	checkoutPath string
+	repoRoot     string
 }
 
 func startFakeHerdr(t *testing.T) (socket string, state *fakeHerdr, closeFn func()) {
@@ -188,9 +189,13 @@ func serveFake(conn net.Conn, state *fakeHerdr) {
 	case "workspace.get":
 		worktree := any(nil)
 		if state.checkoutPath != "" {
+			root := state.repoRoot
+			if root == "" {
+				root = state.checkoutPath
+			}
 			worktree = map[string]any{
 				"checkout_path": state.checkoutPath,
-				"repo_root":     state.checkoutPath,
+				"repo_root":     root,
 				"repo_name":     "repo",
 				"repo_key":      "repo",
 			}

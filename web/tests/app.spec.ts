@@ -2067,8 +2067,23 @@ test("a dispatched job reports the commits it produced", async ({ page }) => {
                 workspaceId: "w1",
                 status: "done",
                 branch: "job/audit",
-                commits: ["b495e92 audit the docs", "fdbae77 first"],
+                checkoutPath: "/home/g/.herdr/worktrees/web",
+                diffReady: true,
+                commits: ["b495e92 audit the docs"],
                 changed: ["?? WIP.md"],
+                output: "done\n",
+              },
+              {
+                host: "http://100.89.0.9:5000",
+                local: "w2:p1",
+                jobId: "w2:p1",
+                workspaceId: "w2",
+                status: "done",
+                branch: "job/empty",
+                checkoutPath: "/home/g/.herdr/worktrees/empty",
+                diffReady: true,
+                commits: [],
+                changed: [],
                 output: "done\n",
               },
             ],
@@ -2082,11 +2097,23 @@ test("a dispatched job reports the commits it produced", async ({ page }) => {
   await page.locator("#dispatch-open").click();
 
   const entry = page.locator('[data-dispatch="job-1"]');
-  await expect(entry).toContainText("job/audit");
-  await expect(entry).toContainText("2 commits");
-  await expect(entry).toContainText("audit the docs");
-  await expect(entry).toContainText("1 uncommitted");
-  await expect(entry).toContainText("WIP.md");
+  const produced = entry.locator('[data-host="http://100.89.0.4:5000"]');
+  await expect(produced).toContainText("job/audit");
+  await expect(produced).toContainText("1 commit");
+  await expect(produced).toContainText("audit the docs");
+  await expect(produced).toContainText("1 uncommitted");
+  await expect(produced).toContainText("WIP.md");
+
+  // Collect prints the fetch; it does not merge or rewrite the operator's repo.
+  await produced.locator(".dispatch__collect summary").click();
+  await expect(produced.locator(".dispatch__collect code")).toHaveText(
+    "git fetch 100.89.0.4:/home/g/.herdr/worktrees/web job/audit",
+  );
+
+  // A job that committed nothing says so, instead of showing inherited commits.
+  const empty = entry.locator('[data-host="http://100.89.0.9:5000"]');
+  await expect(empty).toContainText("job/empty");
+  await expect(empty).toContainText("no commits");
 });
 
 test("a failed creation shows why, not just that it failed", async ({ page }) => {

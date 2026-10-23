@@ -319,3 +319,38 @@ export function hostOctet(hostname: string): string {
   const last = parts[parts.length - 1];
   return /^\d+$/.test(last) ? last : host;
 }
+
+/**
+ * The command that fetches a job's branch from the machine that ran it.
+ *
+ * A real merge across hosts is the operator's decision, not a button that
+ * rewrites their repository, so this only prints the fetch. The console host is
+ * the HTTP address; git needs the SSH address, which is the hostname without the
+ * console's port.
+ */
+export function collectCommand(host: string, checkoutPath: string, branch: string): string {
+  const path = checkoutPath.trim();
+  if (path === "") {
+    return "";
+  }
+  const raw = host.trim();
+  let target = raw;
+  try {
+    target = new URL(raw).hostname;
+  } catch {
+    target = raw.replace(/^https?:\/\//i, "").split("/")[0];
+    if (target.startsWith("[")) {
+      const end = target.indexOf("]");
+      if (end !== -1) {
+        target = target.slice(0, end + 1);
+      }
+    } else {
+      target = target.replace(/:\d+$/, "");
+    }
+  }
+  const reference = branch.trim() === "" ? "HEAD" : branch.trim();
+  const remote = `${target}:${path}`;
+  // Paths with spaces are legal; keep the copy-pasteable command one argument.
+  const quoted = /[\s'"\\$`]/.test(remote) ? `'${remote.replace(/'/g, `'\\''`)}'` : remote;
+  return `git fetch ${quoted} ${reference}`;
+}

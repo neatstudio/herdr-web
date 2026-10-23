@@ -31,8 +31,10 @@ type dispatchedJob struct {
 	Output      string `json:"output,omitempty"`
 	// What the job left in its worktree: the result a dispatcher actually needs,
 	// asked of the machine that did the work.
-	Commits []string `json:"commits,omitempty"`
-	Changed []string `json:"changed,omitempty"`
+	CheckoutPath string   `json:"checkoutPath,omitempty"`
+	DiffReady    bool     `json:"diffReady,omitempty"`
+	Commits      []string `json:"commits,omitempty"`
+	Changed      []string `json:"changed,omitempty"`
 }
 
 type dispatch struct {
@@ -202,44 +204,72 @@ func (s *Server) handleDispatchList(w http.ResponseWriter, r *http.Request) {
 			job.Status = status
 			job.Output = output
 			if job.WorkspaceID != "" {
-				branch, commits, changed := getJobDiff(ctx, job.Host, job.WorkspaceID)
-				if branch != "" {
-					job.Branch = branch
+				if answer, ok := getJobDiff(ctx, job.Host, job.WorkspaceID); ok {
+					job.DiffReady = true
+					job.CheckoutPath = answer.CheckoutPath
+					if answer.Branch != "" {
+						job.Branch = answer.Branch
+					}
+					job.Commits = answer.Commits
+					job.Changed = answer.Changed
 				}
-				job.Commits = commits
-				job.Changed = changed
 			}
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"dispatches": history})
 }
 
-// getJobDiff asks the machine running the job what its worktree contains.
-func getJobDiff(ctx context.Context, base, workspaceID string) (string, []string, []string) {
+type jobDiffAnswer struct {
+	Branch       string
+	CheckoutPath string
+	Commits      []string
+	Changed      []string
+}
+
+// getJobDiff asks the machine running the job what its worktree contains. ok is
+// false when the target has nothing to collect (no worktree, or it could not
+// answer), so the panel does not mistake "unknown" for "no commits".
+func getJobDiff(ctx context.Context, base, workspaceID string) (jobDiffAnswer, bool) {
 	requestCtx, cancel := context.WithTimeout(ctx, jobPollTimeout)
 	defer cancel()
 	request, err := http.NewRequestWithContext(requestCtx, http.MethodGet,
 		base+"/api/v1/herdr/job/"+workspaceID+"/diff", nil)
 	if err != nil {
-		return "", nil, nil
+		return jobDiffAnswer{}, false
 	}
 	response, err := selfClient.Do(request)
 	if err != nil {
-		return "", nil, nil
+		return jobDiffAnswer{}, false
 	}
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK {
-		return "", nil, nil
+		return jobDiffAnswer{}, false
 	}
 	var answer struct {
-		Branch  string   `json:"branch"`
-		Commits []string `json:"commits"`
-		Changed []string `json:"changed"`
+		OK           bool     `json:"ok"`
+		Branch       string   `json:"branch"`
+		CheckoutPath string   `json:"checkoutPath"`
+		Commits      []string `json:"commits"`
+		Changed      []string `json:"changed"`
 	}
 	if json.NewDecoder(response.Body).Decode(&answer) != nil {
-		return "", nil, nil
+		return jobDiffAnswer{}, false
 	}
-	return answer.Branch, answer.Commits, answer.Changed
+	if !answer.OK || strings.TrimSpace(answer.CheckoutPath) == "" {
+		return jobDiffAnswer{}, false
+	}
+	if answer.Commits == nil {
+		answer.Commits = []string{}
+	}
+	if answer.Changed == nil {
+		answer.Changed = []string{}
+	}
+	return jobDiffAnswer{
+		Branch:       answer.Branch,
+		CheckoutPath: answer.CheckoutPath,
+		Commits:      answer.Commits,
+		Changed:      answer.Changed,
+	}, true
 }
 
 func getJobStatus(ctx context.Context, base, jobID string) (string, string, error) {

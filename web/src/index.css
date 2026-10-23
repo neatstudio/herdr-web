@@ -2356,6 +2356,14 @@ body::before {
   color: var(--ink-dim);
 }
 
+.dispatch__collect code {
+  display: block;
+  margin-top: 4px;
+  font-size: var(--step-fine);
+  color: var(--ink-dim);
+  overflow-wrap: anywhere;
+}
+
 /* The new-workspace dialog is two fields and a button: a wide red bar and rows
    stretched edge to edge made it look like a page, not a prompt. */
 .sheet--dialog .sheet__panel {
