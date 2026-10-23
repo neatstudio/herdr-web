@@ -364,7 +364,14 @@ CPUs. They are checked when the offer is made and again when the job starts; an
 unknown memory reading (a Mac) is not treated as zero. The agent runtime itself
 is the baseline: a Node agent can sit around 200 MB before it does anything, so a
 1C1G machine should run one light agent and no build; 2C2G is a realistic floor
-for one heavy coding task. The HTTP API is small
+for one heavy coding task.
+
+Agent runtimes are not interchangeable on memory: `omp` is a native binary but
+runs several processes (main, ACP and workers; a session can reach 300–500 MB),
+while `pi` is a Node CLI like `opencode`. A no-build task still pays the agent
+baseline. The console advertises the herdr-supported kinds found on its PATH;
+launchd/systemd do not inherit a shell PATH, so a `pi` installed under Herd's nvm
+needs a symlink into `~/.local/bin` or the unit's PATH. The HTTP API is small
 enough to wrap in an MCP server later; the console itself is a REST bridge, not an
 MCP server.
 

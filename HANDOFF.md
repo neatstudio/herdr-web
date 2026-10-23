@@ -207,7 +207,9 @@ alone), and the HTML paints a boot shell with the wordmark so a slow link shows
 ## Pitfalls, each of which already cost a session
 
 1. **launchd/systemd do not inherit `PATH`.** Always pass absolute paths; this has
-   caused outages.
+   caused outages. Agent kinds are detected on the service PATH too: `omp` is in
+   `/opt/homebrew/bin`, but `pi` installed under Herd's nvm is invisible unless
+   symlinked into `~/.local/bin` or added to the unit's PATH.
 2. **Root gets a system unit, a user gets `--user` + `loginctl enable-linger`.** A
    user unit under root sits in `activating`; a restart aimed at the wrong manager
    fails silently while the file on disk is already new.

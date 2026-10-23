@@ -350,7 +350,12 @@ func (s *Server) handleAgentKinds(w http.ResponseWriter, r *http.Request) {
 // jobAgentKinds lists the agents this host can start, by looking for their names
 // on PATH. The panel offers what is actually installed rather than a fixed list.
 func jobAgentKinds() []string {
-	candidates := []string{"claude", "opencode", "codex", "qwen", "aider", "gemini"}
+	// Keep this aligned with herdr's supported agent kinds (herdr agent start
+	// --kind ...). A kind that is not on PATH is simply not advertised.
+	candidates := []string{
+		"claude", "opencode", "codex", "qwen", "aider", "gemini",
+		"omp", "pi", "cursor", "copilot", "grok", "kimi", "qodercli",
+	}
 	found := make([]string, 0, len(candidates))
 	for _, name := range candidates {
 		if _, err := lookPath(name); err == nil {
