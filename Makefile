@@ -107,4 +107,5 @@ release-publish: release-archives
 	@dir="$${HERDR_WEB_RELEASE_DIR:-$$HOME/.local/share/herdr-web/releases}"; \
 	mkdir -p "$$dir"; \
 	cp dist/release/herdr-web-* "$$dir/"; \
+	printf '%s\n' "$$(git describe --tags --abbrev=0 2>/dev/null || echo dev)" > "$$dir/version"; \
 	echo "published to $$dir:"; ls "$$dir" | head -10

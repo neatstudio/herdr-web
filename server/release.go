@@ -69,6 +69,19 @@ func releaseDir() string {
 	return filepath.Join(home, ".local", "share", "herdr-web", "releases")
 }
 
+// publishedVersion is the version of the release this console hands out.
+func publishedVersion() string {
+	dir := releaseDir()
+	if dir != "" {
+		if raw, err := os.ReadFile(filepath.Join(dir, "version")); err == nil {
+			if version := strings.TrimSpace(string(raw)); version != "" {
+				return version
+			}
+		}
+	}
+	return ConsoleVersion
+}
+
 // handleRelease serves the installer and the binary for the platform that asks.
 //
 // The installer is answered for every platform (it is a shell script); a binary
@@ -93,14 +106,21 @@ func handleRelease(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 
-	// The version this console publishes, so an updater can tell whether the
-	// build it would download is newer before downloading it.
+	// The version of the release this console publishes, so an updater can tell
+	// whether the build it would download is newer before downloading it.
+	//
+	// It has to describe the files in the release directory, not this process: a
+	// macOS console serving a Linux asset from that directory while reporting its
+	// own version is how four machines were once talked into installing a month-old
+	// binary. When the directory has a version file, that is the answer; when it
+	// has neither, the console's own version stands for the binary it serves
+	// itself.
 	if name == "version" {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		if r.Method == http.MethodHead {
 			return
 		}
-		_, _ = w.Write([]byte(ConsoleVersion + "\n"))
+		_, _ = w.Write([]byte(publishedVersion() + "\n"))
 		return
 	}
 

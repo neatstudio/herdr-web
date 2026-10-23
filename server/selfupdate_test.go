@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -510,4 +511,40 @@ func TestReleaseServesItsOwnChecksum(t *testing.T) {
 		t.Fatalf("body = %q", recorder.Body.String())
 	}
 	_ = path
+}
+
+func TestSelfUpdateRefusesAFileThatIsNotTheBuildItNames(t *testing.T) {
+	// A source can publish a version file that does not match the asset it serves
+	// — a macOS console serving an old Linux archive under its own version once
+	// downgraded four machines, with a perfectly valid checksum. The downloaded
+	// binary is run before it replaces anything.
+	if runtime.GOOS == "windows" {
+		t.Skip("the check runs the downloaded binary")
+	}
+	fakeExecutable(t, "old build")
+	// A real, current binary: this test binary cannot be exec'd as herdr-web, so
+	// the asset is a shell script that answers -version the way the console does.
+	asset := []byte("#!/bin/sh\necho 'herdr-web v0.1.0'\n")
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/release/version":
+			_, _ = w.Write([]byte("v9.9.9\n"))
+		case strings.HasSuffix(r.URL.Path, ".sha256"):
+			_, _ = w.Write([]byte(checksum(asset) + "  " + selfPlatform() + "\n"))
+		default:
+			_, _ = w.Write(asset)
+		}
+	}))
+	t.Cleanup(hub.Close)
+
+	console := fleetTestServer(t)
+	console.SetFleetForTest(hub.URL, "100.89.0.4:5000")
+	previousRestart := fleetRestart
+	fleetRestart = func() error { return nil }
+	t.Cleanup(func() { fleetRestart = previousRestart })
+
+	updated, err := console.fleetFollowOnce(context.Background())
+	if err == nil && updated {
+		t.Fatal("a binary that claims another version was installed")
+	}
 }

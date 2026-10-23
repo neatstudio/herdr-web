@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -309,6 +310,19 @@ func selfUpdateFrom(ctx context.Context, execPath, source string) (selfUpdateRes
 		return selfUpdateResult{OK: false, Steps: steps}, errors.New("the download did not match its checksum")
 	}
 	steps = append(steps, selfStep{Step: "verify", OK: true, Detail: "checksum matches (" + shortSum(got) + ")"})
+	// The file has to say what it is. A checksum only proves the download is
+	// intact; it cannot prove the source published the build it named, and a
+	// console that served an old file under a new version once downgraded four
+	// machines with a valid checksum.
+	if err := os.Chmod(tmpPath, 0o755); err != nil {
+		return selfUpdateResult{}, err
+	}
+	if got := binaryVersion(tmpPath); got != "" && !sameVersion(got, published) {
+		steps = append(steps, selfStep{Step: "verify",
+			Detail: "the file is " + got + ", the source called it " + published})
+		return selfUpdateResult{OK: false, Steps: steps},
+			errors.New("the published file is not the build it claims")
+	}
 	if err := os.Chmod(tmpPath, 0o755); err != nil {
 		return selfUpdateResult{}, err
 	}
@@ -347,6 +361,29 @@ func restartHint() string {
 	default:
 		return "restart the console"
 	}
+}
+
+// binaryVersion asks a downloaded executable which build it is, by running it.
+//
+// "-version" is a read-only question the binary answers without starting anything,
+// which is exactly what is needed before it replaces a working console.
+func binaryVersion(path string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, path, "-version").Output()
+	if err != nil {
+		return ""
+	}
+	fields := strings.Fields(string(output))
+	if len(fields) < 2 {
+		return ""
+	}
+	return strings.TrimSpace(fields[len(fields)-1])
+}
+
+// sameVersion compares a build's own report with the version a source published.
+func sameVersion(reported, published string) bool {
+	return strings.TrimSpace(reported) == strings.TrimSpace(published)
 }
 
 // copyFile writes src to dst with the same permissions, replacing it.
