@@ -537,6 +537,9 @@ func TestSelfUpdateRefusesAFileThatIsNotTheBuildItNames(t *testing.T) {
 	}))
 	t.Cleanup(hub.Close)
 
+	previousOfficial := selfOfficialSource
+	selfOfficialSource = "http://127.0.0.1:1/release"
+	t.Cleanup(func() { selfOfficialSource = previousOfficial })
 	console := fleetTestServer(t)
 	console.SetFleetForTest(hub.URL, "100.89.0.4:5000")
 	previousRestart := fleetRestart
@@ -546,5 +549,42 @@ func TestSelfUpdateRefusesAFileThatIsNotTheBuildItNames(t *testing.T) {
 	updated, err := console.fleetFollowOnce(context.Background())
 	if err == nil && updated {
 		t.Fatal("a binary that claims another version was installed")
+	}
+}
+
+func TestSelfUpdateRefusesADevelopmentBuild(t *testing.T) {
+	// A console on a developer's machine publishes whatever it was built from, and
+	// the fleet must not adopt a tree with uncommitted changes.
+	fakeExecutable(t, "current build")
+	hub := releaseSource(t, []byte("dev build"), "")
+	_ = hub
+	asset := []byte("development")
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/release/version":
+			_, _ = w.Write([]byte("v0.7.0-dirty\n"))
+		case strings.HasSuffix(r.URL.Path, ".sha256"):
+			_, _ = w.Write([]byte(checksum(asset) + "  " + selfPlatform() + "\n"))
+		default:
+			_, _ = w.Write(asset)
+		}
+	}))
+	t.Cleanup(source.Close)
+
+	previousOfficial := selfOfficialSource
+	selfOfficialSource = "http://127.0.0.1:1/release"
+	t.Cleanup(func() { selfOfficialSource = previousOfficial })
+	console := fleetTestServer(t)
+	console.SetFleetForTest(source.URL, "100.89.0.4:5000")
+	previousRestart := fleetRestart
+	fleetRestart = func() error {
+		t.Fatal("a development build was installed")
+		return nil
+	}
+	t.Cleanup(func() { fleetRestart = previousRestart })
+
+	updated, err := console.fleetFollowOnce(context.Background())
+	if err == nil || updated {
+		t.Fatalf("updated = %v, err = %v", updated, err)
 	}
 }

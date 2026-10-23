@@ -254,6 +254,15 @@ func selfUpdateFrom(ctx context.Context, execPath, source string) (selfUpdateRes
 			Detail: "publishes " + published + ", not newer than " + ConsoleVersion})
 		return selfUpdateResult{OK: false, Steps: steps}, errors.New("the published build is not newer")
 	}
+	// A development build is not a release: its version says dirty because the
+	// tree it was built from has uncommitted changes, and adopting one would put
+	// somebody's work in progress on the whole fleet.
+	if strings.Contains(strings.ToLower(published), "dirty") {
+		steps = append(steps, selfStep{Step: "skip", OK: true,
+			Detail: "publishes " + published + ", a development build"})
+		return selfUpdateResult{OK: false, Steps: steps}, errors.New("the source publishes a development build")
+	}
+
 	steps = append(steps, selfStep{Step: "version", OK: true,
 		Detail: "publishes " + published + ", this build is " + ConsoleVersion})
 
