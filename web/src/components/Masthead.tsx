@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { hostOctet } from "@/lib/fleet";
 import type { HerdrStatus } from "@/lib/herdr";
-import { THEME_CHOICES, type ThemeChoice } from "@/lib/theme";
+import { nextTheme, THEME_CHOICES, type ThemeChoice } from "@/lib/theme";
 
 type Props = {
   status: HerdrStatus | null;
@@ -13,9 +13,19 @@ type Props = {
   onHost: () => void;
   /** Opens the full-screen fleet task board. */
   onFleet: () => void;
+  /** True when the window is too narrow for three theme buttons. */
+  narrow?: boolean;
 };
 
-export function Masthead({ status, consoleVersion: build, choice, onChoice, onHost, onFleet }: Props) {
+export function Masthead({
+  status,
+  consoleVersion: build,
+  choice,
+  onChoice,
+  onHost,
+  onFleet,
+  narrow = false,
+}: Props) {
   const live = status?.status === "ok";
   const protocol = status?.protocol;
   const octet = hostOctet(typeof window === "undefined" ? "" : window.location.hostname);
@@ -81,18 +91,33 @@ export function Masthead({ status, consoleVersion: build, choice, onChoice, onHo
         fleet
       </button>
 
-      <div className="switch" role="group" aria-label="Theme">
-        {THEME_CHOICES.map((item) => (
-          <button
-            key={item}
-            type="button"
-            aria-pressed={item === choice}
-            onClick={() => onChoice(item)}
-          >
-            {item}
-          </button>
-        ))}
-      </div>
+      {/* Three states need three targets, which a phone masthead does not have
+          the width for: there the same choice is one button that cycles. */}
+      {narrow ? (
+        <button
+          type="button"
+          id="herdr-theme-cycle"
+          className="switch switch--cycle"
+          aria-label={`theme ${choice}, next ${nextTheme(choice)}`}
+          title="theme: auto follows the OS"
+          onClick={() => onChoice(nextTheme(choice))}
+        >
+          {choice}
+        </button>
+      ) : (
+        <div className="switch" role="group" aria-label="Theme">
+          {THEME_CHOICES.map((item) => (
+            <button
+              key={item}
+              type="button"
+              aria-pressed={item === choice}
+              onClick={() => onChoice(item)}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+      )}
     </header>
   );
 }

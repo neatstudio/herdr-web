@@ -56,6 +56,12 @@ test("isThemeChoice rejects everything but the three states", () => {
   assert.equal(theme.isThemeChoice(undefined), false);
 });
 
+test("nextTheme cycles auto, light, dark and wraps", () => {
+  assert.equal(theme.nextTheme("auto"), "light");
+  assert.equal(theme.nextTheme("light"), "dark");
+  assert.equal(theme.nextTheme("dark"), "auto");
+});
+
 test("display mode defaults to auto and survives junk", () => {
   const store = (value: string | null) => ({ getItem: () => value });
   assert.equal(theme.readStoredDisplay(store("exact")), "exact");

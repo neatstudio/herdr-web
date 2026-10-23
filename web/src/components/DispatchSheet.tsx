@@ -292,11 +292,14 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
               ]
                 .filter((part) => part !== "")
                 .join(" ");
+              // Load first: a row is cut off long before its end, and how busy a
+              // machine is decides whether to send to it. The agent list follows
+              // the numbers for the same reason.
               const detail = [
-                agents.length === 0 ? "no agent reported" : agents.join(" "),
                 capacity,
                 hardware,
                 models.join(" "),
+                agents.length === 0 ? "no agent reported" : agents.join(" "),
               ]
                 .filter((part) => part !== "")
                 .join(" · ");
@@ -304,6 +307,7 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
                 capable ? "" : `${peer.addr} has no ${kind}`,
                 full ? `${peer.addr} is at capacity` : "",
                 tools.length > 0 ? `tools: ${tools.join(" ")}` : "",
+                detail,
               ]
                 .filter((part) => part !== "")
                 .join(" — ");

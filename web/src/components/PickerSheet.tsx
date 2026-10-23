@@ -131,7 +131,9 @@ export function PickerSheet({
                   >
                     <span className="srow__name">
                       {workspace.name}
-                      <span className="row__id">{count} panes</span>
+                      <span className="row__id">
+                        {count} {count === 1 ? "pane" : "panes"}
+                      </span>
                     </span>
                   </button>
                 );

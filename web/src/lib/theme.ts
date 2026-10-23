@@ -40,6 +40,16 @@ export function storeChoice(storage: Pick<Storage, "setItem"> | null, choice: Th
 
 export const THEME_CHOICES: ThemeChoice[] = ["auto", "light", "dark"];
 
+/**
+ * The next choice in the ring. A phone masthead has room for one button, so
+ * the three states become one that cycles instead of three that each need a
+ * third of the width.
+ */
+export function nextTheme(choice: ThemeChoice): ThemeChoice {
+  const index = THEME_CHOICES.indexOf(choice);
+  return THEME_CHOICES[(index + 1) % THEME_CHOICES.length];
+}
+
 export function applyTheme(choice: ThemeChoice, prefersLight: boolean): ResolvedTheme {
   const resolved = resolveTheme(choice, prefersLight);
   if (typeof document !== "undefined") {

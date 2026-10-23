@@ -31,7 +31,6 @@ import { arrangeTiles, tabsOf, type PaneLayout } from "@/lib/layout";
 import {
   TONE_LABEL,
   mostUrgentPane,
-  paneListName,
   toneOf,
   type AgentPane,
   type PageTheme,
@@ -356,6 +355,7 @@ export function App() {
         consoleVersion={selfVersion !== "" ? selfVersion : status?.consoleVersion ?? ""}
         choice={choice}
         onChoice={chooseTheme}
+        narrow={narrow}
       />
 
       <div className="body">
@@ -416,7 +416,7 @@ export function App() {
               aria-expanded={picker}
               onClick={() => setPicker(true)}
             >
-              {activeWorkspace?.name ?? "workspaces"} · {activePane !== null ? paneListName(activePane, activeWorkspace?.name ?? "") : "no pane"}
+              {activeWorkspace?.name ?? "workspaces"}
             </button>
             <div className="stage__spacer" />
             {activePane !== null && remotePanes.has(activePane.id) && (

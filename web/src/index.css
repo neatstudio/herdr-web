@@ -300,6 +300,25 @@ body::before {
   background: var(--rule);
 }
 
+/* On a phone the same three states are one button that cycles: three targets
+   plus the daemon and fleet entries do not fit in 390px, and squeezing them
+   clipped the fleet label instead. */
+.switch--cycle {
+  padding: 3px 8px 2px;
+  font-family: var(--font-label);
+  font-size: var(--step-micro);
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: var(--raised);
+  touch-action: manipulation;
+}
+
+.switch--cycle:hover {
+  border-color: var(--ink);
+}
+
 /* ------------------------------------------------------------------ body */
 
 .body {
@@ -802,7 +821,9 @@ body::before {
   opacity: 0.62;
 }
 
-/* The new-pane button sits after the last tab, as herdr's own strip does. */
+/* The new-pane button sits after the last tab, as herdr's own strip does. On a
+   narrow strip it is pinned to the right edge instead: scrolled to the active
+   tab, "+" would otherwise be off screen exactly when it is wanted. */
 .tab--new {
   flex: 0 0 auto;
   padding: 0 10px;
@@ -1750,13 +1771,16 @@ body::before {
 
 /* ---------------------------------------------------------------- sheet */
 
-/* The phone's pane picker: one tap opens it, one tap picks, no dragging. */
+/* The phone's pane picker: one tap opens it, one tap picks, no dragging.
+   A column, not counted grid rows: the picker's filter only exists in one of
+   the two views, and a row count that assumes it leaves that row to the body
+   instead — a 500px-high filter box over a list squeezed into the bottom. */
 .sheet {
   position: fixed;
   inset: 0;
   z-index: 30;
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   background: var(--paper);
 }
 
@@ -1873,8 +1897,14 @@ body::before {
 }
 
 .sheet__body {
+  flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+}
+
+/* The filter is one line of chrome, whatever else wants the height. */
+.sheet .col__filter {
+  flex: 0 0 auto;
 }
 
 /* The fleet is a page, not a dialog. The form and the task board get real
@@ -2117,6 +2147,25 @@ body::before {
   .masthead__version {
     display: none;
   }
+
+  /* Tabs overflow on a phone, so "+" rides the right edge rather than the end
+     of the tab list, where it would sit off screen most of the time. */
+  .tab--new {
+    position: sticky;
+    right: 0;
+    background: var(--surface);
+    border-left: var(--rule-w) solid var(--rule);
+  }
+
+  /* Leave the pinned "+" its room when the strip scrolls a tab into view, and
+     stop one long terminal title from taking the whole strip. */
+  .strip {
+    scroll-padding-right: 44px;
+  }
+
+  .tab {
+    max-width: 66vw;
+  }
 }
 
 @media (max-width: 900px) {
@@ -2130,6 +2179,37 @@ body::before {
 
   .stage__pick {
     display: block;
+  }
+
+  /* The sidebar is gone, so this row is the workspace switch: the name, and
+     one caret saying it opens something. A boxed control here read as an
+     input and repeated the name that sat next to it. */
+  .stage__title {
+    display: none;
+  }
+
+  .stage__head {
+    min-height: 46px;
+  }
+
+  .stage__pick {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    max-width: none;
+    padding: 0;
+    border: 0;
+    font-size: var(--step-label);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: none;
+    color: var(--ink);
+  }
+
+  .stage__pick::after {
+    content: "▾";
+    font-size: 11px;
+    color: var(--ink-faint);
   }
 
   .scope__display {
@@ -2327,6 +2407,20 @@ body::before {
   align-items: center;
   gap: 7px;
   font-size: var(--step-fine);
+}
+
+/* One line per machine. The address never shrinks; the detail does, and the
+   part that does not fit is in the row's title. */
+.dispatch__targets label > span:nth-child(2) {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+}
+
+.dispatch__targets .newws__dim {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .dispatch__results {

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { HerdrPane } from "@/lib/herdr";
 import { paneListName, paneOwnHasName, shortPaneId, toneOf } from "@/lib/fleet";
 import { longPressHandlers } from "@/lib/press";
@@ -33,6 +34,13 @@ export function PaneTabs({
   onNewTab,
   canSplit,
 }: Props) {
+  const activeRef = useRef<HTMLButtonElement | null>(null);
+  // A strip that overflows shows its first tabs, not the one being read. Keep
+  // the selected tab in view; "nearest" means no scrolling when it already is.
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [activeTabId]);
+
   if (panes.length === 0) {
     return null;
   }
@@ -52,6 +60,7 @@ export function PaneTabs({
             data-pane-id={pane.id}
             aria-selected={active}
             tabIndex={active ? 0 : -1}
+            ref={active ? activeRef : undefined}
             title={named ? `${name} — ${pane.id}` : pane.id}
             onClick={() => onSelect(pane.id)}
             onContextMenu={(event) => {
