@@ -200,7 +200,61 @@ export function applySgr(style: Style, params: number[], start: number): number 
   return 0;
 }
 
-function styleToCss(style: Style, mode: CanvasMode): string {
+function rgbParts(colour: string): { r: number; g: number; b: number } | null {
+  const match = /^rgb\((\d+),(\d+),(\d+)\)$/.exec(colour);
+  return match === null ? null : { r: Number(match[1]), g: Number(match[2]), b: Number(match[3]) };
+}
+
+function lumaOf(rgb: { r: number; g: number; b: number }): number {
+  return (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255;
+}
+
+/** Move a colour to a target luma, keeping its hue (scale down or blend up). */
+function withLuma(rgb: { r: number; g: number; b: number }, target: number): string {
+  const luma = lumaOf(rgb);
+  if (target < luma) {
+    const scale = luma === 0 ? 0 : target / luma;
+    return `rgb(${clampByte(rgb.r * scale)},${clampByte(rgb.g * scale)},${clampByte(rgb.b * scale)})`;
+  }
+  const blend = luma === 1 ? 0 : (target - luma) / (1 - luma);
+  return `rgb(${clampByte(rgb.r + (255 - rgb.r) * blend)},${clampByte(rgb.g + (255 - rgb.g) * blend)},${clampByte(
+    rgb.b + (255 - rgb.b) * blend,
+  )})`;
+}
+
+/**
+ * A foreground that stays readable on its actual backdrop.
+ *
+ * Mirroring lightness is right for a canvas, but wrong for a saturated colour:
+ * #03ff88 (a common agent green) becomes #00fc85 on paper, which is still a
+ * bright mint on a near-white page. Mirror first, then pull the result into a
+ * readable luma band against the background it will sit on (or the page when
+ * it has no background of its own).
+ */
+function readableInk(
+  colour: string,
+  background: string | null,
+  mode: CanvasMode,
+  lightPage: boolean,
+): string {
+  const mirrored = adaptColour(colour, mode);
+  const rgb = rgbParts(mirrored);
+  if (rgb === null) {
+    return mirrored;
+  }
+  const bg = background === null ? null : rgbParts(background);
+  const light = bg !== null ? lumaOf(bg) > 0.5 : mode === "paper" || (mode === "content" && lightPage);
+  const luma = lumaOf(rgb);
+  if (light && luma > 0.45) {
+    return withLuma(rgb, 0.22);
+  }
+  if (!light && luma < 0.35) {
+    return withLuma(rgb, 0.55);
+  }
+  return mirrored;
+}
+
+function styleToCss(style: Style, mode: CanvasMode, lightPage: boolean): string {
   const declarations: string[] = [];
   let fg = style.fg;
   let bg = style.bg;
@@ -210,8 +264,8 @@ function styleToCss(style: Style, mode: CanvasMode): string {
     fg = swappedFg;
     bg = swappedBg;
   }
-  fg = fg === null ? null : adaptColour(fg, mode);
   bg = bg === null ? null : adaptColour(bg, mode);
+  fg = fg === null ? null : readableInk(fg, bg, mode, lightPage);
   if (fg !== null) {
     declarations.push(`color:${fg}`);
   } else if (bg !== null) {
@@ -361,7 +415,7 @@ function linkPaths(text: string): string {
   return html + escapeHtml(text.slice(cursor));
 }
 
-function render(segments: Segment[], mode: CanvasMode): string {
+function render(segments: Segment[], mode: CanvasMode, lightPage: boolean): string {
   let html = "";
   for (const segment of segments) {
     // Belt and braces: no escape byte may reach the DOM, even from a sequence
@@ -370,7 +424,7 @@ function render(segments: Segment[], mode: CanvasMode): string {
     if (safe === "") {
       continue;
     }
-    const css = styleToCss(segment.style, mode);
+    const css = styleToCss(segment.style, mode, lightPage);
     const escaped = linkPaths(safe);
     html += css === "" ? escaped : `<span style="${css}">${escaped}</span>`;
   }
@@ -384,6 +438,46 @@ function render(segments: Segment[], mode: CanvasMode): string {
  */
 export function canvasBackdrop(canvas: string | null, mode: CanvasMode): string | null {
   return canvas === null ? null : adaptColour(canvas, mode);
+}
+
+/**
+ * The background a whole line paints, when one colour covers most of it.
+ *
+ * A diff line often has a full-line band. Inline backgrounds only cover the
+ * glyphs, so the line box's leading shows the page through them and a wrapped
+ * line becomes a stack of stripes. Painting the dominant band on the line
+ * element fills the row and its wrapped continuations; mixed lines return null
+ * and keep their per-segment backgrounds.
+ */
+export function lineBackground(line: string, mode: CanvasMode = "content"): string | null {
+  const segments = trimPadding(parseLine(line));
+  let total = 0;
+  const counts = new Map<string, number>();
+  for (const segment of segments) {
+    if (segment.text.length === 0) {
+      continue;
+    }
+    total += segment.text.length;
+    const background = segment.style.reverse ? segment.style.fg : segment.style.bg;
+    if (background !== null) {
+      counts.set(background, (counts.get(background) ?? 0) + segment.text.length);
+    }
+  }
+  if (total === 0) {
+    return null;
+  }
+  let best: string | null = null;
+  let bestCount = 0;
+  for (const [colour, count] of counts) {
+    if (count > bestCount) {
+      best = colour;
+      bestCount = count;
+    }
+  }
+  if (best === null || bestCount / total < 0.6) {
+    return null;
+  }
+  return adaptColour(best, mode);
 }
 
 /**
@@ -410,10 +504,11 @@ export function ansiCacheStats(): { size: number; hits: number; misses: number }
 }
 
 /** One line of pane text to HTML. */
-export function ansiLineToHtml(line: string, mode: CanvasMode = "content"): string {
-  // Mode is part of the key: paper and carbon mirror absolute colours, so the
-  // same bytes are different HTML on each canvas. NUL cannot appear in a mode.
-  const key = `${mode}\u0000${line}`;
+export function ansiLineToHtml(line: string, mode: CanvasMode = "content", lightPage = true): string {
+  // Mode and page are part of the key: paper and carbon mirror absolute
+  // colours, and a light page pulls a bright foreground down. NUL cannot
+  // appear in either.
+  const key = `${mode}\u0000${lightPage ? "l" : "d"}\u0000${line}`;
   const cached = ansiCache.get(key);
   if (cached !== undefined) {
     ansiHits += 1;
@@ -423,7 +518,7 @@ export function ansiLineToHtml(line: string, mode: CanvasMode = "content"): stri
     ansiCache.set(key, cached);
     return cached;
   }
-  const html = render(trimPadding(parseLine(line)), mode);
+  const html = render(trimPadding(parseLine(line)), mode, lightPage);
   ansiMisses += 1;
   if (ansiCache.size >= ANSI_CACHE_CAPACITY) {
     // Map iterates in insertion order, so the first key is the oldest.

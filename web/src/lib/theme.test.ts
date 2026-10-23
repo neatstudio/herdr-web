@@ -56,13 +56,14 @@ test("isThemeChoice rejects everything but the three states", () => {
   assert.equal(theme.isThemeChoice(undefined), false);
 });
 
-test("display mode defaults to wrap and survives junk", () => {
+test("display mode defaults to auto and survives junk", () => {
   const store = (value: string | null) => ({ getItem: () => value });
   assert.equal(theme.readStoredDisplay(store("exact")), "exact");
   assert.equal(theme.readStoredDisplay(store("fit")), "fit");
+  assert.equal(theme.readStoredDisplay(store("auto")), "auto");
   assert.equal(theme.readStoredDisplay(store("wrap")), "wrap");
-  assert.equal(theme.readStoredDisplay(store("sideways")), "wrap");
-  assert.equal(theme.readStoredDisplay(null), "wrap");
+  assert.equal(theme.readStoredDisplay(store("sideways")), "auto");
+  assert.equal(theme.readStoredDisplay(null), "auto");
 });
 
 test("display preference writes the key the reader expects", () => {

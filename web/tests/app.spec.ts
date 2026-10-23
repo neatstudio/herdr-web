@@ -572,7 +572,9 @@ test.describe("a pane that paints its own canvas", () => {
     await expect(feed).toHaveAttribute("data-canvas", "content");
     await expect(feed).toHaveCSS("background-color", "rgb(20, 20, 20)");
     await expect(feed).not.toHaveAttribute("data-adapt", /.+/);
-    await expect(feed).toHaveAttribute("data-display", "wrap");
+    // Auto keeps a three-line canvas in terminal geometry; wrapping it would
+    // break the app's box. Plain output still defaults to wrap.
+    await expect(feed).toHaveAttribute("data-display", "exact");
   });
 
   test("mirrors it onto a light page instead of punching a dark hole", async ({ page }) => {
@@ -621,6 +623,42 @@ test("a painted block has no seam between its rows", async ({ page }) => {
   // An empty row still occupies a row, so the transcript keeps its shape.
   const empty = await page.locator(".scope__line").first().evaluate((node) => node.getBoundingClientRect().height);
   expect(Math.round(empty)).toBe(rows[0].line);
+});
+
+test("a wrapped band fills its continuation rows", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 780 });
+  await page.emulateMedia({ colorScheme: "light" });
+  // One long band, not a full-screen app: auto wraps it, and the line's own
+  // background must cover every wrapped row instead of leaving seams.
+  const bar = `${ESC}[48;2;20;20;20m > ${"x".repeat(160)}${ESC}[0m`;
+  await installBridge(page, { readText: `${bar}\n` });
+  await page.goto("/");
+
+  const feed = page.locator("#herdr-feed-text");
+  await expect(feed).toHaveAttribute("data-display", "wrap");
+  const layout = await page.locator(".scope__line").first().evaluate((node) => ({
+    background: getComputedStyle(node).backgroundColor,
+    height: node.getBoundingClientRect().height,
+    lineHeight: Number.parseFloat(getComputedStyle(node).lineHeight) || 15,
+  }));
+  expect(layout.background).not.toBe("rgba(0, 0, 0, 0)");
+  expect(layout.height).toBeGreaterThan(layout.lineHeight * 1.5);
+});
+
+test("light mode pulls a bright truecolor into readable ink", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  // #03ff88 is a common agent green. On paper the old mirror left it as bright
+  // mint; the text has to be dark enough to read.
+  await installBridge(page, { readText: `${ESC}[38;2;3;255;136m+added line${ESC}[0m\n` });
+  await page.goto("/");
+
+  const colour = await page
+    .locator(".scope__line span")
+    .first()
+    .evaluate((node) => getComputedStyle(node).color);
+  const [r, g, b] = (colour.match(/\d+/g) ?? []).map(Number);
+  const luma = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  expect(luma).toBeLessThan(0.4);
 });
 
 test("a dark bar is mirrored on paper and left alone on carbon", async ({ page }) => {
@@ -1662,6 +1700,7 @@ test("plain output rewraps to a phone-sized viewport", async ({ page }) => {
   await page.goto("/");
 
   const feed = page.locator("#herdr-feed-text");
+  await expect(feed).toHaveAttribute("data-display", "wrap");
   await expect(feed).toHaveAttribute("data-wrap", "on");
   const overflow = await feed.evaluate((node) => node.scrollWidth > node.clientWidth + 1);
   expect(overflow, "plain output must not overflow sideways on a phone").toBe(false);
@@ -2055,7 +2094,7 @@ test("on a phone the layout switch is a control you can actually hit", async ({ 
 
   // Three 46x20 buttons floating over the transcript are unreadable and
   // untappable: 44px is the smallest target a finger is expected to hit.
-  for (const mode of ["wrap", "exact", "fit"]) {
+  for (const mode of ["auto", "wrap", "exact", "fit"]) {
     const box = await page.locator(`#herdr-display-${mode}`).boundingBox();
     expect(box).not.toBeNull();
     expect(box!.height).toBeGreaterThanOrEqual(44);

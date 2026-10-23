@@ -1,5 +1,5 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ansiLineToHtml, canvasBackdrop, canvasTone, isHorizontalRule } from "@/lib/ansi";
+import { ansiLineToHtml, canvasBackdrop, canvasTone, isHorizontalRule, lineBackground } from "@/lib/ansi";
 import { READ_LINES, readPane } from "@/lib/herdr";
 import { canvasModeFor, splitLines, type PageTheme } from "@/lib/fleet";
 import { DISPLAY_MODES, type DisplayMode } from "@/lib/theme";
@@ -179,24 +179,37 @@ function ScopeView({ paneId, theme, display, onDisplay, onOpenPath }: Props) {
   const tone = canvasTone(lines);
   const rawCanvas = tone.share >= MIRROR_SHARE ? tone.colour : null;
   const paintCanvas = tone.share >= CANVAS_SHARE ? tone.colour : null;
+  // Auto is the useful default for a small screen: prose follows the viewport,
+  // while a full-screen app keeps its terminal geometry. A single coloured row
+  // is a highlight, not a TUI, hence the line-count floor.
+  const resolvedDisplay: "wrap" | "exact" | "fit" =
+    display === "auto"
+      ? lines.length >= 3 && paintCanvas !== null
+        ? "exact"
+        : "wrap"
+      : display;
   const mode = canvasModeFor(rawCanvas, theme);
   // Converting 200 lines of ANSI is the expensive half of a repaint, and the
   // page re-renders for reasons that have nothing to do with this pane (a fleet
   // poll, a theme switch). Memoised on exactly what the output depends on.
-  const rendered = useMemo(() => lines.map((line) => ansiLineToHtml(line, mode)), [lines, mode]);
+  const rendered = useMemo(
+    () => lines.map((line) => ansiLineToHtml(line, mode, theme === "light")),
+    [lines, mode, theme],
+  );
   // A wrapped transcript needs the canvas behind every row, so the backdrop is
   // the pane's own canvas, mirrored when the page theme disagrees with it.
   const backdrop = canvasBackdrop(paintCanvas, mode);
   // A rule is decoration, not a column the reader needs; letting a 120-dash
   // separator decide the fit size would shrink every word around it.
   const rules = useMemo(() => lines.map(isHorizontalRule), [lines]);
+  const backgrounds = useMemo(() => lines.map((line) => lineBackground(line, mode)), [lines, mode]);
   const columns = lines.reduce(
     (widest, line, index) => (rules[index] ? widest : Math.max(widest, stripLength(line))),
     0,
   );
   const fitScale = columns > 0 && width > 0 ? width / (columns * MONO_ADVANCE) : BASE_FONT_PX;
   const fontPx =
-    display === "fit"
+    resolvedDisplay === "fit"
       ? Math.max(MIN_FIT_PX, Math.min(BASE_FONT_PX, fitScale))
       : BASE_FONT_PX;
   const overflows = columns * MONO_ADVANCE * fontPx > width + 1;
@@ -223,12 +236,12 @@ function ScopeView({ paneId, theme, display, onDisplay, onOpenPath }: Props) {
         aria-live="polite"
         aria-relevant="text"
         data-canvas={backdrop !== null ? "content" : undefined}
-        data-wrap={display === "wrap" ? "on" : "off"}
-        data-display={display}
+        data-wrap={resolvedDisplay === "wrap" ? "on" : "off"}
+        data-display={resolvedDisplay}
         data-adapt={mode !== "content" ? mode : undefined}
         style={{
           ...(backdrop !== null ? { background: backdrop } : {}),
-          ...(display === "fit" ? { fontSize: `${fontPx.toFixed(2)}px` } : {}),
+          ...(resolvedDisplay === "fit" ? { fontSize: `${fontPx.toFixed(2)}px` } : {}),
         }}
         // A path link is rendered by the ANSI renderer, so the click is
         // delegated here rather than attaching a handler per line.
@@ -250,6 +263,7 @@ function ScopeView({ paneId, theme, display, onDisplay, onOpenPath }: Props) {
           <div
             key={index}
             className={`scope__line${rules[index] ? " scope__line--rule" : ""}`}
+            style={backgrounds[index] !== null ? { backgroundColor: backgrounds[index]! } : undefined}
             // Renderer output only: ANSI escape sequences become spans, and
             // text is HTML-escaped before any markup is added.
             dangerouslySetInnerHTML={{ __html: html }}
@@ -269,11 +283,13 @@ function ScopeView({ paneId, theme, display, onDisplay, onOpenPath }: Props) {
             className="scope__display-button"
             aria-pressed={display === item}
             title={
-              item === "wrap"
-                ? "reflow to the screen width"
-                : item === "exact"
-                  ? "one row per terminal line, scroll sideways"
-                  : `scale down to ${MIN_FIT_PX}px, then scroll sideways (${columns} columns)`
+              item === "auto"
+                ? "wrap text; keep a full-screen app's terminal geometry"
+                : item === "wrap"
+                  ? "reflow to the screen width"
+                  : item === "exact"
+                    ? "one row per terminal line, scroll sideways"
+                    : `scale down to ${MIN_FIT_PX}px, then scroll sideways (${columns} columns)`
             }
             onClick={() => onDisplay(item)}
           >

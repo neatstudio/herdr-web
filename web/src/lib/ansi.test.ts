@@ -10,6 +10,7 @@ import {
   canvasTone,
   inkOn,
   isHorizontalRule,
+  lineBackground,
   stripAnsi,
 } from "./ansi.ts";
 
@@ -386,4 +387,30 @@ test("isHorizontalRule tells a rule from prose", () => {
   assert.equal(isHorizontalRule("---"), false);
   assert.equal(isHorizontalRule("--- next ---"), false);
   assert.equal(isHorizontalRule("a line of plain text"), false);
+});
+
+test("a bright truecolor is pulled into readable ink on paper", () => {
+  // The agent green that used to land as bright mint on a near-white page.
+  const html = ansiLineToHtml(`${ESC}[38;2;3;255;136mgreen${ESC}[0m`, "paper");
+  const match = /color:rgb\((\d+),(\d+),(\d+)\)/.exec(html);
+  assert.ok(match, html);
+  const luma = (0.299 * Number(match[1]) + 0.587 * Number(match[2]) + 0.114 * Number(match[3])) / 255;
+  assert.ok(luma < 0.4, html);
+});
+
+test("a dark truecolor is lifted on a dark page", () => {
+  const html = ansiLineToHtml(`${ESC}[38;2;0;0;128mdark${ESC}[0m`, "content", false);
+  const match = /color:rgb\((\d+),(\d+),(\d+)\)/.exec(html);
+  assert.ok(match, html);
+  const luma = (0.299 * Number(match[1]) + 0.587 * Number(match[2]) + 0.114 * Number(match[3])) / 255;
+  assert.ok(luma > 0.35, html);
+});
+
+test("lineBackground hoists a full-line band but not a highlight", () => {
+  assert.equal(lineBackground(`${ESC}[48;2;20;20;20m  text  ${ESC}[0m`), "rgb(20,20,20)");
+  assert.equal(lineBackground("plain text"), null);
+  // One coloured word in a line is a highlight, not the line's background.
+  assert.equal(lineBackground(`${ESC}[48;2;20;20;20mx${ESC}[0m plain text`), null);
+  // Paper mode mirrors it exactly like the spans do.
+  assert.equal(lineBackground(`${ESC}[48;2;20;20;20mtext${ESC}[0m`, "paper"), "rgb(235,235,235)");
 });

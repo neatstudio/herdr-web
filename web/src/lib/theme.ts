@@ -50,27 +50,27 @@ export function applyTheme(choice: ThemeChoice, prefersLight: boolean): Resolved
 
 /* ---------------------------------------------------------------- display */
 
-export type DisplayMode = "wrap" | "exact" | "fit";
+export type DisplayMode = "auto" | "wrap" | "exact" | "fit";
 
 export const DISPLAY_KEY = "herdr-web-display";
 
-export const DISPLAY_MODES: DisplayMode[] = ["wrap", "exact", "fit"];
+export const DISPLAY_MODES: DisplayMode[] = ["auto", "wrap", "exact", "fit"];
 
 export function isDisplayMode(value: unknown): value is DisplayMode {
-  return value === "wrap" || value === "exact" || value === "fit";
+  return value === "auto" || value === "wrap" || value === "exact" || value === "fit";
 }
 
 /**
- * How the transcript is laid out. Defaults to wrap: the browser cannot ask
- * herdr for narrower output, so reflowing is the only way ordinary output
- * follows the screen width.
+ * How the transcript is laid out. Defaults to auto, which wraps ordinary
+ * output and keeps a full-screen app's terminal geometry; the browser cannot
+ * ask herdr for narrower output, so neither choice is universally right.
  */
 export function readStoredDisplay(storage: Pick<Storage, "getItem"> | null): DisplayMode {
   try {
     const value = storage?.getItem(DISPLAY_KEY);
-    return isDisplayMode(value) ? value : "wrap";
+    return isDisplayMode(value) ? value : "auto";
   } catch {
-    return "wrap";
+    return "auto";
   }
 }
 

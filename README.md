@@ -96,11 +96,18 @@ long message is readable before it goes out.
 
 ### Wide panes
 
-The transcript has three layouts. **wrap** reflows text to the viewport;
-**exact** keeps one terminal row per line and scrolls sideways; **fit** scales
-down to a 10px floor and then scrolls, showing the column count. A full-screen
-TUI's box drawing cannot be reflowed without breaking it, so rule and border
-lines are clipped to one row in wrap and fit, and exact keeps them scrollable.
+The transcript has four layouts. **auto** (the default) wraps ordinary output
+and keeps a pane with its own full-screen canvas in exact mode; **wrap** reflows
+text to the viewport; **exact** keeps one terminal row per line and scrolls
+sideways; **fit** scales down to a 10px floor and then scrolls, showing the
+column count. A full-screen TUI's box drawing cannot be reflowed without
+breaking it, so rule and border lines are clipped to one row in wrap and fit,
+and exact keeps them scrollable.
+
+Absolute truecolor is pulled into a readable luma against the page — a bright
+agent green becomes a dark green on paper — and a line with a full-width
+background paints that background on the row itself, so a wrapped line does not
+show seams between its rows.
 herdr owns the pane's terminal width (`pane.read` has no width argument, and
 `pane.resize` moves a split rather than setting columns), so a pane much wider
 than the window is best read in exact mode; narrow the pane or split in herdr
