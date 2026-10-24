@@ -316,16 +316,6 @@ func agentAvailable(kind string) bool {
 	return false
 }
 
-// localNodeID is the Phase 2 identity: the hostname. The Tailscale node key and
-// real signatures replace it without changing the ledger contract.
-func localNodeID() string {
-	host, err := os.Hostname()
-	if err != nil || strings.TrimSpace(host) == "" {
-		return "local"
-	}
-	return strings.TrimSpace(host)
-}
-
 // sharedTaskID ties a job to its shared-ledger task. A dispatched task already
 // has an id; a directly started job gets one derived from its pane.
 func sharedTaskID(request jobRequest, paneID string) string {
