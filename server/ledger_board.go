@@ -12,8 +12,12 @@ import (
 // ledger, not this machine's local job ledger. The UI can filter by state,
 // role or owner and cap the result.
 func (s *Server) handleLedgerTasks(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		s.handleLedgerCreate(w, r)
+		return
+	}
 	if r.Method != http.MethodGet {
-		writeMethodNotAllowed(w, "GET")
+		writeMethodNotAllowed(w, "GET, POST")
 		return
 	}
 	if s.sharedLedger == nil {

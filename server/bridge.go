@@ -815,6 +815,7 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("/api/v1/herdr/agents", s.handleAgentKinds)
 	mux.HandleFunc("/api/v1/ledger/tasks", s.handleLedgerTasks)
+	mux.HandleFunc("/api/v1/ledger/tasks/", s.handleLedgerTaskAction)
 
 	mux.HandleFunc("/api/v1/herdr/workspaces", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
