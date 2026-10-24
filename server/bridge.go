@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"herdr-web/server/sharedledger"
 )
 
 // Routes proxied to the herdr daemon. Anything else under /api is 404 so a
@@ -90,6 +92,9 @@ type Server struct {
 	dispatch *dispatchState
 	// ledger is this machine's own job events and running count.
 	ledger *jobLedger
+	// sharedLedger is the task ledger the board reads. It is in-memory until
+	// HERDR_WEB_LEDGER_NATS wires the NATS adapter; the UI contract is the same.
+	sharedLedger sharedledger.Ledger
 	// tailnetFacing is set from the listeners: a console with no Tailscale bind
 	// is local-only and must not discover or follow the tailnet.
 	tailnetFacing bool
@@ -103,6 +108,7 @@ func NewServer(socketPath string, webFS fs.FS) *Server {
 		fleetSeeds:    defaultFleetSeeds,
 		fleetAddr:     defaultFleetAddr,
 		ledger:        newJobLedger(),
+		sharedLedger:  sharedledger.NewMemory(),
 		dispatch:      newDispatchState(),
 		tailnetFacing: true,
 	}
@@ -796,6 +802,7 @@ func (s *Server) Handler() http.Handler {
 		s.handleJobStatus(w, r, rest)
 	})
 	mux.HandleFunc("/api/v1/herdr/agents", s.handleAgentKinds)
+	mux.HandleFunc("/api/v1/ledger/tasks", s.handleLedgerTasks)
 
 	mux.HandleFunc("/api/v1/herdr/workspaces", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
