@@ -2417,15 +2417,29 @@ body::before {
   gap: 2px;
 }
 
+/* Address, build, then the stale tag. Three flex children with
+   space-between put the build wherever the tag left room, so the builds of
+   the fleet could not be read as a column — which is the only reason to list
+   them. The tag's track is reserved on every row to keep the builds aligned. */
 .hostpanel__fleet-list li {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 3.2rem;
+  align-items: baseline;
   gap: 10px;
   font-size: var(--step-fine);
 }
 
 .hostpanel__fleet-addr {
+  min-width: 0;
+  overflow: hidden;
   color: var(--ink);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.hostpanel__fleet-list li > .hostpanel__dim {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Dispatching one prompt to several machines: targets, then what came back. */
