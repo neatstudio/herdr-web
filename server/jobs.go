@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"herdr-web/server/sharedledger"
 )
 
 // A job is one agent started on one machine for one prompt.
@@ -180,13 +182,17 @@ func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 			writeBadGateway(w, "herdr_job_failed", err)
 			return
 		}
-		s.ledger.started(created.Workspace.WorkspaceID, paneID, kind, label, strings.TrimSpace(request.TaskID))
+		s.ledger.started(created.Workspace.WorkspaceID, paneID, kind, label, sharedTaskID(request, paneID))
+		taskID := sharedTaskID(request, paneID)
+		if err := s.startSharedTask(ctx, request, taskID, label); err != nil {
+			fmt.Fprintf(os.Stderr, "herdr-web: shared task %s: %v\n", taskID, err)
+		}
 		writeJSON(w, http.StatusOK, jobStarted{
 			OK:          true,
 			JobID:       paneID,
 			WorkspaceID: created.Workspace.WorkspaceID,
 			PaneID:      paneID,
-			TaskID:      strings.TrimSpace(request.TaskID),
+			TaskID:      taskID,
 			Branch:      strings.TrimSpace(request.Branch),
 		})
 		return
@@ -210,13 +216,17 @@ func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.ledger.started(created.Workspace.WorkspaceID, paneID, request.Kind, label, strings.TrimSpace(request.TaskID))
+	s.ledger.started(created.Workspace.WorkspaceID, paneID, request.Kind, label, sharedTaskID(request, paneID))
+	taskID := sharedTaskID(request, paneID)
+	if err := s.startSharedTask(ctx, request, taskID, label); err != nil {
+		fmt.Fprintf(os.Stderr, "herdr-web: shared task %s: %v\n", taskID, err)
+	}
 	writeJSON(w, http.StatusOK, jobStarted{
 		OK:          true,
 		JobID:       paneID,
 		WorkspaceID: created.Workspace.WorkspaceID,
 		PaneID:      paneID,
-		TaskID:      strings.TrimSpace(request.TaskID),
+		TaskID:      taskID,
 		Branch:      strings.TrimSpace(request.Branch),
 	})
 }
@@ -304,6 +314,81 @@ func agentAvailable(kind string) bool {
 		}
 	}
 	return false
+}
+
+// localNodeID is the Phase 2 identity: the hostname. The Tailscale node key and
+// real signatures replace it without changing the ledger contract.
+func localNodeID() string {
+	host, err := os.Hostname()
+	if err != nil || strings.TrimSpace(host) == "" {
+		return "local"
+	}
+	return strings.TrimSpace(host)
+}
+
+// sharedTaskID ties a job to its shared-ledger task. A dispatched task already
+// has an id; a directly started job gets one derived from its pane.
+func sharedTaskID(request jobRequest, paneID string) string {
+	if id := strings.TrimSpace(request.TaskID); id != "" {
+		return id
+	}
+	return "job-" + paneID
+}
+
+// startSharedTask creates and claims the dev lease for a job. A failure here is
+// logged rather than failing the start: the agent is already running, and the
+// local ledger still records it; the board can catch up on the next attempt.
+func (s *Server) startSharedTask(ctx context.Context, request jobRequest, taskID, label string) error {
+	if s.sharedLedger == nil || taskID == "" {
+		return nil
+	}
+	task, err := s.sharedLedger.Get(ctx, taskID)
+	if errors.Is(err, sharedledger.ErrNotFound) {
+		task, err = s.sharedLedger.Create(ctx, sharedledger.Task{
+			ID: taskID, Title: label, Prompt: request.Prompt, Cwd: request.Cwd,
+			Branch: request.Branch, Kind: request.Kind, Weight: request.Weight,
+		})
+		if err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+	_, err = s.sharedLedger.Claim(ctx, taskID, sharedledger.RoleDev, localNodeID(), 30*time.Minute, task.Version)
+	return err
+}
+
+// attestSharedTask marks the dev result. It is idempotent: a task already out of
+// dev_claimed (or owned by another node) is left alone.
+func (s *Server) attestSharedTask(ctx context.Context, taskID string) error {
+	if s.sharedLedger == nil || taskID == "" {
+		return nil
+	}
+	task, err := s.sharedLedger.Get(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	if task.State != sharedledger.DevClaimed || task.Owner != localNodeID() {
+		return nil
+	}
+	_, err = s.sharedLedger.Attest(ctx, taskID, sharedledger.RoleDev, localNodeID(), "", "", "local", task.Version)
+	return err
+}
+
+// cancelSharedTask releases the shared task when the workspace is stopped.
+func (s *Server) cancelSharedTask(ctx context.Context, taskID string) error {
+	if s.sharedLedger == nil || taskID == "" {
+		return nil
+	}
+	task, err := s.sharedLedger.Get(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	if task.State == sharedledger.Cancelled || task.State == sharedledger.Merged {
+		return nil
+	}
+	_, err = s.sharedLedger.Cancel(ctx, taskID, localNodeID(), "job stopped")
+	return err
 }
 
 // runInPane runs a command in a pane. herdr 0.9.5 has pane.run; 0.9.0 does not,
@@ -413,7 +498,7 @@ func (s *Server) handleJobStatus(w http.ResponseWriter, r *http.Request, paneID 
 	if isJob {
 		kind = event.Kind
 	}
-	if commandJob {
+	if commandJob || (statusErr != nil && strings.Contains(read.Text, jobDoneMarker)) {
 		status = "running"
 		if output, code, done := splitJobOutput(read.Text); done {
 			read.Text = output
@@ -428,6 +513,17 @@ func (s *Server) handleJobStatus(w http.ResponseWriter, r *http.Request, paneID 
 		return
 	} else if status == "" {
 		status = "unknown"
+	}
+	if isJob && (status == "done" || status == "error") {
+		taskID := event.TaskID
+		if taskID == "" {
+			taskID = sharedTaskID(jobRequest{}, paneID)
+		}
+		if err := s.attestSharedTask(ctx, taskID); err != nil {
+			fmt.Fprintf(os.Stderr, "herdr-web: attest shared task %s: %v\n", taskID, err)
+		}
+		// Completion releases the execution slot; the workspace/result stays.
+		s.ledger.stopped(event.WorkspaceID)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":     true,
@@ -452,12 +548,22 @@ func (s *Server) handleJobStop(w http.ResponseWriter, r *http.Request, workspace
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
+	event, hadJob := s.ledger.eventForWorkspace(workspaceID)
 	if err := s.client().Call(ctx, "workspace.close",
 		map[string]any{"workspace_id": workspaceID}, nil); err != nil {
 		writeBadGateway(w, "herdr_job_failed", err)
 		return
 	}
 	s.ledger.stopped(workspaceID)
+	if hadJob {
+		taskID := event.TaskID
+		if taskID == "" {
+			taskID = sharedTaskID(jobRequest{}, event.PaneID)
+		}
+		if err := s.cancelSharedTask(ctx, taskID); err != nil {
+			fmt.Fprintf(os.Stderr, "herdr-web: cancel shared task %s: %v\n", taskID, err)
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "workspaceId": workspaceID})
 }
 

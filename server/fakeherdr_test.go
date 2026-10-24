@@ -19,6 +19,8 @@ type fakeHerdr struct {
 	sentText []string
 	sentKeys []string
 	readText string
+	// agentStatus feeds agent.get so job completion can be tested.
+	agentStatus string
 	// failMethods makes the named methods answer with a daemon error.
 	failMethods map[string]bool
 	// unknownMethods makes the named methods answer like an older herdr that
@@ -146,6 +148,10 @@ func serveFake(conn net.Conn, state *fakeHerdr) {
 			// The split route reads the tab from here, because herdr splits the
 			// focused tab rather than an arbitrary pane.
 			"tab_id": "w1:t2",
+		}}
+	case "agent.get":
+		result = map[string]any{"type": "agent_info", "agent": map[string]any{
+			"agent_status": state.agentStatus, "pane_id": "w1:p1", "kind": "claude",
 		}}
 	case "pane.read":
 		result = map[string]any{"type": "pane_read", "read": map[string]any{

@@ -3,6 +3,7 @@
 > 状态：**草案，待负责人批准**。日期：2026-10-24。
 > **Phase 1 已落地（2026-10-24）**：契约与内存实现 `server/sharedledger/`，含并发认领、租约过期、独立评审、签名、状态机、事件与列表测试；`go test ./server/sharedledger` 通过。真实节点签名、UI 尚未开始。
 > **Phase 2 已落地（2026-10-24）**：NATS JetStream 适配器 `server/sharedledger/nats.go`、共享看板只读 API `GET /api/v1/ledger/tasks`、`HERDR_WEB_LEDGER_NATS` 注入；NATS 生命周期与并发认领测试通过。
+> **Phase 2.5 已落地（2026-10-24）**：job start 创建/认领 `dev_claimed` 共享任务，status `done/error` attest `dev_done` 并释放本地执行槽，stop 取消共享任务；测试覆盖。
 > 上位约束：[SPECS](../SPECS.md) 的不变量与安全边界仍然有效；本规格只扩展“任务状态与入口”，不改变“仅本人受控设备”的前提。
 > 本文的目标是防止跑偏：先定契约，再写代码；每个阶段都有可执行验收。
 

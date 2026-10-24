@@ -239,6 +239,16 @@ func (l *jobLedger) eventForPane(paneID string) (ledgerEvent, bool) {
 	return ledgerEvent{}, false
 }
 
+func (l *jobLedger) eventForWorkspace(workspaceID string) (ledgerEvent, bool) {
+	if l == nil {
+		return ledgerEvent{}, false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	event, ok := l.running[workspaceID]
+	return event, ok
+}
+
 func (l *jobLedger) snapshot() []ledgerEvent {
 	if l == nil {
 		return []ledgerEvent{}
