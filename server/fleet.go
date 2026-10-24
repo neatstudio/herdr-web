@@ -304,14 +304,11 @@ func (s *Server) fleetSelfPeer() fleetPeer {
 	}
 }
 
-// fleetSelfID is stable across restarts, so a re-addressed console updates its
-// own row instead of adding another.
+// fleetSelfID is this console's stable identity. Tailscale's node key is the
+// same identity the ledger uses; a hostname fallback keeps a daemon-less
+// console working.
 func (s *Server) fleetSelfID() string {
-	host, err := os.Hostname()
-	if err != nil || strings.TrimSpace(host) == "" {
-		host = "console"
-	}
-	return strings.TrimSpace(host)
+	return localNodeID()
 }
 
 // fleetTargets is who to say hello to: the seeds, then a few known peers.
