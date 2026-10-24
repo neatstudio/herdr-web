@@ -1,19 +1,53 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  fetchAllPanes,
+  fetchWorkspaces,
   quotePath,
   sendPaneKeys,
   sendPaneText,
   terminalKeyName,
   typePaneText,
   uploadFile,
+  type HerdrPane,
+  type HerdrWorkspace,
 } from "@/lib/herdr";
 import { PROMPT_ID, keyboardIsPrimary, shouldClaimKey } from "@/lib/focus";
+import { paneName, toneOf } from "@/lib/fleet";
+import { findPaths } from "@/lib/paths";
+import {
+  APP_ACTIONS,
+  applyCompletion,
+  mentionItems,
+  mentionQuery,
+  readDraft,
+  scoreMatches,
+  slashQuery,
+  writeDraft,
+  type ComposerAction,
+  type ComposerItem,
+  type DraftStore,
+} from "@/lib/composer";
 
 const HISTORY_MAX = 50;
 /** Longest line that is typed key by key before it becomes a paste. */
 const TYPE_LIMIT = 400;
 /** The box grows to this many lines, then scrolls. */
 const MAX_ROWS = 8;
+/** How often pane status is re-read, and only while the tab is visible. */
+const STATUS_POLL_MS = 5000;
+/** A keyboard may cover at most this share of the viewport before lifting stops. */
+const LIFT_MAX_RATIO = 0.6;
+
+type PaletteKind = "slash" | "mention";
+
+/** The open completion menu, in the coordinates of the draft it edits. */
+type Palette = {
+  kind: PaletteKind;
+  start: number;
+  end: number;
+  query: string;
+  items: ComposerItem[];
+};
 
 /**
  * Whether a line can be typed instead of pasted: a key carries one ASCII
@@ -21,6 +55,20 @@ const MAX_ROWS = 8;
  */
 function canType(text: string): boolean {
   return text.length > 0 && text.length <= TYPE_LIMIT && /^[\x20-\x7e]+$/.test(text);
+}
+
+/**
+ * The operator's draft store, or null where a browser refuses it (private
+ * windows, a storage policy). A missing draft is recoverable; a throwing
+ * keystroke handler is not, so every access goes through the quiet helpers in
+ * `lib/composer.ts`.
+ */
+function draftStore(): DraftStore | null {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -36,18 +84,102 @@ function canType(text: string): boolean {
  *   - Raw mode forwards every key to the pane, which is the only way shell
  *     completion, arrow-key history and Ctrl-C can work: they belong to the
  *     pane's line editor, not to a text box.
+ *
+ * On top of that this is the mobile input layer: "/" offers the app's own
+ * views, "@" offers panes, workspaces and the paths this client knows, drafts
+ * are kept per pane, and a working agent gets an interrupt control.
  */
-export function PromptBar({ paneId }: { paneId: string }) {
-  const [value, setValue] = useState("");
+export function PromptBar({
+  paneId,
+  onAction,
+}: {
+  paneId: string;
+  onAction?: (action: ComposerAction) => void;
+}) {
+  const [store] = useState<DraftStore | null>(draftStore);
+  const [value, setValue] = useState(() => readDraft(store, paneId));
+  const [valuePane, setValuePane] = useState(paneId);
+  const [restored, setRestored] = useState(() => value.trim() !== "");
+  const [caret, setCaret] = useState(0);
+  const [menuClosed, setMenuClosed] = useState(false);
+  const [active, setActive] = useState(0);
   const [busy, setBusy] = useState(false);
   const [raw, setRaw] = useState(false);
+  const [panes, setPanes] = useState<HerdrPane[]>([]);
+  const [workspaces, setWorkspaces] = useState<HerdrWorkspace[] | null>(null);
+  const [uploaded, setUploaded] = useState<string[]>([]);
+  const [stopping, setStopping] = useState(false);
+  const [dropping, setDropping] = useState(false);
+  const [uploading, setUploading] = useState(0);
+  const [problem, setProblem] = useState("");
   const history = useRef<string[]>([]);
   const historyIndex = useRef(-1);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
-  const [dropping, setDropping] = useState(false);
-  const [uploading, setUploading] = useState(0);
-  const [problem, setProblem] = useState("");
+  const promptRef = useRef<HTMLDivElement | null>(null);
+  /** Where the caret goes once the text it belongs to is in the DOM. */
+  const pendingCaret = useRef<{ at: number; length: number } | null>(null);
+
+  const pane = panes.find((entry) => entry.id === paneId);
+  const working = toneOf(pane?.agentStatus) === "working";
+  /** One send control, two jobs: an empty box on a working pane can interrupt it. */
+  const stopMode = working && !raw && value.trim() === "";
+
+  /**
+   * Paths this client can offer on "@": what was uploaded in this session and
+   * what the draft already mentions. There is no directory listing endpoint,
+   * so a path the operator has not seen here cannot be completed.
+   */
+  const knownFiles = useMemo(() => {
+    const found = findPaths(value).map((match) => match.path);
+    return Array.from(new Set([...uploaded, ...found]));
+  }, [value, uploaded]);
+
+  const menu = useMemo<Palette | null>(() => {
+    if (raw || menuClosed) {
+      return null;
+    }
+    // App-level slash commands only exist once the app can act on them; an
+    // un-wired composer keeps typing "/..." into the pane exactly as before.
+    if (onAction !== undefined) {
+      const slash = slashQuery(value, caret);
+      // A command is one word: "/tmp/x" is a path, not a command.
+      if (slash !== null && !slash.query.includes("/")) {
+        const items = scoreMatches(slash.query, APP_ACTIONS);
+        if (items.length > 0) {
+          return { kind: "slash", ...slash, items };
+        }
+      }
+    }
+    const mention = mentionQuery(value, caret);
+    if (mention === null) {
+      return null;
+    }
+    const items = scoreMatches(
+      mention.query,
+      mentionItems({
+        panes: panes.map((entry) => ({
+          id: entry.id,
+          name: paneName(entry),
+          agent: entry.displayAgent ?? entry.agent,
+          cwd: entry.cwd,
+        })),
+        workspaces: workspaces ?? [],
+        files: knownFiles,
+      }),
+    );
+    // Nothing to offer is no menu at all: the text falls through to the pane.
+    return items.length === 0 ? null : { kind: "mention", ...mention, items };
+  }, [caret, knownFiles, menuClosed, onAction, panes, raw, value, workspaces]);
+
+  const activeIndex = menu === null ? -1 : Math.min(active, menu.items.length - 1);
+  const menuKey = menu === null ? "" : `${menu.kind}\u0000${menu.start}\u0000${menu.query}`;
+
+  // A new menu starts at its first entry, so Enter always accepts something
+  // the operator has seen.
+  useEffect(() => {
+    setActive(0);
+  }, [menuKey]);
 
   /**
    * Attach files by putting their paths on the herdr host into the prompt.
@@ -69,9 +201,15 @@ export function PromptBar({ paneId }: { paneId: string }) {
           continue;
         }
         paths.push(quotePath(stored.path));
+        // An uploaded path is a path this client now knows, so "@" can offer it.
+        setUploaded((current) =>
+          current.includes(stored.path) ? current : [...current, stored.path],
+        );
       }
       if (paths.length > 0) {
-        setValue((current) => (current === "" ? `${paths.join(" ")} ` : `${current} ${paths.join(" ")} `));
+        setValue((current) =>
+          current === "" ? `${paths.join(" ")} ` : `${current} ${paths.join(" ")} `,
+        );
         inputRef.current?.focus();
       }
     } finally {
@@ -87,12 +225,24 @@ export function PromptBar({ paneId }: { paneId: string }) {
     }
   }, [paneId]);
 
-  // Leave raw mode when the pane changes: those keys belong to the pane that
-  // was focused when the operator turned it on.
+  /**
+   * A pane's draft comes back with the pane. The shell keys the composer by
+   * pane id, so this is mostly the mount path; the dependency also covers a
+   * switch without a remount, and `valuePane` keeps the write effect below from
+   * saving the old pane's text under the new pane's key in between.
+   *
+   * Losing a draft is worse than keeping a stale one, and a draft the operator
+   * just sent is gone for good: sending clears the stored copy.
+   */
   useEffect(() => {
+    const draft = readDraft(store, paneId);
+    setValue(draft);
+    setValuePane(paneId);
+    setRestored(draft.trim() !== "");
+    setMenuClosed(false);
     setRaw(false);
-    setValue("");
-  }, [paneId]);
+    pendingCaret.current = { at: draft.length, length: draft.length };
+  }, [paneId, store]);
 
   // Grow with the content, up to MAX_ROWS lines, then scroll.
   useEffect(() => {
@@ -104,6 +254,109 @@ export function PromptBar({ paneId }: { paneId: string }) {
     const line = parseFloat(getComputedStyle(box).lineHeight) || 17;
     box.style.height = `${Math.min(box.scrollHeight, line * MAX_ROWS)}px`;
   }, [value, raw]);
+
+  // Keep the caret state in step with the box, so a menu is computed from where
+  // the operator actually is. A completion moves the caret itself; that move is
+  // held in `pendingCaret` until the text it belongs to has been rendered.
+  useEffect(() => {
+    const box = inputRef.current;
+    if (box === null) {
+      return;
+    }
+    const pending = pendingCaret.current;
+    if (pending !== null) {
+      if (box.value.length !== pending.length) {
+        return;
+      }
+      pendingCaret.current = null;
+      box.setSelectionRange(pending.at, pending.at);
+      setCaret(pending.at);
+      return;
+    }
+    setCaret(box.selectionStart ?? value.length);
+  }, [value, paneId]);
+
+  // Every keystroke is a draft; an emptied box is no draft at all.
+  useEffect(() => {
+    if (valuePane !== paneId) {
+      return;
+    }
+    writeDraft(store, paneId, value);
+  }, [store, paneId, value, valuePane]);
+
+  useEffect(() => {
+    if (value === "") {
+      setRestored(false);
+    }
+  }, [value]);
+
+  // Whether the pane is working decides which keys the composer owns. The app
+  // polls the fleet on its own; this poll is the composer's view of one pane,
+  // and it costs nothing while the tab is hidden.
+  useEffect(() => {
+    let alive = true;
+    async function refresh(): Promise<void> {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+      const next = await fetchAllPanes();
+      if (alive && next !== null) {
+        setPanes(next);
+      }
+    }
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), STATUS_POLL_MS);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, []);
+
+  // Workspaces are only needed once a mention menu is open; fetch them then.
+  const paletteKind = menu === null ? null : menu.kind;
+  useEffect(() => {
+    if (paletteKind !== "mention" || workspaces !== null) {
+      return;
+    }
+    let alive = true;
+    void fetchWorkspaces().then((next) => {
+      if (alive && next !== null) {
+        setWorkspaces(next);
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, [paletteKind, workspaces]);
+
+  // The on-screen keyboard shrinks the visual viewport instead of the window on
+  // iOS, which would leave the send button underneath it. Lift the composer by
+  // what the keyboard covers, and never by more than a phone screenful.
+  useEffect(() => {
+    const target = promptRef.current;
+    const viewport = window.visualViewport;
+    if (target === null || viewport === null) {
+      return;
+    }
+    const box: HTMLDivElement = target;
+    const view: VisualViewport = viewport;
+    function apply(): void {
+      const hidden = Math.max(0, Math.round(window.innerHeight - view.height));
+      const lift =
+        hidden > 0 ? Math.min(hidden, Math.round(window.innerHeight * LIFT_MAX_RATIO)) : 0;
+      box.style.transform = lift > 0 ? `translateY(-${lift}px)` : "";
+    }
+    apply();
+    view.addEventListener("resize", apply);
+    view.addEventListener("scroll", apply);
+    return () => {
+      view.removeEventListener("resize", apply);
+      view.removeEventListener("scroll", apply);
+      box.style.transform = "";
+    };
+  }, []);
 
   // Reaching for the prompt from anywhere on the page. Keys that belong to a
   // focused control are left alone, so the page stays keyboard navigable.
@@ -203,6 +456,59 @@ export function PromptBar({ paneId }: { paneId: string }) {
     await handOff(value, ["Tab"]);
   }
 
+  /** Send one terminal key to the pane while its agent is working. */
+  async function interrupt(key: string): Promise<void> {
+    if (stopping) {
+      return;
+    }
+    setStopping(true);
+    try {
+      await sendPaneKeys(paneId, [key]);
+    } finally {
+      setStopping(false);
+    }
+  }
+
+  /**
+   * Take the highlighted menu entry.
+   *
+   * A slash entry is an app action: its token leaves the box (the rest of the
+   * draft stays) and the app — never the pane — is told what was chosen.
+   * `upload` is the exception: the file input belongs to this component, so the
+   * composer opens it itself. A mention entry inserts text at the caret.
+   */
+  function accept(item: ComposerItem): void {
+    if (menu === null) {
+      return;
+    }
+    const action = menu.kind === "slash" ? item.action : undefined;
+    const completed = applyCompletion(value, caret, {
+      start: menu.start,
+      end: menu.end,
+      query: menu.query,
+      value: action === undefined ? item.value : "",
+    });
+    let text = completed.text;
+    let at = completed.caret;
+    // A mention at the end of the line gets a trailing space, so the next word
+    // starts clean instead of running into the inserted token.
+    if (action === undefined && menu.kind === "mention" && menu.end >= value.length) {
+      text += " ";
+      at += 1;
+    }
+    pendingCaret.current = { at, length: text.length };
+    setValue(text);
+    setCaret(at);
+    setMenuClosed(true);
+    setActive(0);
+    if (action === "upload") {
+      fileRef.current?.click();
+    } else if (action !== undefined) {
+      onAction?.(action);
+    }
+    inputRef.current?.focus();
+  }
+
   function onRawKey(event: React.KeyboardEvent<HTMLTextAreaElement>): void {
     // Escape belongs to the pane: it cancels a menu, leaves insert mode, closes
     // a dialog. Taking it to leave raw mode is what made "/model" impossible to
@@ -237,6 +543,46 @@ export function PromptBar({ paneId }: { paneId: string }) {
       void sendPaneKeys(paneId, [`ctrl+${event.key.toLowerCase()}`]);
       return;
     }
+    if (event.key === "Escape") {
+      // Escape dismisses the menu it opened before it touches the keyboard.
+      if (menu !== null) {
+        event.preventDefault();
+        setMenuClosed(true);
+        return;
+      }
+      // A working agent is the one state the composer owns: Shift+Esc interrupts
+      // it, because plain Escape still means "raw keyboard" here.
+      if (event.shiftKey && working) {
+        event.preventDefault();
+        void interrupt("esc");
+        return;
+      }
+      // Escape closes whatever is open before it changes the keyboard: a viewer
+      // or a sheet also listens for it, and swallowing it here would leave the
+      // overlay open with no way out.
+      if (document.querySelector(".viewer, .sheet, .hostpanel, [role='dialog']") !== null) {
+        return;
+      }
+      // Otherwise raw mode is how completion, history and a TUI's menus work:
+      // they are the pane's line editor, and a text box cannot stand in for them.
+      event.preventDefault();
+      setRaw(true);
+      return;
+    }
+    if (menu !== null) {
+      if (event.key === "Tab" || (event.key === "Enter" && !event.shiftKey)) {
+        event.preventDefault();
+        accept(menu.items[activeIndex]);
+        return;
+      }
+      if (!event.shiftKey && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+        event.preventDefault();
+        const count = menu.items.length;
+        const step = event.key === "ArrowDown" ? 1 : -1;
+        setActive((activeIndex + step + count) % count);
+        return;
+      }
+    }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       void send(value);
@@ -260,19 +606,6 @@ export function PromptBar({ paneId }: { paneId: string }) {
       void complete();
       return;
     }
-    if (event.key === "Escape") {
-      // Escape closes whatever is open before it changes the keyboard: a viewer
-      // or a sheet also listens for it, and swallowing it here would leave the
-      // overlay open with no way out.
-      if (document.querySelector(".viewer, .sheet, .hostpanel, [role='dialog']") !== null) {
-        return;
-      }
-      // Otherwise raw mode is how completion, history and a TUI's menus work:
-      // they are the pane's line editor, and a text box cannot stand in for them.
-      event.preventDefault();
-      setRaw(true);
-      return;
-    }
     if (event.key === "ArrowUp" && !event.shiftKey) {
       event.preventDefault();
       if (history.current.length === 0) {
@@ -282,7 +615,9 @@ export function PromptBar({ paneId }: { paneId: string }) {
         historyIndex.current < 0
           ? history.current.length - 1
           : Math.max(0, historyIndex.current - 1);
-      setValue(history.current[historyIndex.current] ?? "");
+      const recalled = history.current[historyIndex.current] ?? "";
+      pendingCaret.current = { at: recalled.length, length: recalled.length };
+      setValue(recalled);
       return;
     }
     if (event.key === "ArrowDown" && !event.shiftKey) {
@@ -291,17 +626,21 @@ export function PromptBar({ paneId }: { paneId: string }) {
         return;
       }
       historyIndex.current += 1;
+      const recalled =
+        historyIndex.current >= history.current.length
+          ? ""
+          : (history.current[historyIndex.current] ?? "");
       if (historyIndex.current >= history.current.length) {
         historyIndex.current = -1;
-        setValue("");
-        return;
       }
-      setValue(history.current[historyIndex.current] ?? "");
+      pendingCaret.current = { at: recalled.length, length: recalled.length };
+      setValue(recalled);
     }
   }
 
   return (
     <div
+      ref={promptRef}
       className="prompt"
       data-raw={raw ? "on" : undefined}
       data-drop={dropping ? "on" : undefined}
@@ -321,6 +660,32 @@ export function PromptBar({ paneId }: { paneId: string }) {
         void attach(event.dataTransfer.files);
       }}
     >
+      {menu !== null && (
+        <div
+          className="prompt__palette"
+          role="listbox"
+          aria-label={menu.kind === "slash" ? "commands" : "mentions"}
+        >
+          {menu.items.map((item, index) => (
+            <button
+              key={`${item.kind}:${item.value}`}
+              type="button"
+              role="option"
+              tabIndex={-1}
+              aria-selected={index === activeIndex}
+              className={index === activeIndex ? "prompt__opt prompt__opt--active" : "prompt__opt"}
+              // Keep the keyboard in the box: a mousedown that moves focus would
+              // blur the textarea before the click lands.
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => accept(item)}
+            >
+              <span className="prompt__kind">{item.kind}</span>
+              <span>{item.label}</span>
+              {item.hint !== undefined && <span className="prompt__hint">{item.hint}</span>}
+            </button>
+          ))}
+        </div>
+      )}
       <span className="prompt__glyph" aria-hidden>
         {raw ? "⌨" : "❯"}
       </span>
@@ -337,7 +702,13 @@ export function PromptBar({ paneId }: { paneId: string }) {
         value={raw ? "" : value}
         disabled={busy}
         readOnly={raw}
-        onChange={(event) => setValue(event.target.value)}
+        onChange={(event) => {
+          setValue(event.target.value);
+          setCaret(event.target.selectionStart ?? event.target.value.length);
+          setMenuClosed(false);
+        }}
+        onSelect={(event) => setCaret(event.currentTarget.selectionStart ?? 0)}
+        onClick={(event) => setCaret(event.currentTarget.selectionStart ?? 0)}
         onKeyDown={onKeyDown}
         onPaste={(event) => {
           // An image on the clipboard arrives as a file with no name of its
@@ -402,6 +773,11 @@ export function PromptBar({ paneId }: { paneId: string }) {
         >
           {uploading > 0 ? "…" : "＋"}
         </button>
+        {restored && value.trim() !== "" && (
+          <span className="prompt__draft" title="draft kept for this pane">
+            draft
+          </span>
+        )}
         <div className="prompt__hints" aria-hidden>
           {raw ? (
             <span>
@@ -418,17 +794,35 @@ export function PromptBar({ paneId }: { paneId: string }) {
               <span>
                 <kbd>⇧⏎</kbd> newline
               </span>
+              {working && (
+                <span>
+                  <kbd>⇧esc</kbd> stop
+                </span>
+              )}
             </>
           )}
         </div>
         <button
           type="button"
           id="herdr-send"
-          className="prompt__send"
-          disabled={busy || raw || value.trim() === ""}
-          onClick={() => void send(value)}
+          className={stopMode ? "prompt__send prompt__stop" : "prompt__send"}
+          title={stopMode ? "interrupt the agent (ctrl+c)" : "send to the pane (enter)"}
+          aria-label={stopMode ? "Interrupt the agent" : "Send to the pane"}
+          disabled={stopMode ? stopping : busy || raw || value.trim() === ""}
+          onClick={() => {
+            if (stopMode) {
+              void interrupt("ctrl+c");
+              return;
+            }
+            void send(value);
+          }}
         >
-          send
+          <span className="prompt__send-word" aria-hidden>
+            send
+          </span>
+          <span className="prompt__send-glyph" aria-hidden>
+            {stopMode ? "■" : "↑"}
+          </span>
         </button>
       </div>
     </div>

@@ -1,0 +1,160 @@
+/* ------------------------------------------------------ terminal lens */
+/* The xterm lens and the touch key bar that feeds it. Both live on the
+   session stage; nothing here reaches the desktop mirrored-stage tiles, so the
+   selectors are scoped to .term and .keys rather than to a shell variant.
+
+   Every colour is a --ui-* alias over the console palette (session.css), so
+   the light and dark themes recolour the terminal without a second palette
+   here. The 16 ANSI colours have no --ui-* alias of their own: they are read
+   from --ansi-0..15 by the component and handed to xterm as a theme, because
+   xterm paints its own cells and cannot use a custom property per cell. */
+
+/* The lens is a column: the grid takes the height, the key bar keeps its own. */
+.term {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--ui-term-bg, var(--paper));
+  color: var(--ui-term-fg, var(--ink));
+}
+
+/* The box the grid is measured against. FitAddon reads this element's size, so
+   it must be the one that flexes; .term__xterm only pins xterm to it. */
+.term__host {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--ui-term-bg, var(--paper));
+}
+
+/* The one-line apology shown when the lazy chunk cannot be fetched. The pane is
+   still alive; the lens must say so rather than render an empty screen. */
+.term__host > p {
+  margin: 0;
+  padding: 16px;
+  color: var(--ui-dim, var(--ink-dim));
+  font-family: var(--ui-mono, var(--font-mono));
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* xterm paints onto canvases inside absolutely-positioned children, so it has
+   no intrinsic size: it needs a full-size parent or it collapses to nothing. */
+.term__xterm {
+  position: absolute;
+  inset: 0;
+}
+
+.term__xterm > .xterm {
+  width: 100%;
+  height: 100%;
+}
+
+/* Jump back to the newest output. 44px tall because it is the only control
+   floating over the grid and a thumb has to hit it without aiming. */
+.term__jump {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 14px;
+  border: var(--rule-w) solid var(--ui-border-strong, var(--rule-strong));
+  border-radius: 999px;
+  background: var(--ui-elev, var(--raised));
+  color: var(--ui-text, var(--ink));
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.24);
+  font-family: var(--ui-label, var(--font-label));
+  font-size: var(--ui-meta, 11px);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.term__jump:active {
+  background: var(--ui-panel, var(--surface));
+}
+
+/* ------------------------------------------------------------ key bar */
+/* Touch only. Wide frames keep the hardware keyboard and give the grid every
+   row, which is the whole point of the terminal lens on a desktop.
+
+   The bar never wraps: eleven 36px keys plus gaps are wider than a phone, so it
+   scrolls sideways under an edge fade instead of stealing a second row from the
+   terminal. Its own height grows by the home-indicator inset (minus the 8px the
+   composer already pads with), so the two never overlap. */
+
+.keys {
+  display: none;
+}
+
+@media (pointer: coarse), (max-width: 720px) {
+  .keys {
+    display: flex;
+    flex: none;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 4px;
+    min-height: 48px;
+    padding: 2px 8px;
+    padding-bottom: calc(2px + max(0px, env(safe-area-inset-bottom) - 8px));
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    border-top: var(--rule-w) solid var(--ui-border, var(--rule));
+    background: var(--ui-panel, var(--surface));
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 8px, #000 calc(100% - 8px), transparent 100%);
+    mask-image: linear-gradient(to right, transparent 0, #000 8px, #000 calc(100% - 8px), transparent 100%);
+  }
+
+  .keys::-webkit-scrollbar {
+    display: none;
+  }
+
+  .keys__key {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 44px;
+    padding: 0;
+    border: var(--rule-w) solid var(--ui-border-strong, var(--rule-strong));
+    border-radius: 8px;
+    background: var(--ui-elev, var(--raised));
+    color: var(--ui-text, var(--ink));
+    font-family: var(--ui-mono, var(--font-mono));
+    font-size: 13px;
+    line-height: 1;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: pointer;
+  }
+
+  .keys__key:focus-visible {
+    outline: 2px solid var(--ui-accent, var(--accent));
+    outline-offset: 1px;
+  }
+
+  /* A latch has to be readable at a glance, so it fills the key instead of
+     only tinting its border: colour alone is not a state anyone can find. */
+  .keys__key--armed {
+    border-color: var(--ui-accent, var(--accent));
+    background: var(--ui-accent, var(--accent));
+    color: var(--ui-accent-ink, var(--paper));
+  }
+}

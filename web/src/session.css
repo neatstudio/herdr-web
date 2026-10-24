@@ -1,0 +1,156 @@
+/* ------------------------------------------------------- session lenses */
+/* The phone's primary surface: a session is read as a document, and the
+   terminal is the lens you switch to when the TUI needs the whole screen.
+   Wide screens keep the mirrored terminal tiles; these rules only ever match
+   the frame the lenses live in, so nothing here reaches the desktop stage.
+
+   Tokens are aliases over the console palette, never a second palette: the
+   light and dark themes both re-point --paper/--ink/--rule, so every --ui-*
+   follows automatically. */
+
+:root {
+  --ui-bg: var(--paper);
+  --ui-panel: var(--surface);
+  --ui-elev: var(--raised);
+  --ui-border: var(--rule);
+  --ui-border-strong: var(--rule-strong);
+  --ui-text: var(--ink);
+  --ui-dim: var(--ink-dim);
+  --ui-faint: var(--ink-faint);
+  --ui-accent: var(--accent);
+  --ui-accent-ink: var(--accent-ink);
+  --ui-working: var(--working);
+  --ui-blocked: var(--blocked);
+  --ui-idle: var(--idle);
+  --ui-done: var(--done);
+  --ui-mono: var(--font-mono);
+  --ui-label: var(--font-label);
+  --ui-term-bg: var(--paper);
+  --ui-term-fg: var(--ink);
+
+  /* Ovis's measured type and geometry, kept because it is what makes a long
+     session readable on a phone: 15px prose, one 26px row per tool call, and
+     a lane that never runs the full width of a wide window. */
+  --ui-body: 15px;
+  --ui-meta: 11px;
+  --ui-row: 26px;
+  --ui-lane: min(100% - 24px, 820px);
+}
+
+/* The one child that takes the leftover height of the stage. The pane strip
+   and the composer keep theirs (.strip and .prompt are flex: none). */
+.lens {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--ui-bg);
+  color: var(--ui-text);
+}
+
+.lens__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* A lens fills the body; it scrolls inside itself and never grows the stage. */
+.lens__body > * {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* ------------------------------------------------------------ lens switch */
+/* Two words, no icons: at this size an icon has to be learned and a word does
+   not. Hairline box, micro label type, the active side raised one step. The
+   hit area is padded out to 44px with a pseudo-element instead of a taller
+   control, because the header is 46px tall on a phone. */
+
+.lens__switch {
+  display: flex;
+  flex: none;
+  align-items: stretch;
+  border: var(--rule-w) solid var(--rule-strong);
+  background: var(--surface);
+}
+
+.lens__opt {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-family: var(--font-label);
+  font-size: var(--step-micro);
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.lens__opt + .lens__opt {
+  border-left: var(--rule-w) solid var(--rule);
+}
+
+.lens__opt::after {
+  content: "";
+  position: absolute;
+  inset: -10px -2px;
+}
+
+.lens__opt:hover {
+  color: var(--ink);
+}
+
+.lens__opt[aria-pressed="true"] {
+  background: var(--raised);
+  color: var(--ink);
+}
+
+.lens__opt[aria-pressed="true"]::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  background: var(--accent);
+}
+
+.lens__opt:focus-visible {
+  outline: 1px solid var(--ink);
+  outline-offset: -1px;
+}
+
+/* The lens names the state itself (the chat header says "working", the key
+   bar says "terminal"), so the header's status box is the first thing to go
+   when a 320px phone runs out of room. */
+@media (max-width: 420px) {
+  .stage--lens .stage__status {
+    display: none;
+  }
+}
+
+/* The footer counts workspaces, panes and the poll interval: useful while
+   building, worth no lines of a phone screen. Ovis strips its chrome at the
+   same width, and the reading surface is the point. */
+@media (max-width: 560px) {
+  .shell > .statusline {
+    display: none;
+  }
+}
+
+/* Nothing here may animate for a reader who asked for stillness. */
+@media (prefers-reduced-motion: reduce) {
+  .lens__opt {
+    transition: none;
+  }
+}

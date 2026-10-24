@@ -7,6 +7,8 @@ import { HerdrPanel } from "@/components/HerdrPanel";
 import { DispatchSheet } from "@/components/DispatchSheet";
 import { NewWorkspace } from "@/components/NewWorkspace";
 import { TabStage } from "@/components/TabStage";
+import { LensSwitch } from "@/components/session/LensSwitch";
+import { SessionStage } from "@/components/session/SessionStage";
 import { Masthead } from "@/components/Masthead";
 import { TargetMenu, type MenuTarget } from "@/components/TargetMenu";
 import { PromptBar } from "@/components/PromptBar";
@@ -22,6 +24,7 @@ import {
   splitPane,
   fetchStatus,
   fetchWorkspaces,
+  sendPaneKeys,
   type Fleet,
   type HerdrPane,
   type HerdrStatus,
@@ -31,10 +34,13 @@ import { arrangeTiles, tabsOf, type PaneLayout } from "@/lib/layout";
 import {
   TONE_LABEL,
   mostUrgentPane,
+  paneAgent,
   toneOf,
   type AgentPane,
   type PageTheme,
 } from "@/lib/fleet";
+import { defaultLens, readStoredLens, storeLens, type Lens } from "@/lib/lens";
+import type { ComposerAction } from "@/lib/composer";
 import { longPressHandlers } from "@/lib/press";
 import {
   applyTheme,
@@ -99,6 +105,9 @@ export function App() {
   const [dispatch, setDispatch] = useState(false);
   const [fleetView, setFleetView] = useState<Fleet | null>(null);
   const [narrow, setNarrow] = useState(false);
+  // Which register the session is being read in on a phone. Seeded per pane by
+  // the effect below; a shell ignores it and keeps the terminal.
+  const [lens, setLens] = useState<Lens>("terminal");
   // Panes whose working directory is not on this host: herdr can drive panes on
   // another machine over SSH, and a preview there cannot work from here.
   const [remotePanes, setRemotePanes] = useState<Set<string>>(() => new Set());
@@ -251,6 +260,62 @@ export function App() {
     [panes, shownWorkspaceId],
   );
   const tiles = useMemo(() => arrangeTiles(layout, narrow ? "stack" : "side"), [layout, narrow]);
+  // A shell has no transcript to read: `pane.read` would return a prompt and
+  // nothing else. The agent name is the honest test — `agentStatus` is
+  // "unknown" for every shell, so testing it would hide the switch from the
+  // panes whose agents report nothing.
+  const hasAgent = activePane !== null && paneAgent(activePane) !== "";
+  const drawnLens: Lens = hasAgent ? lens : "terminal";
+
+  // Seed the lens per pane. A stored choice is an instruction the operator gave
+  // for this exact pane and beats the default; without one, a pane with an agent
+  // opens as a transcript and a shell opens as a terminal.
+  useEffect(() => {
+    if (paneId === null) {
+      return;
+    }
+    setLens(readStoredLens(safeStorage(), paneId) ?? defaultLens(hasAgent));
+  }, [paneId, hasAgent]);
+
+  const chooseLens = useCallback(
+    (next: Lens) => {
+      setLens(next);
+      if (activePane !== null) {
+        storeLens(safeStorage(), activePane.id, next);
+      }
+    },
+    [activePane],
+  );
+
+  // The composer's app-level verbs. Anything it does not claim it let through
+  // to the pane as text, which is how `/compact` and `/model` keep working.
+  const handleComposerAction = useCallback(
+    (action: ComposerAction) => {
+      switch (action) {
+        case "chat":
+        case "terminal":
+          chooseLens(action);
+          break;
+        case "files":
+          if (activePane?.cwd !== undefined && activePane.cwd !== "") {
+            setOpenPath(activePane.cwd);
+          }
+          break;
+        case "workspace":
+          setPicker(true);
+          break;
+        case "stop":
+          if (activePane !== null) {
+            void sendPaneKeys(activePane.id, ["Escape"]);
+          }
+          break;
+        case "upload":
+          // The composer owns its own file picker; there is nothing to route.
+          break;
+      }
+    },
+    [activePane, chooseLens],
+  );
   const tilePanes = useMemo(() => {
     if (layout === null) {
       return activePane === null ? [] : [activePane];
@@ -347,7 +412,7 @@ export function App() {
   const paneTone = activePane ? toneOf(activePane.agentStatus) : null;
 
   return (
-    <div className="shell">
+    <div className={narrow ? "shell is-narrow" : "shell"}>
       <Masthead
         onHost={() => setHostPanel(true)}
         onFleet={() => setDispatch(true)}
@@ -371,7 +436,7 @@ export function App() {
           onNewWorkspace={() => setNewWorkspace(true)}
         />
 
-        <main className="stage">
+        <main className={narrow && activePane !== null ? "stage stage--lens" : "stage"}>
           {offline && (
             <div className="offline" role="status">
               <span className="signal" data-tone="blocked" aria-hidden />
@@ -419,6 +484,11 @@ export function App() {
               {activeWorkspace?.name ?? "workspaces"}
             </button>
             <div className="stage__spacer" />
+            {narrow && hasAgent && (
+              // Words, not glyphs: at 320px two icons would be guesswork, and
+              // the head is already 46px tall so this costs no height.
+              <LensSwitch lens={drawnLens} onLens={chooseLens} />
+            )}
             {activePane !== null && remotePanes.has(activePane.id) && (
               // The working directory above belongs to another machine, so the
               // paths this pane prints are not readable from here.
@@ -454,7 +524,15 @@ export function App() {
             }}
           />
 
-          {activePane !== null && tiles.length > 0 ? (
+          {activePane !== null && narrow ? (
+            <SessionStage
+              paneId={activePane.id}
+              status={activePane.agentStatus ?? null}
+              lens={drawnLens}
+              theme={theme}
+              onLens={chooseLens}
+            />
+          ) : activePane !== null && tiles.length > 0 ? (
             <TabStage
               tiles={tiles}
               panes={tilePanes}
@@ -484,7 +562,11 @@ export function App() {
           )}
 
           {activePane !== null && (
-            <PromptBar key={`prompt-${activePane.id}`} paneId={activePane.id} />
+            <PromptBar
+              key={`prompt-${activePane.id}`}
+              paneId={activePane.id}
+              onAction={handleComposerAction}
+            />
           )}
         </main>
       </div>

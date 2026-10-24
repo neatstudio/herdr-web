@@ -1,0 +1,318 @@
+/* --------------------------------------------------------- the composer */
+/* The input layer of a session: one bar that carries a draft, a palette and
+   a send/stop control. It is imported after session.css, so it may lean on the
+   --ui-* aliases; every one of them still falls back to the console token it
+   aliases, so the bar renders correctly in a build that has no session shell.
+
+   Desktop is not restyled here: the only rules outside a phone query are the
+   ones the menu and the stop state need in order to exist at all. */
+
+.prompt {
+  /* The palette is anchored to the bar, not to the window. */
+  position: relative;
+  z-index: 3;
+  flex: none;
+  /* A phone has a home indicator over the bottom edge; the bar pads for it. */
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
+  background: var(--ui-panel, var(--surface));
+}
+
+/* ---------------------------------------------------------------- palettes */
+/* One list, two sources: "/" commands and "@" mentions share the rows and the
+   keyboard, so the operator learns one menu. It floats above the bar: opening
+   it must not move the transcript, which is where the text it refers to is. */
+
+.prompt__palette {
+  position: absolute;
+  right: 8px;
+  bottom: calc(100% + 4px);
+  left: 8px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  max-height: min(44vh, 340px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: var(--rule-w) solid var(--ui-border-strong, var(--rule-strong));
+  background: var(--ui-elev, var(--raised));
+}
+
+.prompt__opt {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 0;
+  background: transparent;
+  font-family: var(--ui-mono, var(--font-mono));
+  font-size: var(--ui-body, var(--step-body));
+  line-height: 1.35;
+  text-align: left;
+  color: var(--ui-text, var(--ink));
+  cursor: pointer;
+}
+
+.prompt__opt + .prompt__opt {
+  border-top: var(--rule-w) solid var(--ui-border, var(--rule));
+}
+
+.prompt__opt--active {
+  background: var(--ui-accent, var(--accent));
+  color: var(--ui-bg, var(--paper));
+}
+
+.prompt__kind {
+  font-family: var(--ui-label, var(--font-label));
+  font-size: var(--step-micro);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ui-dim, var(--ink-dim));
+}
+
+.prompt__opt--active .prompt__kind {
+  color: inherit;
+}
+
+.prompt__hint {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--ui-mono, var(--font-mono));
+  font-size: var(--step-fine);
+  color: var(--ui-faint, var(--ink-faint));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prompt__opt--active .prompt__hint {
+  color: inherit;
+}
+
+/* The bar says a draft was recovered from storage: the text is there, but the
+   operator did not just type it, and that is worth one word. */
+.prompt__draft {
+  padding: 2px 6px;
+  border: var(--rule-w) solid var(--ui-border, var(--rule));
+  font-family: var(--ui-label, var(--font-label));
+  font-size: var(--step-micro);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ui-dim, var(--ink-dim));
+  white-space: nowrap;
+}
+
+/* The send button doubles as stop while the pane is working and the box is
+   empty. Same element, same place, one glyph changed: a second button would
+   split the operator's target on the one control they press blind. */
+.prompt__stop {
+  border-color: var(--ui-working, var(--accent));
+  color: var(--ui-working, var(--accent));
+}
+
+.prompt__stop:hover:not(:disabled) {
+  border-color: var(--ui-working, var(--accent));
+  background: var(--ui-working, var(--accent));
+  color: var(--ui-bg, var(--paper));
+}
+
+.prompt__stop:disabled {
+  border-color: var(--ui-border, var(--rule));
+  color: var(--ui-faint, var(--ink-faint));
+}
+
+/* Desktop keeps the word; the phone gets a glyph in a round accent button, so
+   the control sits in the corner where a thumb expects it instead of growing
+   into a wide pill that pushes the textarea off the row. */
+.prompt__send-glyph {
+  display: none;
+}
+
+.prompt__stop .prompt__send-glyph {
+  display: inline;
+}
+
+.prompt__stop .prompt__send-word {
+  display: none;
+}
+
+
+/* ------------------------------------------------------------------ touch */
+/* Coarse pointers and narrow frames get the mobile input layer: 44px targets,
+   no iOS zoom on focus, no hint row stealing the width the text needs. The
+   .is-narrow hook covers the same case for a desktop browser squeezed down. */
+
+@media (pointer: coarse), (max-width: 900px) {
+  /* The phone composer is a card, not a strip: an inset radius lifts it off the
+     transcript and gives the thumb row a boundary the eye can find without a
+     full-width rule cutting the screen in half. */
+  .prompt {
+    margin: 0 8px max(8px, env(safe-area-inset-bottom));
+    padding: 8px 12px;
+    /* The card's own boundary says where the message begins, so the leading
+       chevron is dropped: alone on a card it reads as a stray mark, and the
+       text moves left to give the thumb row more of the width. */
+    grid-template-columns: minmax(0, 1fr) auto;
+    border: var(--rule-w) solid var(--ui-border, var(--rule));
+    border-radius: 22px;
+    background: var(--ui-elev, var(--raised));
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.08);
+  }
+
+  .prompt__glyph {
+    display: none;
+  }
+
+  .prompt__input {
+    /* Below 16px, iOS zooms the page when the textarea takes focus. */
+    font-size: max(16px, var(--ui-body, var(--step-body)));
+  }
+
+  .prompt__send,
+  .prompt__stop,
+  .prompt__attach,
+  .prompt__keys {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 10px;
+  }
+
+  /* One 36px accent circle, 48px of finger through an invisible halo: the
+     shape Ovis settled on, and the only control on this row that is pressed
+     blind. The word becomes a glyph so the circle stays a circle. */
+  .prompt__send,
+  .prompt__stop {
+    position: relative;
+    box-sizing: border-box;
+    width: 36px;
+    min-width: 36px;
+    height: 36px;
+    min-height: 36px;
+    padding: 0;
+    border-radius: 50%;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  .prompt__send::before,
+  .prompt__stop::before {
+    content: "";
+    position: absolute;
+    inset: -6px;
+    border-radius: 50%;
+  }
+
+  .prompt__send-word {
+    display: none;
+  }
+
+  .prompt__send-glyph {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    line-height: 1;
+  }
+
+  .prompt__send:not(:disabled) {
+    border-color: var(--ui-accent, var(--accent));
+    background: var(--ui-accent, var(--accent));
+    color: var(--ui-bg, var(--paper));
+  }
+
+  .prompt__stop:not(:disabled) {
+    border-color: var(--ui-working, var(--accent));
+    background: var(--ui-working, var(--accent));
+    color: var(--ui-bg, var(--paper));
+  }
+
+  .prompt__attach {
+    font-size: 20px;
+  }
+
+  .prompt__hints {
+    display: none;
+  }
+
+  .prompt__palette {
+    right: 0;
+    /* Clear the card's own border and shadow so the list reads as attached to
+       the box rather than fused to it. */
+    bottom: calc(100% + 8px);
+    left: 0;
+    max-height: 50vh;
+  }
+
+  .prompt__opt {
+    min-height: 44px;
+    padding: 8px 10px;
+  }
+
+  .prompt__opt--active {
+    background: var(--ui-elev, var(--raised));
+    box-shadow: inset 2px 0 0 var(--ui-accent, var(--accent));
+    color: var(--ui-text, var(--ink));
+  }
+
+  .prompt__opt--active .prompt__kind {
+    color: var(--ui-accent, var(--accent));
+  }
+
+  .prompt__opt--active .prompt__hint {
+    color: var(--ui-faint, var(--ink-faint));
+  }
+}
+
+.is-narrow .prompt__input {
+  font-size: max(16px, var(--ui-body, var(--step-body)));
+}
+
+.is-narrow .prompt__send,
+.is-narrow .prompt__stop,
+.is-narrow .prompt__attach,
+.is-narrow .prompt__keys {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/* A squeezed desktop window gets the same circle as the phone: the word would
+   eat the row's remaining width at these sizes. */
+.is-narrow .prompt__send,
+.is-narrow .prompt__stop {
+  position: relative;
+  box-sizing: border-box;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.is-narrow .prompt__send::before,
+.is-narrow .prompt__stop::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+}
+
+.is-narrow .prompt__send-word {
+  display: none;
+}
+
+.is-narrow .prompt__send-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.is-narrow .prompt__hints {
+  display: none;
+}

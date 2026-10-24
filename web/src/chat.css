@@ -1,0 +1,485 @@
+/**
+ * The chat lens: a session read as a quiet document.
+ *
+ * One raised block for what the operator said, one collapsed line for what the
+ * agent did, plain prose for what it answered. Everything here is spacing,
+ * type and tone — there is no colour per message, no card and no shadow. The
+ * only lines are the hairline above an opened tool list and the rules inside
+ * code. Tokens come from `session.css`; this file defines none of them and
+ * never names a palette of its own.
+ */
+
+.chat {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--ui-bg);
+  color: var(--ui-text);
+}
+
+.chat__lane {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  padding: 20px 0 28px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* ------------------------------------------------------------------ turns */
+
+.chat__turn {
+  width: var(--ui-lane);
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.chat__user {
+  align-self: flex-end;
+  max-width: 92%;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--ui-elev);
+  color: var(--ui-text);
+  font-size: var(--ui-body);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat__prose {
+  min-width: 0;
+  font-size: var(--ui-body);
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.chat__prose p {
+  margin: 0 0 12px;
+}
+
+.chat__prose > :last-child,
+.chat__prose > .markdown > :last-child {
+  margin-bottom: 0;
+}
+
+/* ------------------------------------------------------------------- meta */
+
+.chat__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 24px;
+  font-size: var(--ui-meta);
+  line-height: 1.4;
+  color: var(--ui-faint);
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.chat__turn:hover .chat__meta,
+.chat__turn:focus-within .chat__meta,
+.chat__turn[data-active="true"] .chat__meta,
+.chat__lane > .chat__meta {
+  opacity: 1;
+}
+
+.chat__lane > .chat__meta {
+  width: var(--ui-lane);
+  margin-inline: auto;
+  justify-content: center;
+}
+
+.chat__meta button {
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ui-faint);
+  font: inherit;
+  font-size: var(--ui-meta);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.chat__meta button:hover {
+  color: var(--ui-dim);
+}
+
+.chat__live {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--ui-faint);
+}
+
+.chat__live[data-status="working"] {
+  background: var(--ui-working);
+}
+
+.chat__live[data-status="blocked"] {
+  background: var(--ui-blocked);
+}
+
+.chat__live[data-status="idle"] {
+  background: var(--ui-idle);
+}
+
+.chat__live[data-status="done"] {
+  background: var(--ui-done);
+}
+
+/* ------------------------------------------------------------------ empty */
+
+.chat__empty {
+  width: var(--ui-lane);
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ui-dim);
+}
+
+.chat__empty p {
+  margin: 0;
+}
+
+.chat__empty button {
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ui-text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.chat__empty button:hover {
+  background: var(--ui-elev);
+}
+
+/* ------------------------------------------------------------------- work */
+
+.work {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.work__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 34px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ui-dim);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+}
+
+.work__head:hover {
+  color: var(--ui-text);
+}
+
+.work__caret {
+  flex: none;
+  display: inline-block;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--ui-faint);
+  transition: transform 160ms ease;
+}
+
+.work[data-open="true"] .work__caret {
+  transform: rotate(90deg);
+}
+
+.work__summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.work__rows {
+  display: flex;
+  flex-direction: column;
+  margin-top: 2px;
+  padding-top: 4px;
+  border-top: 1px solid var(--ui-border);
+}
+
+.work__row {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.work__row > span,
+.work__row > button {
+  display: flex;
+  align-items: baseline;
+  width: 100%;
+  min-height: var(--ui-row);
+  padding: 3px 0;
+  border: 0;
+  background: none;
+  color: var(--ui-dim);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.work__row > button {
+  cursor: pointer;
+}
+
+.work__row > button:hover {
+  color: var(--ui-text);
+}
+
+/* Kind is carried by the label, not by colour; the classes exist so the fold
+   stays a single visual weight whatever the mix of rows inside it. */
+.work__row--edit > span,
+.work__row--edit > button,
+.work__row--read > span,
+.work__row--read > button,
+.work__row--command > span,
+.work__row--command > button,
+.work__row--other > span,
+.work__row--other > button {
+  color: var(--ui-dim);
+}
+
+.work__row--command > span,
+.work__row--command > button {
+  font-family: var(--ui-mono);
+  font-size: 12px;
+}
+
+.work__row--other > span,
+.work__row--other > button,
+.work__row[data-kind="thought"] > button {
+  color: var(--ui-faint);
+}
+
+.work__row[data-kind="thought"] > button {
+  font-style: italic;
+}
+
+.work__detail {
+  min-width: 0;
+  padding: 2px 0 8px;
+}
+
+.work__detail-body {
+  max-height: 280px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--ui-panel);
+  color: var(--ui-dim);
+  font-family: var(--ui-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+  overflow-x: auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Whole-output boxes get the taller cap; a short diff stays short. */
+.work__row--command .work__detail-body {
+  max-height: 60vh;
+}
+
+/* ---------------------------------------------------------------- markdown */
+
+.markdown {
+  min-width: 0;
+}
+
+.markdown p {
+  margin: 0 0 12px;
+}
+
+.markdown h3 {
+  margin: 20px 0 8px;
+  font-size: var(--ui-body);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.markdown h3:first-child {
+  margin-top: 0;
+}
+
+.markdown__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 12px;
+  padding-inline-start: 20px;
+}
+
+.markdown__list[data-ordered="true"] {
+  list-style: decimal;
+}
+
+.markdown__list li[data-depth="1"] {
+  margin-inline-start: 16px;
+}
+
+.markdown__list li[data-depth="2"] {
+  margin-inline-start: 32px;
+}
+
+.markdown__quote {
+  margin: 0 0 12px;
+  padding-inline-start: 12px;
+  border-inline-start: 2px solid var(--ui-border-strong);
+  color: var(--ui-dim);
+}
+
+.markdown__code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--ui-panel);
+  color: var(--ui-text);
+  font-family: var(--ui-mono);
+  font-size: 0.88em;
+  overflow-wrap: anywhere;
+}
+
+.chat__code {
+  min-width: 0;
+  margin: 0 0 12px;
+  border-radius: 10px;
+  background: var(--ui-panel);
+  overflow: hidden;
+}
+
+.chat__code-head {
+  padding: 5px 12px;
+  color: var(--ui-faint);
+  font-family: var(--ui-mono);
+  font-size: var(--ui-meta);
+  line-height: 1.5;
+  text-transform: lowercase;
+}
+
+.chat__code-body {
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--ui-text);
+  font-family: var(--ui-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.chat__code-head + .chat__code-body {
+  border-top: 1px solid var(--ui-border);
+}
+
+/* Verbatim ASCII: tables, diagrams, trees. Re-flowing these destroys them. */
+.chat__pre {
+  max-width: 100%;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--ui-panel);
+  color: var(--ui-dim);
+  font-family: var(--ui-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre;
+  overflow-x: auto;
+  overscroll-behavior: contain;
+}
+
+/* ------------------------------------------------------------------- touch */
+
+@media (hover: none) {
+  /* No pointer, no hover: meta is always there at 11px. */
+  .chat__meta {
+    opacity: 1;
+  }
+}
+
+@media (pointer: coarse) {
+  .chat__meta {
+    min-height: 44px;
+  }
+
+  .chat__meta button {
+    min-height: 44px;
+    padding-inline: 8px;
+  }
+
+  .work__head {
+    min-height: 44px;
+  }
+
+  .work__row > span,
+  .work__row > button {
+    min-height: 44px;
+    /* Keep the 44px touch target but centre the single line inside it, instead
+       of letting baseline alignment pin it to the top of the row. */
+    align-items: center;
+  }
+}
+
+/* 320px wide: the only change needed is a tighter raised block. */
+@media (max-width: 360px) {
+  .chat__user {
+    padding: 10px 14px;
+  }
+}
+
+/* ------------------------------------------------------------------ motion */
+
+@media (prefers-reduced-motion: reduce) {
+  .chat__meta,
+  .work__caret {
+    transition: none;
+  }
+}
+
+/* ------------------------------------------------------------------- focus */
+
+.work__head:focus-visible,
+.work__row > button:focus-visible,
+.chat__meta button:focus-visible,
+.chat__empty button:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
+}
