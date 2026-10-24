@@ -67,8 +67,11 @@ func (g *gzipHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	recorder := &compressRecorder{header: http.Header{}, status: http.StatusOK}
+	recorder := &compressRecorder{header: http.Header{}, status: http.StatusOK, out: w}
 	g.next.ServeHTTP(recorder, r)
+	if recorder.passthrough {
+		return
+	}
 
 	contentType := recorder.header.Get("Content-Type")
 	if !compressibleType(contentType) || len(recorder.body) < compressMinBytes {
@@ -88,17 +91,17 @@ func (g *gzipHandler) serveCachedAsset(w http.ResponseWriter, r *http.Request) b
 	}
 	g.mu.Lock()
 	data, found := g.assets[r.URL.Path]
-	if !found {
-		g.mu.Unlock()
-	}
+	g.mu.Unlock()
 	if found {
-		g.mu.Unlock()
 		g.writeCompressed(w, http.StatusOK, nil, data, contentTypeForAsset(r.URL.Path))
 		return true
 	}
 
-	recorder := &compressRecorder{header: http.Header{}, status: http.StatusOK}
+	recorder := &compressRecorder{header: http.Header{}, status: http.StatusOK, out: w}
 	g.next.ServeHTTP(recorder, r)
+	if recorder.passthrough {
+		return true
+	}
 	if recorder.status != http.StatusOK || len(recorder.body) < compressMinBytes {
 		writeBuffered(w, recorder)
 		return true
@@ -117,10 +120,6 @@ func (g *gzipHandler) serveCachedAsset(w http.ResponseWriter, r *http.Request) b
 	g.writeCompressed(w, recorder.status, recorder.header, compressed, contentTypeForAsset(r.URL.Path))
 	return true
 }
-
-// w is the response the request arrived with, kept so the cache miss and the cache
-// hit take the same path.
-type responseWriterFunc func(*http.Request) http.ResponseWriter
 
 func (g *gzipHandler) writeCompressed(w http.ResponseWriter, status int, header http.Header, data []byte, contentType string) {
 	if header != nil {
@@ -176,11 +175,18 @@ func copyHeaders(w http.ResponseWriter, header http.Header) {
 
 // compressRecorder buffers a handler's response so the middleware can decide
 // whether compressing it is worth anything.
+//
+// A response that declares a dense type (an image, a release binary) before its
+// first byte is not buffered at all: it streams straight to out. Buffering it
+// would hold the whole file in memory once per concurrent download, only to
+// send it unchanged.
 type compressRecorder struct {
 	header      http.Header
 	status      int
 	body        []byte
 	wroteHeader bool
+	out         http.ResponseWriter
+	passthrough bool
 }
 
 func (c *compressRecorder) Header() http.Header { return c.header }
@@ -191,11 +197,23 @@ func (c *compressRecorder) WriteHeader(status int) {
 	}
 	c.status = status
 	c.wroteHeader = true
+	contentType := c.header.Get("Content-Type")
+	if c.out == nil || contentType == "" || compressibleType(contentType) {
+		return
+	}
+	c.passthrough = true
+	for key, value := range c.header {
+		c.out.Header()[key] = value
+	}
+	c.out.WriteHeader(status)
 }
 
 func (c *compressRecorder) Write(data []byte) (int, error) {
 	if !c.wroteHeader {
 		c.WriteHeader(http.StatusOK)
+	}
+	if c.passthrough {
+		return c.out.Write(data)
 	}
 	c.body = append(c.body, data...)
 	return len(data), nil

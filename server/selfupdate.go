@@ -326,14 +326,20 @@ func selfUpdateFrom(ctx context.Context, execPath, source string) (selfUpdateRes
 	if err := os.Chmod(tmpPath, 0o755); err != nil {
 		return selfUpdateResult{}, err
 	}
-	if got := binaryVersion(tmpPath); got != "" && !sameVersion(got, published) {
+	// A file that cannot name its version is refused too: "could not ask" is not
+	// evidence that it is the build the source promised.
+	reported := binaryVersion(tmpPath)
+	if reported == "" {
 		steps = append(steps, selfStep{Step: "verify",
-			Detail: "the file is " + got + ", the source called it " + published})
+			Detail: "the file did not answer -version; the source called it " + published})
+		return selfUpdateResult{OK: false, Steps: steps},
+			errors.New("the published file could not say which build it is")
+	}
+	if !sameVersion(reported, published) {
+		steps = append(steps, selfStep{Step: "verify",
+			Detail: "the file is " + reported + ", the source called it " + published})
 		return selfUpdateResult{OK: false, Steps: steps},
 			errors.New("the published file is not the build it claims")
-	}
-	if err := os.Chmod(tmpPath, 0o755); err != nil {
-		return selfUpdateResult{}, err
 	}
 	// Keep what is being replaced: an update that starts and then misbehaves needs
 	// a way back that does not involve another download.

@@ -79,7 +79,7 @@ func TestFleetFollowsANewerHubBuild(t *testing.T) {
 	// anybody being told to.
 	current := []byte("old console")
 	path := fakeExecutable(t, string(current))
-	next := []byte("new console")
+	next := versionedBuild("v99.9.9", "new console")
 	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/release/version":

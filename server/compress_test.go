@@ -64,6 +64,34 @@ func TestGzipLeavesUnaskedAndBinaryAlone(t *testing.T) {
 	}
 }
 
+func TestGzipStreamsBinaryWithoutBufferingIt(t *testing.T) {
+	// A release binary or a raw image must reach the client as it is written:
+	// buffering it costs the whole file in memory per concurrent download.
+	outer := httptest.NewRecorder()
+	chunk := strings.Repeat("\x7fELF", 1024)
+	var seenBeforeReturn int
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Length", "8192")
+		_, _ = io.WriteString(w, chunk)
+		seenBeforeReturn = outer.Body.Len()
+		_, _ = io.WriteString(w, chunk)
+	})
+	request := httptest.NewRequest(http.MethodGet, "/release/herdr-web-linux-amd64", nil)
+	request.Header.Set("Accept-Encoding", "gzip")
+	withGzip(inner).ServeHTTP(outer, request)
+
+	if seenBeforeReturn != len(chunk) {
+		t.Fatalf("client had %d bytes mid-response, want %d (the body was buffered)", seenBeforeReturn, len(chunk))
+	}
+	if outer.Body.Len() != 2*len(chunk) || outer.Header().Get("Content-Encoding") != "" {
+		t.Fatalf("body=%d encoding=%q", outer.Body.Len(), outer.Header().Get("Content-Encoding"))
+	}
+	if outer.Header().Get("Content-Length") != "8192" {
+		t.Fatalf("content-length = %q, the handler's value must survive", outer.Header().Get("Content-Length"))
+	}
+}
+
 func TestGzipKeepsTheStatusAndHeaders(t *testing.T) {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

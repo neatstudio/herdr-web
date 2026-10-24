@@ -16,10 +16,23 @@ import (
 	"time"
 )
 
-// releaseSource is a fake release host: one asset and its checksum.
+// releaseTestVersion is what the fake sources publish as their version.
+const releaseTestVersion = "v99.0.0"
+
+// versionedBuild is an asset that answers -version the way the console does, so
+// the update's "does the file name itself" check has something to ask.
+func versionedBuild(version, tag string) []byte {
+	return []byte("#!/bin/sh\n# " + tag + "\necho 'herdr-web " + version + "'\n")
+}
+
+// releaseSource is a fake release host: one asset, its checksum and a version.
 func releaseSource(t *testing.T, payload []byte, sum string) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/version") {
+			_, _ = w.Write([]byte(releaseTestVersion + "\n"))
+			return
+		}
 		if strings.HasSuffix(r.URL.Path, ".sha256") {
 			if sum == "" {
 				http.NotFound(w, r)
@@ -54,7 +67,7 @@ func checksum(content []byte) string {
 
 func TestSelfUpdateReplacesTheRunningBinary(t *testing.T) {
 	current := []byte("old binary")
-	next := []byte("new binary, genuinely different")
+	next := versionedBuild(releaseTestVersion, "new binary, genuinely different")
 	path := fakeExecutable(t, string(current))
 	source := releaseSource(t, next, checksum(next))
 
@@ -85,6 +98,28 @@ func TestSelfUpdateReplacesTheRunningBinary(t *testing.T) {
 	// running on the old process.
 	if !strings.Contains(body, "restart") {
 		t.Fatalf("body=%s does not say how to start the new build", body)
+	}
+}
+
+func TestSelfUpdateRefusesAFileThatCannotNameItsVersion(t *testing.T) {
+	// The checksum matches, but the file does not answer -version. "Could not
+	// ask" is not proof it is the promised build, so nothing may be replaced.
+	current := []byte("old binary")
+	next := []byte("not a program at all")
+	path := fakeExecutable(t, string(current))
+	source := releaseSource(t, next, checksum(next))
+
+	recorder := httptest.NewRecorder()
+	handleSelfUpdate(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/herdr-web/update",
+		strings.NewReader(`{"from":"`+source.URL+`"}`)))
+
+	body := recorder.Body.String()
+	if !strings.Contains(body, `"ok":false`) || !strings.Contains(body, "could not say which build") {
+		t.Fatalf("status=%d body=%s", recorder.Code, body)
+	}
+	got, _ := os.ReadFile(path)
+	if string(got) != string(current) {
+		t.Fatal("an unidentifiable download replaced the running binary")
 	}
 }
 
@@ -264,9 +299,13 @@ func TestSelfUpdateRetriesADroppedChecksum(t *testing.T) {
 	// for a file that exists.
 	current := []byte("old build")
 	path := fakeExecutable(t, string(current))
-	next := []byte("new build")
+	next := versionedBuild(releaseTestVersion, "new build")
 	var hits int
 	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/version") {
+			_, _ = w.Write([]byte(releaseTestVersion))
+			return
+		}
 		if strings.HasSuffix(r.URL.Path, ".sha256") {
 			hits++
 			if hits == 1 {
@@ -336,9 +375,13 @@ func TestSelfUpdateFallsThroughToAPeerWhenGitHubIsUnreachable(t *testing.T) {
 	// The judgement the console is supposed to make for itself: GitHub is the
 	// official source, but a console on the same tailnet serves the same files.
 	current := []byte("old build")
-	next := []byte("newer build")
+	next := versionedBuild("v99.0.0", "newer build")
 	path := fakeExecutable(t, string(current))
 	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/version") {
+			_, _ = w.Write([]byte("v99.0.0"))
+			return
+		}
 		if strings.HasSuffix(r.URL.Path, ".sha256") {
 			_, _ = w.Write([]byte(checksum(next) + "  " + selfPlatform() + "\n"))
 			return
