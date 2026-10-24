@@ -74,6 +74,7 @@ func Run(binds []string, socketPath string, webFS fs.FS) error {
 	background, stopBackground := context.WithCancel(context.Background())
 	defer stopBackground()
 	console.StartFleet(background)
+	console.StartOrchestrator(background)
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
