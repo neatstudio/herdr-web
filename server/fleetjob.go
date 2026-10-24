@@ -63,6 +63,7 @@ type dispatch struct {
 	// The request behind a market task, so the board can re-offer it after a
 	// restart without asking the operator to retype it.
 	Kind     string          `json:"kind,omitempty"`
+	Role     string          `json:"role,omitempty"`
 	Cwd      string          `json:"cwd,omitempty"`
 	Branch   string          `json:"branch,omitempty"`
 	Strategy string          `json:"strategy,omitempty"`
@@ -171,6 +172,7 @@ type dispatchRequest struct {
 	Cwd      string   `json:"cwd"`
 	Branch   string   `json:"branch"`
 	Kind     string   `json:"kind"`
+	Role     string   `json:"role"`
 	Weight   string   `json:"weight"`
 	Strategy string   `json:"strategy"`
 	Targets  []string `json:"targets"`
@@ -219,6 +221,7 @@ func (s *Server) handleDispatchJob(w http.ResponseWriter, r *http.Request) {
 		At:       time.Now().Unix(),
 		Prompt:   request.Prompt,
 		Kind:     request.Kind,
+		Role:     request.Role,
 		Cwd:      request.Cwd,
 		Branch:   request.Branch,
 		Strategy: "fanout",
@@ -234,6 +237,7 @@ func (s *Server) handleDispatchJob(w http.ResponseWriter, r *http.Request) {
 			Cwd:    request.Cwd,
 			Branch: request.Branch,
 			Kind:   request.Kind,
+			Role:   request.Role,
 			Weight: normalizeWeight(request.Weight),
 		})
 		if err != nil {
@@ -288,6 +292,7 @@ func (s *Server) runMarket(ctx context.Context, request dispatchRequest, targets
 		Cwd:    request.Cwd,
 		Branch: request.Branch,
 		Kind:   request.Kind,
+		Role:   request.Role,
 		Label:  "task " + taskID,
 		TaskID: taskID,
 		Weight: normalizeWeight(request.Weight),
@@ -300,6 +305,7 @@ func (s *Server) runMarket(ctx context.Context, request dispatchRequest, targets
 		At:       time.Now().Unix(),
 		Prompt:   request.Prompt,
 		Kind:     request.Kind,
+		Role:     request.Role,
 		Cwd:      request.Cwd,
 		Branch:   request.Branch,
 		Strategy: "single",

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	"herdr-web/server/sharedledger"
 )
@@ -93,5 +94,61 @@ func TestJobStopCancelsSharedTask(t *testing.T) {
 	}
 	if task.State != sharedledger.Cancelled {
 		t.Fatalf("shared task = %+v", task)
+	}
+}
+
+func TestReviewJobClaimsSharedTaskByRole(t *testing.T) {
+	installClaude(t)
+	socket, state, closeFn := startFakeHerdr(t)
+	defer closeFn()
+	isolateState(t)
+	console := NewServer(socket, nil)
+	ctx := context.Background()
+
+	if _, err := console.sharedLedger.Create(ctx, sharedledger.Task{ID: "p1", Cwd: "/repo"}); err != nil {
+		t.Fatal(err)
+	}
+	dev, err := console.sharedLedger.Claim(ctx, "p1", sharedledger.RoleDev, "dev", time.Hour, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := console.sharedLedger.Attest(ctx, "p1", sharedledger.RoleDev, "dev", "abc", "", "sig", dev.Version); err != nil {
+		t.Fatal(err)
+	}
+
+	start := do(t, console.Handler(), http.MethodPost, "/api/v1/herdr/job",
+		`{"prompt":"review it","kind":"claude","role":"review","taskId":"p1"}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("start = %d: %s", start.Code, start.Body.String())
+	}
+	var started jobStarted
+	if err := json.Unmarshal(start.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	task, err := console.sharedLedger.Get(ctx, "p1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.State != sharedledger.ReviewClaimed || task.Owner != localNodeID() {
+		t.Fatalf("task = %+v", task)
+	}
+	event, ok := console.ledger.eventForPane(started.PaneID)
+	if !ok || event.Role != "review" {
+		t.Fatalf("local event = %+v", event)
+	}
+
+	state.mu.Lock()
+	state.agentStatus = "done"
+	state.mu.Unlock()
+	status := do(t, console.Handler(), http.MethodGet, "/api/v1/herdr/job/"+started.PaneID, "")
+	if status.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", status.Code, status.Body.String())
+	}
+	task, err = console.sharedLedger.Get(ctx, "p1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.State != sharedledger.ReviewApproved {
+		t.Fatalf("task after review = %+v", task)
 	}
 }

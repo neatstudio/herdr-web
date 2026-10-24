@@ -30,6 +30,8 @@ type jobRequest struct {
 	Branch string `json:"branch"`
 	// Kind is the agent to start, e.g. "claude" or "opencode".
 	Kind string `json:"kind"`
+	// Role is the pipeline stage: dev, review, test, audit or merge. Empty is dev.
+	Role string `json:"role,omitempty"`
 	// Label names the workspace; defaults to the job id.
 	Label string `json:"label"`
 	// TaskID makes a retried start idempotent: the same task never creates a
@@ -103,6 +105,14 @@ func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	kind := strings.TrimSpace(request.Kind)
+	role := sharedledger.Role(strings.TrimSpace(request.Role))
+	if role == "" {
+		role = sharedledger.RoleDev
+	}
+	if !validRole(role) {
+		writeError(w, http.StatusBadRequest, "invalid_request", "role must be dev, review, test, audit or merge")
+		return
+	}
 	// zerostack is not a herdr agent kind, so agent.start cannot start it. The
 	// job runs it as a one-shot command instead; fail before creating a workspace
 	// when the binary is missing, the way agent.start would.
@@ -182,7 +192,7 @@ func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 			writeBadGateway(w, "herdr_job_failed", err)
 			return
 		}
-		s.ledger.started(created.Workspace.WorkspaceID, paneID, kind, label, sharedTaskID(request, paneID))
+		s.ledger.started(created.Workspace.WorkspaceID, paneID, kind, string(role), label, sharedTaskID(request, paneID))
 		taskID := sharedTaskID(request, paneID)
 		if err := s.startSharedTask(ctx, request, taskID, label); err != nil {
 			fmt.Fprintf(os.Stderr, "herdr-web: shared task %s: %v\n", taskID, err)
@@ -216,7 +226,7 @@ func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.ledger.started(created.Workspace.WorkspaceID, paneID, request.Kind, label, sharedTaskID(request, paneID))
+	s.ledger.started(created.Workspace.WorkspaceID, paneID, request.Kind, string(role), label, sharedTaskID(request, paneID))
 	taskID := sharedTaskID(request, paneID)
 	if err := s.startSharedTask(ctx, request, taskID, label); err != nil {
 		fmt.Fprintf(os.Stderr, "herdr-web: shared task %s: %v\n", taskID, err)
@@ -245,6 +255,7 @@ func (s *Server) handleJobOffer(w http.ResponseWriter, r *http.Request) {
 		Cwd    string `json:"cwd"`
 		Branch string `json:"branch"`
 		Kind   string `json:"kind"`
+		Role   string `json:"role"`
 		Label  string `json:"label"`
 		Weight string `json:"weight"`
 	}
@@ -253,6 +264,14 @@ func (s *Server) handleJobOffer(w http.ResponseWriter, r *http.Request) {
 	}
 	taskID := strings.TrimSpace(request.TaskID)
 	kind := strings.TrimSpace(request.Kind)
+	role := sharedledger.Role(strings.TrimSpace(request.Role))
+	if role == "" {
+		role = sharedledger.RoleDev
+	}
+	if !validRole(role) {
+		writeError(w, http.StatusBadRequest, "invalid_request", "role must be dev, review, test, audit or merge")
+		return
+	}
 	if taskID == "" || kind == "" || strings.TrimSpace(request.Prompt) == "" {
 		writeError(w, http.StatusBadRequest, "invalid_request", "taskId, prompt and kind are required")
 		return
@@ -270,6 +289,17 @@ func (s *Server) handleJobOffer(w http.ResponseWriter, r *http.Request) {
 	resources := readHostResources()
 	accepted := true
 	reason := ""
+	if s.sharedLedger != nil {
+		task, err := s.sharedLedger.Get(r.Context(), taskID)
+		switch {
+		case errors.Is(err, sharedledger.ErrNotFound) && role != sharedledger.RoleDev:
+			accepted, reason = false, "task not found"
+		case err != nil && !errors.Is(err, sharedledger.ErrNotFound):
+			accepted, reason = false, "shared ledger unavailable"
+		case err == nil && !roleReady(task, role):
+			accepted, reason = false, "task is not ready for this role"
+		}
+	}
 	if !agentAvailable(kind) {
 		accepted, reason = false, "agent not installed"
 	} else if limit := maxJobs(); limit > 0 && s.ledger.runningCount() >= limit {
@@ -316,6 +346,36 @@ func agentAvailable(kind string) bool {
 	return false
 }
 
+func validRole(role sharedledger.Role) bool {
+	switch role {
+	case sharedledger.RoleDev, sharedledger.RoleReview, sharedledger.RoleTest,
+		sharedledger.RoleAudit, sharedledger.RoleMerge:
+		return true
+	default:
+		return false
+	}
+}
+
+func roleReady(task sharedledger.Task, role sharedledger.Role) bool {
+	switch role {
+	case sharedledger.RoleDev:
+		switch task.State {
+		case sharedledger.Proposed, sharedledger.ChangesRequested,
+			sharedledger.TestFailed, sharedledger.AuditRejected:
+			return true
+		}
+	case sharedledger.RoleReview:
+		return task.State == sharedledger.DevDone
+	case sharedledger.RoleTest:
+		return task.State == sharedledger.ReviewApproved
+	case sharedledger.RoleAudit:
+		return task.State == sharedledger.TestPassed
+	case sharedledger.RoleMerge:
+		return task.State == sharedledger.AuditApproved
+	}
+	return false
+}
+
 // sharedTaskID ties a job to its shared-ledger task. A dispatched task already
 // has an id; a directly started job gets one derived from its pane.
 func sharedTaskID(request jobRequest, paneID string) string {
@@ -332,8 +392,15 @@ func (s *Server) startSharedTask(ctx context.Context, request jobRequest, taskID
 	if s.sharedLedger == nil || taskID == "" {
 		return nil
 	}
+	role := sharedledger.Role(strings.TrimSpace(request.Role))
+	if role == "" {
+		role = sharedledger.RoleDev
+	}
 	task, err := s.sharedLedger.Get(ctx, taskID)
 	if errors.Is(err, sharedledger.ErrNotFound) {
+		if role != sharedledger.RoleDev {
+			return err
+		}
 		task, err = s.sharedLedger.Create(ctx, sharedledger.Task{
 			ID: taskID, Title: label, Prompt: request.Prompt, Cwd: request.Cwd,
 			Branch: request.Branch, Kind: request.Kind, Weight: request.Weight,
@@ -344,13 +411,13 @@ func (s *Server) startSharedTask(ctx context.Context, request jobRequest, taskID
 	} else if err != nil {
 		return err
 	}
-	_, err = s.sharedLedger.Claim(ctx, taskID, sharedledger.RoleDev, localNodeID(), 30*time.Minute, task.Version)
+	_, err = s.sharedLedger.Claim(ctx, taskID, role, localNodeID(), 30*time.Minute, task.Version)
 	return err
 }
 
-// attestSharedTask marks the dev result. It is idempotent: a task already out of
-// dev_claimed (or owned by another node) is left alone.
-func (s *Server) attestSharedTask(ctx context.Context, taskID string) error {
+// attestSharedTask marks the role result. It is idempotent: a task already out
+// of the claimed state (or owned by another node) is left alone.
+func (s *Server) attestSharedTask(ctx context.Context, taskID string, role sharedledger.Role) error {
 	if s.sharedLedger == nil || taskID == "" {
 		return nil
 	}
@@ -358,10 +425,10 @@ func (s *Server) attestSharedTask(ctx context.Context, taskID string) error {
 	if err != nil {
 		return err
 	}
-	if task.State != sharedledger.DevClaimed || task.Owner != localNodeID() {
+	if task.Owner != localNodeID() {
 		return nil
 	}
-	_, err = s.sharedLedger.Attest(ctx, taskID, sharedledger.RoleDev, localNodeID(), "", "", "local", task.Version)
+	_, err = s.sharedLedger.Attest(ctx, taskID, role, localNodeID(), "", "", "local", task.Version)
 	return err
 }
 
@@ -509,7 +576,11 @@ func (s *Server) handleJobStatus(w http.ResponseWriter, r *http.Request, paneID 
 		if taskID == "" {
 			taskID = sharedTaskID(jobRequest{}, paneID)
 		}
-		if err := s.attestSharedTask(ctx, taskID); err != nil {
+		role := sharedledger.Role(strings.TrimSpace(event.Role))
+		if role == "" {
+			role = sharedledger.RoleDev
+		}
+		if err := s.attestSharedTask(ctx, taskID, role); err != nil {
 			fmt.Fprintf(os.Stderr, "herdr-web: attest shared task %s: %v\n", taskID, err)
 		}
 		// Completion releases the execution slot; the workspace/result stays.

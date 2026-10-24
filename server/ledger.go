@@ -25,6 +25,7 @@ type ledgerEvent struct {
 	WorkspaceID string `json:"workspaceId"`
 	PaneID      string `json:"paneId,omitempty"`
 	Kind        string `json:"kind,omitempty"`
+	Role        string `json:"role,omitempty"`
 	Label       string `json:"label,omitempty"`
 	TaskID      string `json:"taskId,omitempty"`
 	Reason      string `json:"reason,omitempty"`
@@ -124,7 +125,7 @@ func (l *jobLedger) persistLocked(event ledgerEvent) {
 	_ = file.Close()
 }
 
-func (l *jobLedger) started(workspaceID, paneID, kind, label, taskID string) {
+func (l *jobLedger) started(workspaceID, paneID, kind, role, label, taskID string) {
 	if l == nil || workspaceID == "" {
 		return
 	}
@@ -136,6 +137,7 @@ func (l *jobLedger) started(workspaceID, paneID, kind, label, taskID string) {
 		WorkspaceID: workspaceID,
 		PaneID:      paneID,
 		Kind:        kind,
+		Role:        role,
 		Label:       label,
 		TaskID:      taskID,
 	}
