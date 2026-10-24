@@ -118,6 +118,10 @@ func (m *Memory) Claim(_ context.Context, id string, role Role, node string, lea
 		m.tasks[id] = task
 		return Task{}, err
 	}
+	if role == RoleMerge && m.mergeBusyLocked(task) {
+		m.tasks[id] = task
+		return Task{}, ErrMergeBusy
+	}
 	if lease <= 0 {
 		lease = 30 * time.Minute
 	}
@@ -267,6 +271,21 @@ func (m *Memory) expireAllLocked() {
 		m.expireLocked(&task)
 		m.tasks[id] = task
 	}
+}
+
+// mergeBusyLocked reports another task already holding the merge lock for the
+// same checkout. The task itself is skipped: a re-claim/retry is not a conflict.
+func (m *Memory) mergeBusyLocked(task Task) bool {
+	repo := mergeRepo(task)
+	for id, other := range m.tasks {
+		if id == task.ID || other.State != MergeQueued {
+			continue
+		}
+		if mergeRepo(other) == repo {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Memory) expireLocked(task *Task) {

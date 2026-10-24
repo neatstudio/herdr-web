@@ -15,6 +15,8 @@ func writeLedgerError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "ledger_not_found", err.Error())
 	case errors.Is(err, sharedledger.ErrConflict):
 		writeError(w, http.StatusConflict, "ledger_conflict", err.Error())
+	case errors.Is(err, sharedledger.ErrMergeBusy):
+		writeError(w, http.StatusConflict, "ledger_merge_busy", err.Error())
 	case errors.Is(err, sharedledger.ErrInvalidState), errors.Is(err, sharedledger.ErrLeaseExpired),
 		errors.Is(err, sharedledger.ErrNotOwner):
 		writeError(w, http.StatusConflict, "ledger_state", err.Error())

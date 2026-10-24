@@ -9,6 +9,8 @@ package sharedledger
 import (
 	"context"
 	"errors"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -109,7 +111,16 @@ var (
 	ErrNotOwner        = errors.New("sharedledger: node does not own the lease")
 	ErrSignature       = errors.New("sharedledger: signature is required")
 	ErrInvalidTask     = errors.New("sharedledger: task id is required")
+	ErrMergeBusy       = errors.New("sharedledger: another task is already merging in this repository")
 )
+
+// mergeRepo is the single-writer lock key: one merge per checkout at a time.
+func mergeRepo(task Task) string {
+	if cwd := strings.TrimSpace(task.Cwd); cwd != "" {
+		return filepath.Clean(cwd)
+	}
+	return "task:" + task.ID
+}
 
 // Ledger is the shared task ledger. Every mutation is compare-and-set on the
 // task version, so two nodes claiming the same task cannot both win.

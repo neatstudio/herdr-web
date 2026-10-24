@@ -192,6 +192,77 @@ func TestHeartbeatExtendsLease(t *testing.T) {
 	}
 }
 
+func TestMergeQueueIsSingleWriterPerRepo(t *testing.T) {
+	ledger := NewMemory()
+	ctx := context.Background()
+	first, err := ledger.Create(ctx, Task{ID: "m1", Cwd: "/repo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := ledger.Create(ctx, Task{ID: "m2", Cwd: "/repo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first = advanceToAuditApproved(t, ledger, first)
+	second = advanceToAuditApproved(t, ledger, second)
+
+	mergeA, err := ledger.Claim(ctx, "m1", RoleMerge, "merge-a", time.Hour, first.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ledger.Claim(ctx, "m2", RoleMerge, "merge-b", time.Hour, second.Version); !errors.Is(err, ErrMergeBusy) {
+		t.Fatalf("second merge error = %v", err)
+	}
+	merged, err := ledger.Attest(ctx, "m1", RoleMerge, "merge-a", "", "", "sig", mergeA.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if merged.State != Merged {
+		t.Fatalf("merged = %+v", merged)
+	}
+	if _, err := ledger.Claim(ctx, "m2", RoleMerge, "merge-b", time.Hour, second.Version); err != nil {
+		t.Fatalf("after merge error = %v", err)
+	}
+}
+
+func advanceToAuditApproved(t *testing.T, ledger *Memory, task Task) Task {
+	t.Helper()
+	ctx := context.Background()
+	dev, err := ledger.Claim(ctx, task.ID, RoleDev, "dev", time.Hour, task.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done, err := ledger.Attest(ctx, task.ID, RoleDev, "dev", "abc", "", "sig", dev.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	review, err := ledger.Claim(ctx, task.ID, RoleReview, "review", time.Hour, done.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewed, err := ledger.Attest(ctx, task.ID, RoleReview, "review", "abc", "", "sig", review.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	test, err := ledger.Claim(ctx, task.ID, RoleTest, "test", time.Hour, reviewed.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tested, err := ledger.Attest(ctx, task.ID, RoleTest, "test", "abc", "", "sig", test.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	audit, err := ledger.Claim(ctx, task.ID, RoleAudit, "audit", time.Hour, tested.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	approved, err := ledger.Attest(ctx, task.ID, RoleAudit, "audit", "abc", "", "sig", audit.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return approved
+}
+
 func TestListFilters(t *testing.T) {
 	ledger := NewMemory()
 	if _, err := ledger.Create(context.Background(), Task{ID: "a"}); err != nil {

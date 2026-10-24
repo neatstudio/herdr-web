@@ -173,6 +173,17 @@ func (n *NATS) Claim(ctx context.Context, id string, role Role, node string, lea
 	if err := claimAllowed(task, role, node); err != nil {
 		return Task{}, err
 	}
+	if role == RoleMerge {
+		queued, err := n.List(ctx, Filter{State: MergeQueued})
+		if err != nil {
+			return Task{}, err
+		}
+		for _, other := range queued {
+			if other.ID != id && mergeRepo(other) == mergeRepo(task) {
+				return Task{}, ErrMergeBusy
+			}
+		}
+	}
 	if lease <= 0 {
 		lease = 30 * time.Minute
 	}
