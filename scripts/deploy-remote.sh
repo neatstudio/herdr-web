@@ -109,21 +109,12 @@ list_hosts() {
   fi
 }
 
-ssh_opts=(-o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new)
-if [[ -n "${JUMP:-}" ]]; then
-  ssh_opts+=(-J "$JUMP")
-fi
-if [[ -n "${HERDR_WEB_SSH_OPTS:-}" ]]; then
-  # shellcheck disable=SC2206
-  ssh_opts+=(${HERDR_WEB_SSH_OPTS})
-fi
-
 DRY_RUN=0
 WITH_SERVICE=1
 HERDR_SERVICE=0
 FLEET_HUB=""
 VIA=""
-JUMP=""
+JUMP="${JUMP:-}"
 IDENTITIES=()
 ADDR=""
 LOCAL_ADDR=""
@@ -149,6 +140,17 @@ while [[ $# -gt 0 ]]; do
     *) TARGETS+=("$1"); shift ;;
   esac
 done
+
+# Options are built after the arguments are parsed: setting them up front meant
+# --jump arrived too late to ever reach ssh.
+ssh_opts=(-o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new)
+if [[ -n "$JUMP" ]]; then
+  ssh_opts+=(-J "$JUMP")
+fi
+if [[ -n "${HERDR_WEB_SSH_OPTS:-}" ]]; then
+  # shellcheck disable=SC2206
+  ssh_opts+=(${HERDR_WEB_SSH_OPTS})
+fi
 
 if [[ ${#IDENTITIES[@]} -gt 0 ]]; then
   # Only these keys are offered: an agent holding a dozen keys hits the server's
