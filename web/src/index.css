@@ -2498,12 +2498,33 @@ body::before {
 }
 
 .dispatch__entry {
-  margin-bottom: 10px;
+  margin-bottom: 12px;
+}
+
+/* Two dispatches in a row otherwise read as one card; the id of the next
+   entry is the only thing that says a new task starts here. */
+.dispatch__entry + .dispatch__entry {
+  padding-top: 10px;
+  border-top: var(--rule-w) solid var(--rule);
 }
 
 .dispatch__entry header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   font-size: var(--step-fine);
   color: var(--ink-faint);
+}
+
+/* The id says nothing about the work, so two entries look alike until each is
+   opened. One ellipsised line of the prompt is what tells them apart. */
+.dispatch__prompt {
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: var(--ink-dim);
+  font-size: var(--step-fine);
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .dispatch__entry ul {
@@ -2522,8 +2543,25 @@ body::before {
   font-size: var(--step-fine);
 }
 
+/* The machine and what it is doing, side by side; the stop control keeps to
+   the end of that line instead of taking a row of its own. */
+.dispatch__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.dispatch__line .dispatch__stop {
+  margin-left: auto;
+}
+
 .dispatch__host {
   color: var(--ink);
+}
+
+.dispatch__status {
+  color: var(--ink-dim);
 }
 
 .dispatch__status[data-status="bad"] {
@@ -2531,7 +2569,6 @@ body::before {
 }
 
 .dispatch__stop {
-  justify-self: start;
   padding: 1px 7px;
   border: var(--rule-w) solid var(--rule-strong);
   background: transparent;

@@ -17,6 +17,20 @@ function isFull(peer: FleetPeer): boolean {
   return (peer.maxTasks ?? 0) > 0 && (peer.running ?? 0) >= (peer.maxTasks ?? 0);
 }
 
+/**
+ * A state the operator has to do something about. Working and done are not
+ * warnings: colouring every state that has a name makes none of them stand out.
+ */
+function wantsLook(job: DispatchedJob): boolean {
+  return (
+    job.lost === true ||
+    job.cancelled === true ||
+    job.status === "stopped" ||
+    job.status === "blocked" ||
+    (job.error !== undefined && job.error !== "")
+  );
+}
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -44,8 +58,14 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
   const [problem, setProblem] = useState("");
 
   // This console is a target as well. Without it, a one-machine fleet has an
-  // empty "machines" list and cannot send a task at all.
-  const peers = fleet === null ? [] : [fleet.self, ...fleet.peers];
+  // empty "machines" list and cannot send a task at all. A hub also reports
+  // this console among the peers, so the machine can arrive twice — the self
+  // entry carries its live capacity, the peer copy does not — and the list
+  // must not offer the same target as two rows.
+  const peers =
+    fleet === null
+      ? []
+      : [fleet.self, ...fleet.peers.filter((peer) => peer.addr !== fleet.self.addr)];
 
   useEffect(() => {
     if (!open) {
@@ -276,6 +296,9 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
             peers.map((peer) => {
               const url = `http://${peer.addr}`;
               const on = chosen.includes(url);
+              // A console too old to report its own address still belongs in
+              // the list; an unnamed row reads like a bug.
+              const label = peer.addr === "" ? "this console" : peer.addr;
               const agents = peer.agents ?? [];
               // Only a machine that reported the agent is offered. An older
               // console with no agents field is unknown, not "can run anything".
@@ -307,8 +330,8 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
                 .filter((part) => part !== "")
                 .join(" · ");
               const tooltip = [
-                capable ? "" : `${peer.addr} has no ${kind}`,
-                full ? `${peer.addr} is at capacity` : "",
+                capable ? "" : `${label} has no ${kind}`,
+                full ? `${label} is at capacity` : "",
                 tools.length > 0 ? `tools: ${tools.join(" ")}` : "",
                 detail,
               ]
@@ -331,7 +354,7 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
                         setChosen(on ? chosen.filter((item) => item !== url) : [...chosen, url])
                       }
                     />
-                    <span>{peer.addr}</span>
+                    <span>{label}</span>
                     <span className="newws__dim">{detail}</span>
                   </label>
                 </li>
@@ -374,26 +397,33 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
                       </button>
                     )}
                 </header>
+                <p className="dispatch__prompt" title={entry.prompt}>
+                  {entry.prompt}
+                </p>
                 <ul>
                   {entry.jobs.map((job) => (
                     <li key={job.host} data-host={job.host}>
-                      <span className="dispatch__host">{job.host}</span>
-                      <span className="dispatch__status" data-status={job.status ?? job.error ? "bad" : ""}>
-                        {job.lost === true
-                          ? `lost — check ${job.host}`
-                          : job.cancelled === true || job.status === "stopped"
-                            ? "stopped"
-                            : job.error !== undefined && job.error !== ""
-                            ? job.error
-                            : job.status === "blocked"
-                              ? "blocked — wants you"
-                              : (job.status ?? "starting")}
-                      </span>
-                      {job.workspaceId !== "" && job.cancelled !== true && (
-                        <button type="button" className="dispatch__stop" onClick={() => void stop(job)}>
-                          stop
-                        </button>
-                      )}
+                      {/* The machine and its state on one line: the state is what
+                          the machine is doing, not a separate fact about it. */}
+                      <div className="dispatch__line">
+                        <span className="dispatch__host">{job.host}</span>
+                        <span className="dispatch__status" data-status={wantsLook(job) ? "bad" : ""}>
+                          {job.lost === true
+                            ? `lost — check ${job.host}`
+                            : job.cancelled === true || job.status === "stopped"
+                              ? "stopped"
+                              : job.error !== undefined && job.error !== ""
+                              ? job.error
+                              : job.status === "blocked"
+                                ? "blocked — wants you"
+                                : (job.status ?? "starting")}
+                        </span>
+                        {job.workspaceId !== "" && job.cancelled !== true && (
+                          <button type="button" className="dispatch__stop" onClick={() => void stop(job)}>
+                            stop
+                          </button>
+                        )}
+                      </div>
                       {job.branch !== undefined && job.branch !== "" && (
                         <span className="newws__dim">{job.branch}</span>
                       )}
