@@ -241,6 +241,14 @@ body::before {
   flex: 1;
 }
 
+/* The one masthead label allowed to run out of room, and then to say so with
+   an ellipsis rather than by losing a character off its edge. */
+#herdr-daemon-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .cluster {
   display: flex;
   align-items: center;
@@ -671,7 +679,11 @@ body::before {
 }
 
 /* Signal: a filled square, the only badge in the app. */
+/* A status dot is 8px or it is nothing: as a flex child it would otherwise be
+   the first thing a tight row squeezed to zero, and a phone masthead at 320px
+   lost the one cue that the daemon is up. */
 .signal {
+  flex: 0 0 auto;
   width: 8px;
   height: 8px;
   background: var(--idle);
@@ -1523,6 +1535,9 @@ body::before {
    daemon's own label, which is what the operator is looking for. */
 .cluster__dim {
   color: var(--ink-faint);
+  /* A protocol number cut to its last digit reads as a different protocol:
+     the name beside it gives way instead of the token. */
+  flex: 0 0 auto;
 }
 
 .cluster--button {
@@ -2299,6 +2314,15 @@ body::before {
   .statusline {
     gap: 8px;
     overflow: hidden;
+  }
+}
+
+/* Narrower than any current phone, and the masthead's five items stop fitting
+   at the phone gap. Tighten the row rather than drop a control from it. */
+@media (max-width: 359px) {
+  .masthead,
+  .cluster {
+    gap: 6px;
   }
 }
 
