@@ -671,15 +671,33 @@ export async function dispatchJob(options: {
   weight?: "light" | "standard" | "heavy";
   targets: string[];
 }): Promise<{ ok: boolean; dispatch: Dispatch } | { error: string } | null> {
-  const raw = await postJSONResult("/api/v1/fleet/job", options);
-  if (raw === null) {
+  // The outcome, not the bare result: a refused dispatch (no targets, a bad
+  // strategy) answers non-2xx with a reason, and that reason is what to show.
+  const outcome = await postJSONOutcome("/api/v1/fleet/job", options);
+  if (!outcome.ok) {
+    return { error: outcome.error === "" ? "the dispatch failed" : outcome.error };
+  }
+  if (outcome.body === null || typeof outcome.body !== "object") {
     return null;
   }
-  const record = raw as Record<string, unknown>;
-  if (typeof record.error === "object" && record.error !== null) {
-    return { error: String((record.error as Record<string, unknown>).message ?? "the dispatch failed") };
-  }
-  return { ok: true, dispatch: record.dispatch as Dispatch };
+  const record = outcome.body as Record<string, unknown>;
+  // HTTP 200 is not the verdict: the bridge answers ok:false when no machine
+  // started the job, and the dispatch still carries each machine's reason.
+  return { ok: record.ok === true, dispatch: record.dispatch as Dispatch };
+}
+
+/**
+ * The sentence for a dispatch nobody started: each machine's own reason, so the
+ * operator can tell "agent not installed" from "at capacity" without opening
+ * the board.
+ */
+export function dispatchFailure(dispatch: Dispatch | undefined): string {
+  const reasons = (dispatch?.jobs ?? [])
+    .filter((job) => (job.error ?? "") !== "")
+    .map((job) => `${job.host.replace(/^https?:\/\//, "")}: ${job.error}`);
+  return reasons.length === 0
+    ? "no machine started the job"
+    : `no machine started the job — ${reasons.join("; ")}`;
 }
 
 /** Every dispatch this console sent, with each machine's current status. */
@@ -688,18 +706,30 @@ export async function stopDispatchJob(host: string, workspaceId: string): Promis
   return postJSON("/api/v1/fleet/job/stop", { host, workspaceId });
 }
 
-/** Re-offer a market task that never started, on its stored target list. */
+/**
+ * Re-offer a market task that never started, on its stored target list. True
+ * only when a machine took it: the bridge answers 200 with ok:false otherwise.
+ */
 export async function retryDispatch(id: string): Promise<boolean> {
-  return postJSON("/api/v1/fleet/job/retry", { id });
+  const raw = await postJSONResult("/api/v1/fleet/job/retry", { id });
+  return typeof raw === "object" && raw !== null && (raw as Record<string, unknown>).ok === true;
 }
 
-export async function fetchDispatches(): Promise<Dispatch[]> {
-  const raw = await getJSON("/api/v1/fleet/jobs");
-  if (raw === null || typeof raw !== "object") {
-    return [];
+/**
+ * The board. null when it could not be read, so a poll that fails on a flaky
+ * link keeps what is on screen instead of blanking it (or throwing in a timer).
+ */
+export async function fetchDispatches(): Promise<Dispatch[] | null> {
+  try {
+    const raw = await getJSON("/api/v1/fleet/jobs");
+    if (raw === null || typeof raw !== "object") {
+      return null;
+    }
+    const dispatches = (raw as Record<string, unknown>).dispatches;
+    return Array.isArray(dispatches) ? (dispatches as Dispatch[]) : [];
+  } catch {
+    return null;
   }
-  const dispatches = (raw as Record<string, unknown>).dispatches;
-  return Array.isArray(dispatches) ? (dispatches as Dispatch[]) : [];
 }
 
 /** One console in the fleet, as the hub knows it. */

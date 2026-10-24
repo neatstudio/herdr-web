@@ -144,3 +144,81 @@ test("terminalKeyName keeps the modifiers a TUI needs", () => {
   assert.equal(herdr.terminalKeyName({ key: "A", shiftKey: true }), "A");
   assert.equal(herdr.terminalKeyName({ key: "Escape" }), "esc");
 });
+
+/** Answers every fetch with one JSON body, for the calls that read the outcome. */
+function stubFetch(status: number, body: unknown): () => void {
+  const original = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    })) as typeof fetch;
+  return () => {
+    globalThis.fetch = original;
+  };
+}
+
+const declined = {
+  id: "task-1",
+  at: 0,
+  prompt: "p",
+  jobs: [
+    { host: "http://100.89.0.4:5000", local: "", jobId: "", workspaceId: "", error: "agent not installed" },
+    { host: "http://100.89.0.9:5000", local: "", jobId: "", workspaceId: "", error: "at capacity" },
+  ],
+};
+
+test("dispatchJob keeps the bridge's ok:false instead of calling it a success", async () => {
+  const restore = stubFetch(200, { ok: false, dispatch: declined });
+  try {
+    const done = await herdr.dispatchJob({ prompt: "p", kind: "claude", targets: [] });
+    assert.ok(done !== null && !("error" in done));
+    assert.equal(done.ok, false);
+    assert.equal(done.dispatch.id, "task-1");
+  } finally {
+    restore();
+  }
+});
+
+test("dispatchJob shows the bridge's reason for a refused dispatch", async () => {
+  const restore = stubFetch(409, { error: { code: "no_targets", message: "no machine to send to" } });
+  try {
+    assert.deepEqual(await herdr.dispatchJob({ prompt: "p", kind: "claude", targets: [] }), {
+      error: "no machine to send to",
+    });
+  } finally {
+    restore();
+  }
+});
+
+test("dispatchFailure names each machine's reason", () => {
+  assert.equal(
+    herdr.dispatchFailure(declined),
+    "no machine started the job — 100.89.0.4:5000: agent not installed; 100.89.0.9:5000: at capacity",
+  );
+  assert.equal(herdr.dispatchFailure(undefined), "no machine started the job");
+});
+
+test("retryDispatch is true only when a machine took the task", async () => {
+  let restore = stubFetch(200, { ok: false, dispatch: declined });
+  try {
+    assert.equal(await herdr.retryDispatch("task-1"), false);
+  } finally {
+    restore();
+  }
+  restore = stubFetch(200, { ok: true, dispatch: declined });
+  try {
+    assert.equal(await herdr.retryDispatch("task-1"), true);
+  } finally {
+    restore();
+  }
+});
+
+test("fetchDispatches answers null for a failed read, not a thrown timer", async () => {
+  const restore = stubFetch(502, { error: { message: "bad gateway" } });
+  try {
+    assert.equal(await herdr.fetchDispatches(), null);
+  } finally {
+    restore();
+  }
+});

@@ -1959,8 +1959,11 @@ body::before {
 }
 
 /* The fleet is a page, not a dialog. The form and the task board get real
-   columns; the whole sheet scrolls as one. */
+   columns; the whole sheet scrolls as one. Its entry lives on the host panel
+   (z-index 45), so the page must sit above the panel or the panel keeps
+   swallowing the board's clicks. */
 .sheet--fleet {
+  z-index: 50;
   display: block;
   background: var(--paper);
 }

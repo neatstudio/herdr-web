@@ -2178,6 +2178,63 @@ test("a task can be offered to the fleet instead of run everywhere", async ({ pa
   await expect(sheet.locator('[data-dispatch="task-abc"]')).toContainText("started");
 });
 
+test("a task nobody took keeps its prompt and says why", async ({ page }) => {
+  await installBridge(page);
+  await page.route("**/api/v1/fleet", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        hub: false,
+        seeds: [],
+        follow: true,
+        self: { id: "me", addr: "100.89.0.116:5000", version: "v0.6.14", platform: "darwin-arm64" },
+        peers: [
+          { id: "tw1", addr: "100.89.0.4:5000", version: "v0.6.14", platform: "linux-amd64", agents: ["claude"], maxTasks: 3, running: 0, seen: 0, stale: false },
+        ],
+      }),
+    }),
+  );
+  await page.route("**/api/v1/herdr/agents", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ kinds: ["claude"] }) }),
+  );
+  await page.route("**/api/v1/fleet/jobs", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ dispatches: [] }) }),
+  );
+  // HTTP 200 with ok:false is what the bridge answers when every machine declined.
+  await page.route("**/api/v1/fleet/job", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: false,
+        dispatch: {
+          id: "task-none",
+          at: 0,
+          prompt: "find a bug",
+          strategy: "single",
+          jobs: [
+            { host: "http://100.89.0.4:5000", local: "", jobId: "", workspaceId: "", status: "declined", error: "insufficient memory" },
+          ],
+        },
+      }),
+    }),
+  );
+
+  await page.goto("/");
+  await page.locator("#herdr-host-open").click();
+  await page.locator("#dispatch-open").click();
+  const sheet = page.locator('.sheet[aria-label="Dispatch a job"]');
+  await page.locator("#dispatch-strategy-single").click();
+  await page.locator("#dispatch-prompt").fill("find a bug");
+  await page.locator("#dispatch-send").click();
+
+  await expect(sheet.locator(".newws__note--bad")).toContainText("no machine started the job");
+  await expect(sheet.locator(".newws__note--bad")).toContainText("insufficient memory");
+  // The prompt is still there to send again, not retyped.
+  await expect(page.locator("#dispatch-prompt")).toHaveValue("find a bug");
+});
+
 test("a one-machine fleet can send a task to itself", async ({ page }) => {
   const sent: string[] = [];
   await installBridge(page);

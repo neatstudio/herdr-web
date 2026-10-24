@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  dispatchFailure,
   dispatchJob,
   fetchAgentKinds,
   fetchDispatches,
@@ -57,6 +58,15 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
 
+  /** Re-read the board; a failed read keeps what is already on screen. */
+  function refreshBoard(): void {
+    void fetchDispatches().then((next) => {
+      if (next !== null) {
+        setDispatches(next);
+      }
+    });
+  }
+
   // This console is a target as well. Without it, a one-machine fleet has an
   // empty "machines" list and cannot send a task at all. A hub also reports
   // this console among the peers, so the machine can arrive twice — the self
@@ -79,7 +89,7 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
       setKinds(all);
       setKind((current) => current || all[0] || "");
     });
-    void fetchDispatches().then(setDispatches);
+    refreshBoard();
   }, [open]);
 
   useEffect(() => {
@@ -115,15 +125,31 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
     if (!open) {
       return;
     }
+    // One board request at a time: the bridge can take up to 30 s to ask every
+    // machine, and a 5 s timer without this gate stacked requests behind it.
+    let inFlight = false;
+    let cancelled = false;
     const timer = setInterval(() => {
       // A hidden tab should not make every target run git/status for a board
       // nobody is looking at.
-      if (document.visibilityState === "hidden") {
+      if (document.visibilityState === "hidden" || inFlight) {
         return;
       }
-      void fetchDispatches().then(setDispatches);
+      inFlight = true;
+      void fetchDispatches()
+        .then((next) => {
+          if (!cancelled && next !== null) {
+            setDispatches(next);
+          }
+        })
+        .finally(() => {
+          inFlight = false;
+        });
     }, 5000);
-    return () => clearInterval(timer);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
   }, [open]);
 
   if (!open) {
@@ -134,10 +160,10 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
     setProblem("");
     const ok = await retryDispatch(id);
     if (!ok) {
-      setProblem("the task could not be re-offered");
-      return;
+      setProblem("no machine took the task this time");
     }
-    void fetchDispatches().then(setDispatches);
+    // Either way the board has news: a new start, or each machine's new reason.
+    refreshBoard();
   }
 
   async function stop(job: DispatchedJob): Promise<void> {
@@ -183,7 +209,15 @@ export function DispatchSheet({ open, onClose, fleet }: Props) {
         setProblem(done.error);
         return;
       }
-      setDispatches([done.dispatch, ...dispatches]);
+      const sent: Dispatch | undefined = done.dispatch ?? undefined;
+      if (sent !== undefined) {
+        setDispatches((current) => [sent, ...current]);
+      }
+      if (!done.ok) {
+        // Nothing runs: keep the prompt so it can be sent again, not retyped.
+        setProblem(dispatchFailure(done.dispatch));
+        return;
+      }
       setPrompt("");
     } finally {
       setBusy(false);
