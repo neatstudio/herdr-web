@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"herdr-web/server"
+	"herdr-web/server/sharedledger"
 )
 
 //go:embed all:web/dist
@@ -80,6 +81,17 @@ func main() {
 	server.SetHerdrSocket(socketPath)
 	// Seeds are an entry point to the fleet, not an authority over it.
 	server.SetFleet(*fleetSeeds, *addr)
+	// The shared task ledger is optional: unset keeps the in-memory board for a
+	// single machine. Set HERDR_WEB_LEDGER_NATS to a NATS URL to make the board
+	// shared across machines.
+	if ledgerURL := strings.TrimSpace(os.Getenv("HERDR_WEB_LEDGER_NATS")); ledgerURL != "" {
+		ledger, err := sharedledger.NewNATS(ledgerURL, "herdr-tasks", "herdr-task-events")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "herdr-web: shared ledger:", err)
+			os.Exit(1)
+		}
+		server.SetSharedLedger(ledger)
+	}
 
 	fmt.Fprintf(os.Stderr, "herdr-web: socket %s\n", socketPath)
 	if err := server.Run([]string{*addr, *localAddr}, socketPath, webFS()); err != nil {

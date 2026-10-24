@@ -100,7 +100,19 @@ type Server struct {
 	tailnetFacing bool
 }
 
+// sharedLedgerOverride lets main wire the NATS adapter before NewServer is
+// called. Nil keeps the in-memory Phase 1 ledger.
+var sharedLedgerOverride sharedledger.Ledger
+
+func SetSharedLedger(ledger sharedledger.Ledger) {
+	sharedLedgerOverride = ledger
+}
+
 func NewServer(socketPath string, webFS fs.FS) *Server {
+	shared := sharedLedgerOverride
+	if shared == nil {
+		shared = sharedledger.NewMemory()
+	}
 	return &Server{
 		socketPath:    socketPath,
 		webFS:         webFS,
@@ -108,7 +120,7 @@ func NewServer(socketPath string, webFS fs.FS) *Server {
 		fleetSeeds:    defaultFleetSeeds,
 		fleetAddr:     defaultFleetAddr,
 		ledger:        newJobLedger(),
-		sharedLedger:  sharedledger.NewMemory(),
+		sharedLedger:  shared,
 		dispatch:      newDispatchState(),
 		tailnetFacing: true,
 	}
