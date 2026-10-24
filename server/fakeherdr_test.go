@@ -21,6 +21,9 @@ type fakeHerdr struct {
 	readText string
 	// failMethods makes the named methods answer with a daemon error.
 	failMethods map[string]bool
+	// unknownMethods makes the named methods answer like an older herdr that
+	// does not have them (invalid_request: unknown variant).
+	unknownMethods map[string]bool
 	// revisions feeds pane.read so tests can exercise watermark changes.
 	revision  int
 	truncated bool
@@ -105,6 +108,7 @@ func serveFake(conn net.Conn, state *fakeHerdr) {
 	}
 	state.paramsByMethod[req.Method] = req.Params
 	fail := state.failMethods[req.Method]
+	unknown := state.unknownMethods[req.Method]
 	var result any
 	switch req.Method {
 	case "ping":
@@ -257,6 +261,14 @@ func serveFake(conn net.Conn, state *fakeHerdr) {
 		payload, _ = json.Marshal(map[string]any{
 			"id":    req.ID,
 			"error": map[string]any{"code": "daemon_error", "message": "boom"},
+		})
+	} else if unknown {
+		payload, _ = json.Marshal(map[string]any{
+			"id": req.ID,
+			"error": map[string]any{
+				"code":    "invalid_request",
+				"message": "invalid request: unknown variant `" + req.Method + "`, expected one of the known methods",
+			},
 		})
 	} else {
 		raw, _ := json.Marshal(result)

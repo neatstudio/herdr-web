@@ -868,7 +868,17 @@ func (s *Server) Handler() http.Handler {
 	// Everything this console sends is text on a link that may be a relay: the
 	// bundle arrived in thirteen seconds uncompressed, and pane reads are the bulk
 	// of every poll.
-	return withGzip(mux)
+	proxy := s.openDesignProxy()
+	gzipMux := withGzip(mux)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/opendesign/") {
+			// Streaming completions must not go through the gzip recorder,
+			// which buffers the whole response (review PERF-01).
+			proxy.ServeHTTP(w, r)
+			return
+		}
+		gzipMux.ServeHTTP(w, r)
+	})
 }
 
 // handleTabCreate adds a tab to a workspace: a new shell beside the ones that are
@@ -967,11 +977,7 @@ func (s *Server) handleWorkspaceCreate(w http.ResponseWriter, r *http.Request) {
 	if len(request.Command) > 0 {
 		// The pane exists once create returns, so running the command here is
 		// ordered after it by construction.
-		runParams := map[string]any{
-			"pane_id": created.RootPane.PaneID,
-			"command": request.Command,
-		}
-		if err := s.client().Call(r.Context(), "pane.run", runParams, nil); err != nil {
+		if err := s.runInPane(r.Context(), created.RootPane.PaneID, request.Command); err != nil {
 			// The workspace exists; saying so is more useful than pretending it
 			// does not, so the failure is reported next to it.
 			out["commandError"] = err.Error()
@@ -1001,8 +1007,7 @@ func (s *Server) handlePaneRun(w http.ResponseWriter, r *http.Request, paneID st
 		writeError(w, http.StatusBadRequest, "invalid_request", "command is required")
 		return
 	}
-	if err := s.client().Call(r.Context(), "pane.run",
-		map[string]any{"pane_id": paneID, "command": request.Command}, nil); err != nil {
+	if err := s.runInPane(r.Context(), paneID, request.Command); err != nil {
 		writeBadGateway(w, "herdr_run_failed", err)
 		return
 	}

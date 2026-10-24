@@ -222,6 +222,23 @@ func (l *jobLedger) runningCount() int {
 	return len(l.running)
 }
 
+// eventForPane finds the running job for a pane. The job status is addressed by
+// pane id, and the kind is what tells a command job (zerostack) from an agent
+// job when herdr cannot answer agent.get for the pane.
+func (l *jobLedger) eventForPane(paneID string) (ledgerEvent, bool) {
+	if l == nil {
+		return ledgerEvent{}, false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, event := range l.running {
+		if event.PaneID == paneID {
+			return event, true
+		}
+	}
+	return ledgerEvent{}, false
+}
+
 func (l *jobLedger) snapshot() []ledgerEvent {
 	if l == nil {
 		return []ledgerEvent{}
