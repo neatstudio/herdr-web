@@ -511,6 +511,12 @@ export function App() {
         selectedPaneId={paneId}
         onWorkspace={openWorkspace}
         onPane={(pane) => openPaneId(pane.id)}
+        onNewWorkspace={() => {
+          // The sheet is a navigation layer, not a place to stack dialogs: it
+          // closes and hands over to the create dialog.
+          setPicker(false);
+          setNewWorkspace(true);
+        }}
         onClose={() => setPicker(false)}
       />
 

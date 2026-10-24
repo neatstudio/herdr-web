@@ -11,6 +11,7 @@ type Props = {
   selectedPaneId: string | null;
   onWorkspace: (workspaceId: string) => void;
   onPane: (pane: AgentPane) => void;
+  onNewWorkspace: () => void;
   onClose: () => void;
 };
 
@@ -30,6 +31,7 @@ export function PickerSheet({
   selectedPaneId,
   onWorkspace,
   onPane,
+  onNewWorkspace,
   onClose,
 }: Props) {
   const [view, setView] = useState<View>("agents");
@@ -112,52 +114,65 @@ export function PickerSheet({
 
       <div className="sheet__body">
         <div className="col__list">
-          {view === "spaces"
-            ? workspaces.map((workspace) => {
-                const count = panes.filter((pane) => pane.workspaceId === workspace.id).length;
-                return (
-                  <button
-                    key={workspace.id}
-                    type="button"
-                    className="srow srow--space"
-                    data-workspace-id={workspace.id}
-                    aria-current={workspace.id === selectedWorkspaceId ? "true" : undefined}
-                    onClick={() => {
-                      onWorkspace(workspace.id);
-                      // Back to the agents: picking a space is always in order
-                      // to look at what is running in it.
-                      setView("agents");
-                    }}
-                  >
-                    <span className="srow__name">
-                      {workspace.name}
-                      <span className="row__id">
-                        {count} {count === 1 ? "pane" : "panes"}
-                      </span>
+          {view === "spaces" &&
+            workspaces.map((workspace) => {
+              const count = panes.filter((pane) => pane.workspaceId === workspace.id).length;
+              return (
+                <button
+                  key={workspace.id}
+                  type="button"
+                  className="srow srow--space"
+                  data-workspace-id={workspace.id}
+                  aria-current={workspace.id === selectedWorkspaceId ? "true" : undefined}
+                  onClick={() => {
+                    onWorkspace(workspace.id);
+                    // Back to the agents: picking a space is always in order
+                    // to look at what is running in it.
+                    setView("agents");
+                  }}
+                >
+                  <span className="srow__name">
+                    {workspace.name}
+                    <span className="row__id">
+                      {count} {count === 1 ? "pane" : "panes"}
                     </span>
-                  </button>
-                );
-              })
-            : agents.map((pane) => {
-                const workspaceName = names.get(pane.workspaceId) ?? pane.workspaceId;
-                return (
-                  <button
-                    key={pane.id}
-                    type="button"
-                    className="srow"
-                    data-pane-id={pane.id}
-                    data-tone={toneOf(pane.agentStatus)}
-                    aria-current={pane.id === selectedPaneId ? "true" : undefined}
-                    onClick={() => onPane(pane)}
-                  >
-                    <span className="srow__agent">{paneAgent(pane) || "shell"}</span>
-                    <span className="srow__name">
-                      {paneListName(pane, workspaceName)}
-                      <span className="row__id">{workspaceName}</span>
-                    </span>
-                  </button>
-                );
-              })}
+                  </span>
+                </button>
+              );
+            })}
+          {/* This sheet is the whole sidebar on a phone, so the spaces list
+              keeps the one action the desktop sidebar offers there. */}
+          {view === "spaces" && (
+            <button
+              type="button"
+              id="herdr-sheet-new-workspace"
+              className="srow srow--space srow--new"
+              onClick={onNewWorkspace}
+            >
+              <span className="srow__name">+ new workspace</span>
+            </button>
+          )}
+          {view === "agents" &&
+            agents.map((pane) => {
+              const workspaceName = names.get(pane.workspaceId) ?? pane.workspaceId;
+              return (
+                <button
+                  key={pane.id}
+                  type="button"
+                  className="srow"
+                  data-pane-id={pane.id}
+                  data-tone={toneOf(pane.agentStatus)}
+                  aria-current={pane.id === selectedPaneId ? "true" : undefined}
+                  onClick={() => onPane(pane)}
+                >
+                  <span className="srow__agent">{paneAgent(pane) || "shell"}</span>
+                  <span className="srow__name">
+                    {paneListName(pane, workspaceName)}
+                    <span className="row__id">{workspaceName}</span>
+                  </span>
+                </button>
+              );
+            })}
           {view === "spaces" && workspaces.length === 0 && (
             <p className="col__empty">No workspaces reported.</p>
           )}

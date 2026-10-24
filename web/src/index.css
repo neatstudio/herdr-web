@@ -503,6 +503,20 @@ body::before {
   grid-template-columns: minmax(0, 1fr);
 }
 
+/* "new workspace" is an action, not a space: it reads as a label rather than
+   something on the list, and sits after the spaces it would add to. */
+.srow.srow--new {
+  color: var(--ink-faint);
+  font-family: var(--font-label);
+  font-size: var(--step-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.srow.srow--new:hover {
+  color: var(--ink);
+}
+
 .row__agent {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2320,6 +2334,7 @@ body::before {
 }
 
 .newws__field input {
+  text-overflow: ellipsis;
   padding: 5px 7px;
   background: none;
   border: var(--rule-w) solid var(--rule-strong);
