@@ -68,3 +68,34 @@ func TestDispatchStopClosesTheTargetAndStopsPolling(t *testing.T) {
 		t.Fatalf("status called %d times after stop", statusCalls.Load())
 	}
 }
+
+func TestDispatchStopRefusesAJobItDidNotSend(t *testing.T) {
+	// Without the dispatch record this endpoint is a request-forwarder to
+	// anywhere that answers: the stop has to map to a job this console sent.
+	var reached atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached.Add(1)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer target.Close()
+
+	isolateState(t)
+	console := NewServer(t.TempDir()+"/h.sock", testWebFS())
+	console.dispatch.dispatch = []dispatch{{
+		ID:   "d1",
+		Jobs: []dispatchedJob{{Host: "http://elsewhere:5000", Local: "w1:p1", WorkspaceID: "w1"}},
+	}}
+
+	for _, body := range []string{
+		`{"host":"` + target.URL + `","workspaceId":"w1"}`,    // right workspace, wrong host
+		`{"host":"http://elsewhere:5000","workspaceId":"w9"}`, // right host, wrong workspace
+	} {
+		stop := do(t, console.Handler(), http.MethodPost, "/api/v1/fleet/job/stop", body)
+		if stop.Code != http.StatusNotFound {
+			t.Fatalf("%s: status = %d, want 404", body, stop.Code)
+		}
+	}
+	if reached.Load() != 0 {
+		t.Fatalf("an undispatched target was contacted %d times", reached.Load())
+	}
+}

@@ -70,7 +70,7 @@ func TestFleetPeerReportsCapacityAndModels(t *testing.T) {
 	isolateState(t)
 	console := NewServer("", nil)
 	console.fleetAddr = "127.0.0.1:5000"
-	console.ledger.started("w1", "w1:p1", "claude", "dev", "job", "")
+	console.ledger.started("", "w1", "w1:p1", "claude", "dev", "job", "")
 
 	peer := console.fleetSelfPeer()
 	if peer.MaxTasks != 3 || peer.Running != 1 {
@@ -87,7 +87,7 @@ func TestFleetPeerReportsCapacityAndModels(t *testing.T) {
 func TestLedgerSurvivesRestart(t *testing.T) {
 	isolateState(t)
 	first := newJobLedger()
-	first.started("w1", "w1:p1", "claude", "dev", "job", "task-1")
+	first.started("", "w1", "w1:p1", "claude", "dev", "job", "task-1")
 
 	second := newJobLedger()
 	if second.runningCount() != 1 {

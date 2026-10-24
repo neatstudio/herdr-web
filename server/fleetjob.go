@@ -216,8 +216,10 @@ func (s *Server) handleDispatchJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A random suffix, as for market tasks: two sends in one second used to share
+	// an id, and retry/stop by id then found the wrong record.
 	job := dispatch{
-		ID:       "job-" + time.Now().Format("20060102-150405"),
+		ID:       "job-" + strings.TrimPrefix(newTaskID(), "task-"),
 		At:       time.Now().Unix(),
 		Prompt:   request.Prompt,
 		Kind:     request.Kind,
@@ -229,6 +231,9 @@ func (s *Server) handleDispatchJob(w http.ResponseWriter, r *http.Request) {
 		Targets:  targets,
 		Jobs:     make([]dispatchedJob, 0, len(targets)),
 	}
+	// ok means at least one machine started the job, the same as for a market
+	// task: a dispatch nobody took is not a success, whatever the HTTP status.
+	startedAny := false
 	for _, target := range targets {
 		base := fleetBase(target)
 		entry := dispatchedJob{Host: base, Weight: normalizeWeight(request.Weight)}
@@ -252,6 +257,7 @@ func (s *Server) handleDispatchJob(w http.ResponseWriter, r *http.Request) {
 			entry.Local = started.JobID
 			entry.WorkspaceID = started.WorkspaceID
 			entry.Branch = started.Branch
+			startedAny = true
 		}
 		job.Jobs = append(job.Jobs, entry)
 	}
@@ -264,7 +270,7 @@ func (s *Server) handleDispatchJob(w http.ResponseWriter, r *http.Request) {
 	s.dispatch.saveLocked()
 	s.dispatch.mu.Unlock()
 
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "dispatch": job})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": startedAny, "dispatch": job})
 }
 
 type jobOfferAnswer struct {
@@ -376,6 +382,13 @@ func (s *Server) runMarket(ctx context.Context, request dispatchRequest, targets
 			entry.Error = startErr.Error()
 			entry.Status = "declined"
 			var statusErr *selfFetchError
+			if errors.As(startErr, &statusErr) && statusErr.status == http.StatusConflict {
+				// The target is creating this task's workspace right now; offering
+				// it to the next machine would run it twice.
+				entry.Status = "unknown"
+				entry.Error = "the task is still starting on " + base
+				break
+			}
 			if !queried && !errors.As(startErr, &statusErr) {
 				// A network failure with no answer from the target: it may have
 				// started. Do not risk a second workspace on another machine.
@@ -690,6 +703,23 @@ func (s *Server) handleDispatchStop(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "host must be an http(s) console address")
 		return
 	}
+	// The stop is proxied only for a job this console dispatched: without the
+	// record, this endpoint is a request-forwarder to anywhere that answers.
+	known := false
+	s.dispatch.mu.Lock()
+	for index := range s.dispatch.dispatch {
+		for jobIndex := range s.dispatch.dispatch[index].Jobs {
+			job := &s.dispatch.dispatch[index].Jobs[jobIndex]
+			if strings.TrimRight(job.Host, "/") == host && job.WorkspaceID == workspaceID {
+				known = true
+			}
+		}
+	}
+	s.dispatch.mu.Unlock()
+	if !known {
+		writeError(w, http.StatusNotFound, "unknown_job", "no dispatched job on "+host+" with workspace "+workspaceID)
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
@@ -745,6 +775,10 @@ func (s *Server) handleDispatchList(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
+	// Each job is asked on its own, a few at a time: one slow machine used to
+	// hold every job after it, and the board waited for the sum of them all.
+	slots := make(chan struct{}, dispatchPollParallel)
+	var wait sync.WaitGroup
 	for index := range history {
 		for jobIndex := range history[index].Jobs {
 			job := &history[index].Jobs[jobIndex]
@@ -756,30 +790,47 @@ func (s *Server) handleDispatchList(w http.ResponseWriter, r *http.Request) {
 			if job.Local == "" {
 				continue
 			}
-			status, output, err := getJobStatus(ctx, job.Host, job.Local)
-			if err != nil {
-				job.Error = err.Error()
-				if job.WorkspaceID != "" && job.LeaseUntil > 0 && time.Now().Unix() > job.LeaseUntil {
-					job.Lost = true
-				}
-				continue
-			}
-			job.Status = status
-			job.Output = output
-			if job.WorkspaceID != "" {
-				if answer, ok := getJobDiff(ctx, job.Host, job.WorkspaceID); ok {
-					job.DiffReady = true
-					job.CheckoutPath = answer.CheckoutPath
-					if answer.Branch != "" {
-						job.Branch = answer.Branch
-					}
-					job.Commits = answer.Commits
-					job.Changed = answer.Changed
-				}
-			}
+			wait.Add(1)
+			go func() {
+				defer wait.Done()
+				slots <- struct{}{}
+				defer func() { <-slots }()
+				refreshDispatchedJob(ctx, job)
+			}()
 		}
 	}
+	wait.Wait()
 	writeJSON(w, http.StatusOK, map[string]any{"dispatches": history})
+}
+
+// dispatchPollParallel bounds how many machines the board asks at once.
+const dispatchPollParallel = 6
+
+// refreshDispatchedJob asks the machine running a job for its status and, when
+// there is a worktree, what it contains.
+func refreshDispatchedJob(ctx context.Context, job *dispatchedJob) {
+	status, output, err := getJobStatus(ctx, job.Host, job.Local)
+	if err != nil {
+		job.Error = err.Error()
+		if job.WorkspaceID != "" && job.LeaseUntil > 0 && time.Now().Unix() > job.LeaseUntil {
+			job.Lost = true
+		}
+		return
+	}
+	job.Status = status
+	job.Output = output
+	if job.WorkspaceID == "" {
+		return
+	}
+	if answer, ok := getJobDiff(ctx, job.Host, job.WorkspaceID); ok {
+		job.DiffReady = true
+		job.CheckoutPath = answer.CheckoutPath
+		if answer.Branch != "" {
+			job.Branch = answer.Branch
+		}
+		job.Commits = answer.Commits
+		job.Changed = answer.Changed
+	}
 }
 
 type jobDiffAnswer struct {

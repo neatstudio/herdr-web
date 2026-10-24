@@ -45,6 +45,8 @@ type fakeHerdr struct {
 	closedWorkspaces []string
 	// workspaceCreates counts workspace.create/worktree.create calls.
 	workspaceCreates int
+	// createDelay holds workspace.create open, so concurrent starts overlap.
+	createDelay time.Duration
 	// resized records every pane.resize direction.
 	resized []string
 	// split records every pane.split direction, closed every pane.close id,
@@ -260,7 +262,12 @@ func serveFake(conn net.Conn, state *fakeHerdr) {
 	default:
 		result = map[string]any{"type": "ok"}
 	}
+	delay := time.Duration(0)
+	if req.Method == "workspace.create" || req.Method == "worktree.create" {
+		delay = state.createDelay
+	}
 	state.mu.Unlock()
+	time.Sleep(delay)
 
 	var payload []byte
 	if fail {

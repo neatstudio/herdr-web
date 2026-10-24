@@ -120,25 +120,34 @@ func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "herdr_agent_failed", "zerostack is not installed on this machine")
 		return
 	}
-	if taskID := strings.TrimSpace(request.TaskID); taskID != "" {
-		if event, running := s.ledger.runningTask(taskID); running {
-			writeJSON(w, http.StatusOK, jobStarted{
-				OK:          true,
-				JobID:       event.PaneID,
-				WorkspaceID: event.WorkspaceID,
-				PaneID:      event.PaneID,
-				TaskID:      taskID,
-				Reused:      true,
-				Branch:      strings.TrimSpace(request.Branch),
-			})
-			return
-		}
-	}
-	if limit := maxJobs(); limit > 0 && s.ledger.runningCount() >= limit {
+	// Admission and the slot claim are one step: a check now and a record after
+	// the herdr calls let concurrent starts both pass it.
+	taskID := strings.TrimSpace(request.TaskID)
+	limit := maxJobs()
+	reservation, existing, outcome := s.ledger.reserve(taskID, limit)
+	switch outcome {
+	case reserveRunning:
+		writeJSON(w, http.StatusOK, jobStarted{
+			OK:          true,
+			JobID:       existing.PaneID,
+			WorkspaceID: existing.WorkspaceID,
+			PaneID:      existing.PaneID,
+			TaskID:      taskID,
+			Reused:      true,
+			Branch:      strings.TrimSpace(request.Branch),
+		})
+		return
+	case reserveStarting:
+		writeError(w, http.StatusConflict, "task_starting",
+			"this task is being started on this console by another request")
+		return
+	case reserveFull:
 		writeError(w, http.StatusTooManyRequests, "at_capacity",
 			fmt.Sprintf("this console is already running %d jobs (HERDR_WEB_MAX_JOBS=%d)", s.ledger.runningCount(), limit))
 		return
 	}
+	// A no-op once started has consumed the reservation.
+	defer s.ledger.release(reservation)
 	weight := normalizeWeight(request.Weight)
 	if admitted, reason := weightAdmission(weight, readHostResources()); !admitted {
 		writeError(w, http.StatusTooManyRequests, "insufficient_resources", reason)
@@ -177,7 +186,9 @@ func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	paneID := created.RootPane.PaneID
+	workspaceID := created.Workspace.WorkspaceID
 	if paneID == "" {
+		s.abandonWorkspace(workspaceID)
 		writeError(w, http.StatusBadGateway, "herdr_job_failed", "herdr created a workspace with no pane")
 		return
 	}
@@ -189,18 +200,19 @@ func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 	if strings.EqualFold(kind, "zerostack") {
 		command := []string{"sh", "-c", zerostackOneShot, "zerostack", request.Prompt}
 		if err := s.runInPane(ctx, paneID, command); err != nil {
+			s.abandonWorkspace(workspaceID)
 			writeBadGateway(w, "herdr_job_failed", err)
 			return
 		}
-		s.ledger.started(created.Workspace.WorkspaceID, paneID, kind, string(role), label, sharedTaskID(request, paneID))
-		taskID := sharedTaskID(request, paneID)
+		s.ledger.started(reservation, workspaceID, paneID, kind, string(role), label, sharedTaskID(request, paneID))
+		taskID = sharedTaskID(request, paneID)
 		if err := s.startSharedTask(ctx, request, taskID, label); err != nil {
 			fmt.Fprintf(os.Stderr, "herdr-web: shared task %s: %v\n", taskID, err)
 		}
 		writeJSON(w, http.StatusOK, jobStarted{
 			OK:          true,
 			JobID:       paneID,
-			WorkspaceID: created.Workspace.WorkspaceID,
+			WorkspaceID: workspaceID,
 			PaneID:      paneID,
 			TaskID:      taskID,
 			Branch:      strings.TrimSpace(request.Branch),
@@ -217,28 +229,46 @@ func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 		"pane_id": paneID,
 	}
 	if err := s.client().Call(ctx, "agent.start", startParams, nil); err != nil {
+		s.abandonWorkspace(workspaceID)
 		writeBadGateway(w, "herdr_agent_failed", err)
 		return
 	}
 	if err := s.client().Call(ctx, "agent.prompt",
 		map[string]any{"target": paneID, "text": request.Prompt}, nil); err != nil {
+		s.abandonWorkspace(workspaceID)
 		writeBadGateway(w, "herdr_prompt_failed", err)
 		return
 	}
 
-	s.ledger.started(created.Workspace.WorkspaceID, paneID, request.Kind, string(role), label, sharedTaskID(request, paneID))
-	taskID := sharedTaskID(request, paneID)
+	s.ledger.started(reservation, workspaceID, paneID, request.Kind, string(role), label, sharedTaskID(request, paneID))
+	taskID = sharedTaskID(request, paneID)
 	if err := s.startSharedTask(ctx, request, taskID, label); err != nil {
 		fmt.Fprintf(os.Stderr, "herdr-web: shared task %s: %v\n", taskID, err)
 	}
 	writeJSON(w, http.StatusOK, jobStarted{
 		OK:          true,
 		JobID:       paneID,
-		WorkspaceID: created.Workspace.WorkspaceID,
+		WorkspaceID: workspaceID,
 		PaneID:      paneID,
 		TaskID:      taskID,
 		Branch:      strings.TrimSpace(request.Branch),
 	})
+}
+
+// abandonWorkspace closes a workspace whose job could not be started. Without
+// it, a failed agent.start left a workspace nothing records or counts, and the
+// error made the dispatcher believe no workspace existed. The request context
+// may already be spent, so the close gets its own short deadline.
+func (s *Server) abandonWorkspace(workspaceID string) {
+	if workspaceID == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := s.client().Call(ctx, "workspace.close",
+		map[string]any{"workspace_id": workspaceID}, nil); err != nil {
+		fmt.Fprintf(os.Stderr, "herdr-web: close abandoned workspace %s: %v\n", workspaceID, err)
+	}
 }
 
 // handleJobOffer is the market's admission question: can this machine take the
@@ -329,7 +359,8 @@ func (s *Server) handleJobTask(w http.ResponseWriter, r *http.Request, taskID st
 		return
 	}
 	event, running := s.ledger.runningTask(taskID)
-	answer := map[string]any{"ok": true, "taskId": taskID, "running": running}
+	answer := map[string]any{"ok": true, "taskId": taskID, "running": running,
+		"starting": !running && s.ledger.taskStarting(taskID)}
 	if running {
 		answer["jobId"] = event.PaneID
 		answer["workspaceId"] = event.WorkspaceID

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -35,9 +36,27 @@ type jobLedger struct {
 	mu      sync.Mutex
 	running map[string]ledgerEvent
 	tasks   map[string]string // task id -> workspace id
-	events  []ledgerEvent
-	path    string
+	// pending holds starts that passed admission but have no workspace yet,
+	// keyed by reservation; the value is the task id ("" for an anonymous job).
+	// They count against capacity, so two concurrent starts cannot both pass.
+	pending     map[string]string
+	reservation int
+	events      []ledgerEvent
+	path        string
 }
+
+// reserveOutcome is what an admission attempt decided.
+type reserveOutcome int
+
+const (
+	reserveOK reserveOutcome = iota
+	// reserveRunning: the task already runs here; the start is a retry.
+	reserveRunning
+	// reserveStarting: another request is creating this task's workspace now.
+	reserveStarting
+	// reserveFull: the running and pending jobs already fill the limit.
+	reserveFull
+)
 
 // ledgerPathOverride keeps a test's ledger out of the operator's home.
 var ledgerPathOverride string
@@ -57,6 +76,7 @@ func newJobLedger() *jobLedger {
 	ledger := &jobLedger{
 		running: map[string]ledgerEvent{},
 		tasks:   map[string]string{},
+		pending: map[string]string{},
 		path:    ledgerPath(),
 	}
 	ledger.load()
@@ -125,12 +145,75 @@ func (l *jobLedger) persistLocked(event ledgerEvent) {
 	_ = file.Close()
 }
 
-func (l *jobLedger) started(workspaceID, paneID, kind, role, label, taskID string) {
+// reserve is the admission check and the slot claim in one step. Checking the
+// task and the count, and only recording the job after several herdr calls,
+// let two concurrent starts of one task both create a workspace, and let two
+// different starts both pass a limit of one. A limit of zero or less means no
+// limit. The returned key is consumed by started or given back by release.
+func (l *jobLedger) reserve(taskID string, limit int) (string, ledgerEvent, reserveOutcome) {
+	if l == nil {
+		return "", ledgerEvent{}, reserveOK
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if taskID != "" {
+		if workspaceID := l.tasks[taskID]; workspaceID != "" {
+			if event, found := l.running[workspaceID]; found {
+				return "", event, reserveRunning
+			}
+		}
+		if l.startingLocked(taskID) {
+			return "", ledgerEvent{}, reserveStarting
+		}
+	}
+	if limit > 0 && len(l.running)+len(l.pending) >= limit {
+		return "", ledgerEvent{}, reserveFull
+	}
+	l.reservation++
+	key := strconv.Itoa(l.reservation)
+	l.pending[key] = taskID
+	return key, ledgerEvent{}, reserveOK
+}
+
+// release gives back a reservation whose start failed. It is a no-op for a key
+// that started already consumed, so callers can defer it unconditionally.
+func (l *jobLedger) release(key string) {
+	if l == nil || key == "" {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.pending, key)
+}
+
+// taskStarting says whether a start for this task is in flight here.
+func (l *jobLedger) taskStarting(taskID string) bool {
+	if l == nil || taskID == "" {
+		return false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.startingLocked(taskID)
+}
+
+func (l *jobLedger) startingLocked(taskID string) bool {
+	for _, pendingTask := range l.pending {
+		if pendingTask == taskID {
+			return true
+		}
+	}
+	return false
+}
+
+// started records a running job and consumes its reservation under the same
+// lock, so the slot is never counted twice or not at all.
+func (l *jobLedger) started(reservation, workspaceID, paneID, kind, role, label, taskID string) {
 	if l == nil || workspaceID == "" {
 		return
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	delete(l.pending, reservation)
 	event := ledgerEvent{
 		At:          time.Now().Unix(),
 		Event:       "started",
@@ -215,13 +298,14 @@ func (l *jobLedger) recordOffer(taskID string, accepted bool, reason string) {
 	l.persistLocked(entry)
 }
 
+// runningCount is the slots in use: running jobs plus starts still in flight.
 func (l *jobLedger) runningCount() int {
 	if l == nil {
 		return 0
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return len(l.running)
+	return len(l.running) + len(l.pending)
 }
 
 // eventForPane finds the running job for a pane. The job status is addressed by
