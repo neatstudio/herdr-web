@@ -3,9 +3,15 @@
 A standalone web console for a [herdr](https://herdr.dev) daemon: one Go
 binary that serves the UI and bridges it to the herdr unix socket.
 
-It is deliberately small and self-contained. It talks to nothing but the
-herdr socket API, embeds the frontend it was built with, and has no runtime
-dependencies beyond the binary itself.
+It is self-contained and embeds the frontend it was built with. The local
+console bridges the herdr socket; optional fleet features also contact peer
+consoles and release sources. There are no runtime dependencies beyond the
+binary itself.
+
+Current behaviour and API shapes: [Fetures.md](Fetures.md). Product scope and
+acceptance criteria: [docs/SPECS.md](docs/SPECS.md) (product direction confirmed;
+implementation and remaining choices documented there).
+Security, performance and logic findings: [docs/review-2026-10-24.md](docs/review-2026-10-24.md).
 
 ```
 make build          # frontend + binary -> ./herdr-web
@@ -22,8 +28,9 @@ want.
 Browsers cannot open unix sockets, and herdr's daemon speaks newline-delimited
 JSON-RPC over `~/.config/herdr/herdr.sock` — there is no HTTP listener to point
 a web page at. So this project is a thin translator: HTTP in, herdr JSON-RPC
-out. Nothing is stored, nothing is cached, and no state lives here that is not
-in herdr.
+out. Pane and workspace state belongs to herdr; fleet membership, local job
+events, dispatch history and an update-source preference are persisted by
+herdr-web itself.
 
 ## What the console does
 
@@ -173,8 +180,9 @@ update` would fight the store. Nothing typed into the panel reaches a command.
 
 ## Routes
 
-Everything the UI needs, and nothing else. The set is closed: an unknown
-`/api` path returns 404 rather than falling through to the UI shell.
+The original local bridge routes are listed below; the current fleet, job,
+release and maintenance routes are indexed in [Fetures.md](Fetures.md).
+Unknown `/api` paths return 404 rather than falling through to the UI shell.
 
 | Method | Path | herdr call |
 | --- | --- | --- |
