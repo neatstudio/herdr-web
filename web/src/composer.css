@@ -103,6 +103,164 @@
   white-space: nowrap;
 }
 
+/* ------------------------------------------------------------- attachments */
+/* A picked file becomes a tile: the only place an upload is visible while the
+   bytes move, and the handle that takes it back out of the box. The row spans
+   the bar's grid so it never steals width from the line being typed. */
+
+.prompt__files {
+  display: flex;
+  grid-column: 1 / -1;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 0;
+  padding: 2px 0 10px;
+  overflow-x: auto;
+  overflow-y: visible;
+  overscroll-behavior-x: contain;
+  list-style: none;
+}
+
+.prompt__tile {
+  position: relative;
+  flex: none;
+  width: 68px;
+  height: 68px;
+  border: var(--rule-w) solid var(--ui-border, var(--rule));
+  border-radius: 12px;
+  background: var(--ui-bg, var(--paper));
+}
+
+/* The thumbnail is the tile, so it is the thumbnail that gets rounded: the box
+   itself stays square so the remove button can hang off its corner. */
+.prompt__thumb {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 11px;
+  object-fit: cover;
+}
+
+.prompt__doc {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  height: 100%;
+  /* the badge rides the bottom edge; lift the glyph and extension clear of it */
+  padding-bottom: 14px;
+  border-radius: 11px;
+  color: var(--ui-dim, var(--ink-dim));
+}
+
+.prompt__doc-glyph {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.prompt__doc-ext {
+  font-family: var(--ui-label, var(--font-label));
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* The pill is centred on the tile's bottom edge and allowed to be wider than
+   it: "Attached" set at 10px is 8 characters, and a 68px tile clips them. */
+.prompt__badge {
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  padding: 1px 5px;
+  border: var(--rule-w) solid var(--ui-border, var(--rule));
+  border-radius: 999px;
+  background: var(--ui-elev, var(--raised));
+  font-family: var(--ui-label, var(--font-label));
+  font-size: 10px;
+  letter-spacing: 0;
+  line-height: 1.4;
+  white-space: nowrap;
+  color: var(--ui-dim, var(--ink-dim));
+  transform: translateX(-50%);
+}
+
+.prompt__tile[data-state="ready"] .prompt__badge {
+  color: var(--ui-working, var(--working));
+}
+
+.prompt__tile[data-state="error"] {
+  border-color: var(--ui-blocked, var(--blocked));
+}
+
+.prompt__tile[data-state="error"] .prompt__badge {
+  color: var(--ui-blocked, var(--blocked));
+}
+
+/* The corner button is 22px so it does not cover the picture; a coarse pointer
+   gets the 44px target back through the halo, not by growing the mark. */
+.prompt__untile {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: var(--rule-w) solid var(--ui-border-strong, var(--rule-strong));
+  border-radius: 50%;
+  background: var(--ui-elev, var(--raised));
+  font-size: 13px;
+  line-height: 1;
+  color: var(--ui-dim, var(--ink-dim));
+  cursor: pointer;
+}
+
+.prompt__untile:hover {
+  border-color: var(--ui-blocked, var(--blocked));
+  color: var(--ui-blocked, var(--blocked));
+}
+
+.prompt__untile::before {
+  content: "";
+  position: absolute;
+  inset: -11px;
+  border-radius: 50%;
+}
+
+/* One line for a pick that was refused or an upload that failed: the tiles
+   carry their own state, this says what to do about it. */
+.prompt__note {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: center;
+  padding: 0 0 8px;
+}
+
+.prompt__note-text {
+  min-width: 0;
+}
+
+.prompt__note-act {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--ui-dim, var(--ink-dim));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.prompt__note-act:hover {
+  color: var(--ui-text, var(--ink));
+}
+
 /* The send button doubles as stop while the pane is working and the box is
    empty. Same element, same place, one glyph changed: a second button would
    split the operator's target on the one control they press blind. */
@@ -232,6 +390,27 @@
 
   .prompt__attach {
     font-size: 20px;
+  }
+
+  /* The tile strip scrolls sideways instead of wrapping: a second row of tiles
+     would push the text being typed off a phone screen. */
+  .prompt__files {
+    gap: 12px;
+    padding: 4px 2px 12px;
+    scrollbar-width: none;
+  }
+
+  .prompt__files::-webkit-scrollbar {
+    display: none;
+  }
+
+  .prompt__untile {
+    top: -6px;
+    right: -6px;
+  }
+
+  .prompt__note-act {
+    padding: 6px 2px;
   }
 
   .prompt__hints {

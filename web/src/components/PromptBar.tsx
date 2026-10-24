@@ -15,6 +15,18 @@ import { PROMPT_ID, keyboardIsPrimary, shouldClaimKey } from "@/lib/focus";
 import { paneName, toneOf } from "@/lib/fleet";
 import { findPaths } from "@/lib/paths";
 import {
+  ATTACH_IN_FLIGHT,
+  attachmentBadge,
+  attachmentLabel,
+  dropMention,
+  formatBytes,
+  isPreviewable,
+  pickAttachments,
+  rejectionNote,
+  type AttachmentRejection,
+  type AttachmentState,
+} from "@/lib/attachments";
+import {
   APP_ACTIONS,
   applyCompletion,
   mentionItems,
@@ -39,6 +51,21 @@ const STATUS_POLL_MS = 5000;
 const LIFT_MAX_RATIO = 0.6;
 
 type PaletteKind = "slash" | "mention";
+
+/**
+ * One picked file, while it is being turned into a path. The tile is the only
+ * place the upload is visible: it says whether the bytes are still moving,
+ * whether the path is now in the box, and it can be taken back out again.
+ */
+type Attachment = {
+  id: number;
+  file: File;
+  /** Object URL for an image, drawn as the tile itself; null for a document. */
+  preview: string | null;
+  state: AttachmentState;
+  /** The host path once it exists; the mention in the box is derived from it. */
+  path: string | null;
+};
 
 /** The open completion menu, in the coordinates of the draft it edits. */
 type Palette = {
@@ -110,13 +137,22 @@ export function PromptBar({
   const [uploaded, setUploaded] = useState<string[]>([]);
   const [stopping, setStopping] = useState(false);
   const [dropping, setDropping] = useState(false);
-  const [uploading, setUploading] = useState(0);
-  const [problem, setProblem] = useState("");
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [rejected, setRejected] = useState<AttachmentRejection[]>([]);
   const history = useRef<string[]>([]);
   const historyIndex = useRef(-1);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const promptRef = useRef<HTMLDivElement | null>(null);
+  /** Tiles as they are now, for cleanup that must not re-run on every render. */
+  const attachmentsRef = useRef<Attachment[]>([]);
+  attachmentsRef.current = attachments;
+  const nextAttachmentId = useRef(0);
+  /** Files waiting for a slot: only ATTACH_IN_FLIGHT uploads run at once. */
+  const queued = useRef<Attachment[]>([]);
+  const inFlight = useRef(0);
+  /** Tiles dismissed mid-upload: their result must not land in the box. */
+  const dismissed = useRef(new Set<number>());
   /** Where the caret goes once the text it belongs to is in the DOM. */
   const pendingCaret = useRef<{ at: number; length: number } | null>(null);
 
@@ -124,6 +160,20 @@ export function PromptBar({
   const working = toneOf(pane?.agentStatus) === "working";
   /** One send control, two jobs: an empty box on a working pane can interrupt it. */
   const stopMode = working && !raw && value.trim() === "";
+  const failed = attachments.filter((entry) => entry.state === "error");
+  /**
+   * One line for everything the pick could not do: a file refused before it
+   * left the phone, or an upload that came back empty. A tile carries its own
+   * state; this is the sentence the operator needs to act on.
+   */
+  const note =
+    rejected.length > 0
+      ? rejectionNote(rejected)
+      : failed.length === 0
+        ? ""
+        : failed.length === 1
+          ? `could not attach ${failed[0]?.file.name ?? "file"}`
+          : `could not attach ${failed.length} files`;
 
   /**
    * Paths this client can offer on "@": what was uploaded in this session and
@@ -184,38 +234,102 @@ export function PromptBar({
   /**
    * Attach files by putting their paths on the herdr host into the prompt.
    * That is how a CLI agent takes an image: it reads the file it is told about.
+   * Each file is a tile while its bytes move, and becomes a mention the moment
+   * the host answers with a path, so the box only ever holds paths that exist.
    */
-  async function attach(files: FileList | File[]): Promise<void> {
-    const list = Array.from(files);
-    if (list.length === 0) {
+  function attach(files: FileList | File[]): void {
+    const picked = pickAttachments(Array.from(files));
+    setRejected(picked.rejected);
+    if (picked.taken.length === 0) {
       return;
     }
-    setProblem("");
-    setUploading((count) => count + list.length);
-    try {
-      const paths: string[] = [];
-      for (const file of list) {
-        const stored = await uploadFile(file);
-        if (stored === null) {
-          setProblem(`could not attach ${file.name}`);
-          continue;
+    const added: Attachment[] = picked.taken.map((file) => {
+      nextAttachmentId.current += 1;
+      return {
+        id: nextAttachmentId.current,
+        file,
+        preview: isPreviewable(file.type) ? URL.createObjectURL(file) : null,
+        state: "uploading",
+        path: null,
+      };
+    });
+    setAttachments((current) => [...current, ...added]);
+    queued.current.push(...added);
+    pumpUploads();
+  }
+
+  /** Starts uploads until the slots are full; each finish starts the next. */
+  function pumpUploads(): void {
+    while (inFlight.current < ATTACH_IN_FLIGHT && queued.current.length > 0) {
+      const item = queued.current.shift();
+      if (item === undefined) {
+        return;
+      }
+      inFlight.current += 1;
+      void uploadFile(item.file).then((stored) => {
+        inFlight.current -= 1;
+        if (!dismissed.current.has(item.id)) {
+          if (stored === null) {
+            setAttachments((current) =>
+              current.map((entry) => (entry.id === item.id ? { ...entry, state: "error" } : entry)),
+            );
+          } else {
+            const mention = quotePath(stored.path);
+            setAttachments((current) =>
+              current.map((entry) =>
+                entry.id === item.id ? { ...entry, state: "ready", path: stored.path } : entry,
+              ),
+            );
+            // An uploaded path is a path this client now knows, so "@" offers it.
+            setUploaded((current) =>
+              current.includes(stored.path) ? current : [...current, stored.path],
+            );
+            setValue((current) => (current === "" ? `${mention} ` : `${current} ${mention} `));
+            inputRef.current?.focus();
+          }
         }
-        paths.push(quotePath(stored.path));
-        // An uploaded path is a path this client now knows, so "@" can offer it.
-        setUploaded((current) =>
-          current.includes(stored.path) ? current : [...current, stored.path],
-        );
-      }
-      if (paths.length > 0) {
-        setValue((current) =>
-          current === "" ? `${paths.join(" ")} ` : `${current} ${paths.join(" ")} `,
-        );
-        inputRef.current?.focus();
-      }
-    } finally {
-      setUploading((count) => Math.max(0, count - list.length));
+        pumpUploads();
+      });
     }
   }
+
+  /** Dismissing a tile also takes the mention it put in the box back out. */
+  function removeAttachment(item: Attachment): void {
+    dismissed.current.add(item.id);
+    if (item.preview !== null) {
+      URL.revokeObjectURL(item.preview);
+    }
+    setAttachments((current) => current.filter((entry) => entry.id !== item.id));
+    if (item.path !== null) {
+      const mention = quotePath(item.path);
+      setValue((current) => dropMention(current, mention));
+    }
+  }
+
+  /** A failed tile keeps its file, so the same bytes can be tried again. */
+  function retryFailed(): void {
+    const retried = attachments.filter((entry) => entry.state === "error");
+    if (retried.length === 0) {
+      return;
+    }
+    setAttachments((current) =>
+      current.map((entry) => (entry.state === "error" ? { ...entry, state: "uploading" } : entry)),
+    );
+    queued.current.push(...retried);
+    pumpUploads();
+  }
+
+  // Object URLs are memory the browser keeps until they are told otherwise.
+  useEffect(
+    () => () => {
+      for (const entry of attachmentsRef.current) {
+        if (entry.preview !== null) {
+          URL.revokeObjectURL(entry.preview);
+        }
+      }
+    },
+    [],
+  );
 
   // A new pane takes the caret with it, but only where a keyboard is primary:
   // on a phone this would raise the on-screen keyboard over the transcript.
@@ -657,7 +771,7 @@ export function PromptBar({
         }
         event.preventDefault();
         setDropping(false);
-        void attach(event.dataTransfer.files);
+        attach(event.dataTransfer.files);
       }}
     >
       {menu !== null && (
@@ -684,6 +798,61 @@ export function PromptBar({
               {item.hint !== undefined && <span className="prompt__hint">{item.hint}</span>}
             </button>
           ))}
+        </div>
+      )}
+      {attachments.length > 0 && (
+        <ul className="prompt__files" aria-label="attached files">
+          {attachments.map((entry) => (
+            <li
+              key={entry.id}
+              className="prompt__tile"
+              data-state={entry.state}
+              title={`${entry.file.name} · ${formatBytes(entry.file.size)}`}
+            >
+              {entry.preview !== null ? (
+                <img className="prompt__thumb" src={entry.preview} alt="" />
+              ) : (
+                <span className="prompt__doc" aria-hidden>
+                  <span className="prompt__doc-glyph">▤</span>
+                  <span className="prompt__doc-ext">{attachmentLabel(entry.file.name)}</span>
+                </span>
+              )}
+              <span className="prompt__badge">{attachmentBadge(entry.state)}</span>
+              <button
+                type="button"
+                className="prompt__untile"
+                aria-label={`remove ${entry.file.name}`}
+                onClick={() => removeAttachment(entry)}
+              >
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {note !== "" && (
+        <div className="prompt__problem prompt__note" role="status">
+          <span className="prompt__note-text">{note}</span>
+          {failed.length > 0 && (
+            <button type="button" className="prompt__note-act" onClick={retryFailed}>
+              retry
+            </button>
+          )}
+          <button
+            type="button"
+            className="prompt__note-act"
+            onClick={() => {
+              if (failed.length > 0) {
+                for (const entry of failed) {
+                  removeAttachment(entry);
+                }
+                return;
+              }
+              setRejected([]);
+            }}
+          >
+            {failed.length > 0 ? "remove" : "dismiss"}
+          </button>
         </div>
       )}
       <span className="prompt__glyph" aria-hidden>
@@ -718,7 +887,7 @@ export function PromptBar({
             return;
           }
           event.preventDefault();
-          void attach(
+          attach(
             files.map((file) =>
               file.name === ""
                 ? new File([file], "pasted.png", { type: file.type })
@@ -728,11 +897,6 @@ export function PromptBar({
         }}
       />
       <div className="prompt__actions">
-        {problem !== "" && (
-          <span className="prompt__problem" role="status">
-            {problem}
-          </span>
-        )}
         {raw && (
           <button
             type="button"
@@ -757,7 +921,7 @@ export function PromptBar({
           aria-hidden
           onChange={(event) => {
             if (event.target.files !== null) {
-              void attach(event.target.files);
+              attach(event.target.files);
             }
             event.target.value = "";
           }}
@@ -768,10 +932,9 @@ export function PromptBar({
           className="prompt__attach"
           title="attach a file or image by path"
           aria-label="Attach a file or image"
-          disabled={uploading > 0}
           onClick={() => fileRef.current?.click()}
         >
-          {uploading > 0 ? "…" : "＋"}
+          ＋
         </button>
         {restored && value.trim() !== "" && (
           <span className="prompt__draft" title="draft kept for this pane">
