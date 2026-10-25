@@ -30,6 +30,7 @@ export function ChatLens({ paneId, status, onOpenTerminal }: ChatLensProps) {
   const conversation = useMemo(() => deriveConversation(read.text), [read.text]);
   const laneRef = useRef<HTMLDivElement | null>(null);
   const stickyRef = useRef(true);
+  const [atBottom, setAtBottom] = useState(true);
   const [started, setStarted] = useState<{ id: string | null; at: number }>({
     id: null,
     at: 0,
@@ -44,6 +45,7 @@ export function ChatLens({ paneId, status, onOpenTerminal }: ChatLensProps) {
   // one we observe: from the first snapshot that carried the running turn.
   useEffect(() => {
     stickyRef.current = true;
+    setAtBottom(true);
     setStarted({ id: null, at: 0 });
   }, [paneId]);
 
@@ -77,7 +79,22 @@ export function ChatLens({ paneId, status, onOpenTerminal }: ChatLensProps) {
     if (lane === null) {
       return;
     }
-    stickyRef.current = lane.scrollHeight - lane.scrollTop - lane.clientHeight < 48;
+    const bottom = lane.scrollHeight - lane.scrollTop - lane.clientHeight < 48;
+    stickyRef.current = bottom;
+    setAtBottom(bottom);
+  };
+
+  // The lane holds a thousand lines of a session that keeps growing. Once the
+  // operator scrolls back the next poll must not yank them forward, so the way
+  // back is a control they press, not an effect that steals the scroll.
+  const jumpToLatest = () => {
+    const lane = laneRef.current;
+    if (lane === null) {
+      return;
+    }
+    stickyRef.current = true;
+    setAtBottom(true);
+    lane.scrollTop = lane.scrollHeight;
   };
 
   const empty = turns.length === 0;
@@ -109,6 +126,16 @@ export function ChatLens({ paneId, status, onOpenTerminal }: ChatLensProps) {
           </div>
         )}
       </div>
+      {!atBottom && !empty && (
+        <button
+          type="button"
+          className="chat__jump"
+          onClick={jumpToLatest}
+          aria-label="jump to the latest turn"
+        >
+          latest ↓
+        </button>
+      )}
     </div>
   );
 }
