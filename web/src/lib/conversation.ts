@@ -226,7 +226,35 @@ const CHROME_PATTERNS: readonly RegExp[] = [
   /^\s*model\s+\S/i,
   /^\s*\d+%\s+(?:used|of)\b/i,
   /^\s*bypass\s*$/i,
+  // The command that resumes the session the client just printed:
+  // `devin -r southern-bedbug` / `resumes this session · devin -r ...`.
+  /^\s*resumes?\s+this\s+session\b/i,
+  /^\s*(?:✓\s+)?started\s+new\s+session\b/i,
+  /^\s*[a-z][\w.-]*\s+-r\s+[a-z][\w-]*\s*$/i,
+  // A divider row, sometimes with the turn's subject baked into it:
+  // `───── 深度分析当前项目 ─`. It is the client's separator, not prose.
+  /^[─━═╌]{3,}/,
+  // The page marker a client prints at the end of its transcript.
+  /^\s*-{2,}\s*EOF\b/i,
+  // The shell prompt a client paints after its own UI: `⏺ ~/project`.
+  /^\s*[\u23FA\u25CF]\s+~?\//,
+  // A footer naming the model and the permission mode: `SWE-2 Max · bypass`.
+  /^\s*[A-Za-z][\w.\- ]{0,24}·\s*(?:bypass|accept-edits|full-auto)\b/i,
 ];
+
+/**
+ * Splash art: the client's banner is drawn in braille cells, sometimes with a
+ * word (`Devin CLI`) next to the drawing. No answer is written in braille.
+ */
+function isSplashArt(text: string): boolean {
+  let braille = 0;
+  for (const character of text) {
+    if (character >= "\u2800" && character <= "\u28FF") {
+      braille += 1;
+    }
+  }
+  return braille >= 3 && braille * 4 >= text.length;
+}
 
 function isStatusBar(text: string): boolean {
   // `| 2m > model > cwd > branch > cost >` is furniture, not prose.
@@ -251,6 +279,10 @@ function isChromeText(text: string): boolean {
     return false;
   }
   if (isComposerFooter(text)) {
+    return true;
+  }
+  // A horizontal rule is drawn by the client, not written by the agent.
+  if (isPadding(text) || isSplashArt(text)) {
     return true;
   }
   for (const pattern of CHROME_PATTERNS) {

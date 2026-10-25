@@ -171,6 +171,32 @@ test("status bars, wall clocks and box controls never become prose", () => {
   assert.equal(conversation.turns[0].answer, "answer prose");
 });
 
+/**
+ * When a pane goes idle the client paints its own furniture under the answer:
+ * a page marker, its splash, a fresh shell prompt, a rule, a mode footer.
+ * None of it is something the agent said.
+ */
+test("client furniture under the answer never becomes prose", () => {
+  const text = snapshot([
+    band(" 改完后记得提交"),
+    ink("改完了，已经提交，工作区是干净的。"),
+    ink(" ---EOF--*"),
+    ink("\u2800\u28F4\u28FE\u28F6\u2844"),
+    ink("\u2800\u285B\u28BF\u285F\u28BB\u28F6\u28FE\u28F6\u2844  Devin CLI"),
+    ink(" ⏺ ~/server/herdr-web"),
+    ink("──────────────────────────────────────────"),
+    ink("SWE-2 Max · bypass                    Context: 174k / 262k tokens (66%)"),
+    ink("devin -r southern-bedbug"),
+    ink("resumes this session · devin -r lists recent sessions"),
+    // A separator drawn on the user-turn fill, with the subject baked into it.
+    band("──────────────── 深度分析当前项目 ────────"),
+  ]);
+  const conversation = deriveConversation(text);
+  assert.equal(conversation.turns.length, 1);
+  assert.equal(conversation.turns[0].user, "改完后记得提交");
+  assert.equal(conversation.turns[0].answer, "改完了，已经提交，工作区是干净的。");
+});
+
 test("glyph and bracket rows classify by what the agent did", () => {
   const text = snapshot([
     band(" run the tests"),
