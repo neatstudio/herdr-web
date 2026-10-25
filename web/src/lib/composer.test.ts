@@ -3,9 +3,12 @@ import test from "node:test";
 
 import {
   APP_ACTIONS,
+  COMPOSER_MAX_ROWS,
+  COMPOSER_VIEWPORT_SHARE,
   applyCompletion,
   clearDraft,
   draftKey,
+  fitComposer,
   mentionItems,
   mentionQuery,
   readDraft,
@@ -224,4 +227,45 @@ test("APP_ACTIONS covers the six app actions and filters by their labels", () =>
   assert.deepEqual(scoreMatches("st", APP_ACTIONS).map((item) => item.action), ["stop"]);
   assert.deepEqual(scoreMatches("file", APP_ACTIONS).map((item) => item.action), ["files", "upload"]);
   assert.deepEqual(scoreMatches("zzz", APP_ACTIONS), []);
+});
+
+/* ------------------------------------------------------- box sizing */
+
+const LINE = 22.4;
+const PAD = 14;
+
+function fit(content: number, viewport = 844): { height: number; scrolls: boolean } {
+  return fitComposer({ content, line: LINE, padding: PAD, viewport, maxRows: COMPOSER_MAX_ROWS });
+}
+
+test("an empty composer is exactly one line tall, never shorter", () => {
+  // `scrollHeight` rounds 22.4px to 22: without the floor the box would be two
+  // pixels short of its own line box and grow a scrollbar over nothing.
+  assert.equal(fit(0).height, Math.ceil(LINE + PAD));
+  assert.equal(fit(0).scrolls, false);
+  assert.equal(fit(22).height, Math.ceil(LINE + PAD));
+});
+
+test("the composer grows with its lines and only scrolls past the cap", () => {
+  assert.deepEqual(fit(36), { height: 37, scrolls: false });
+  assert.deepEqual(fit(Math.ceil(LINE * 3 + PAD)), { height: Math.ceil(LINE * 3 + PAD), scrolls: false });
+  const cap = Math.ceil(LINE * COMPOSER_MAX_ROWS + PAD);
+  assert.deepEqual(fit(cap), { height: cap, scrolls: false });
+  assert.deepEqual(fit(cap + 1), { height: cap, scrolls: true });
+});
+
+test("a short viewport caps the box before the row limit does", () => {
+  const viewport = 300;
+  const byViewport = Math.ceil(viewport * COMPOSER_VIEWPORT_SHARE);
+  assert.ok(byViewport < LINE * COMPOSER_MAX_ROWS + PAD);
+  assert.deepEqual(fitComposer({ content: 10_000, line: LINE, padding: PAD, viewport, maxRows: COMPOSER_MAX_ROWS }), {
+    height: byViewport,
+    scrolls: true,
+  });
+  assert.equal(fit(10_000, viewport).height, byViewport);
+});
+
+test("a viewport smaller than one line still keeps the box one line tall", () => {
+  const tiny = fitComposer({ content: 10_000, line: LINE, padding: PAD, viewport: 20, maxRows: COMPOSER_MAX_ROWS });
+  assert.deepEqual(tiny, { height: Math.ceil(LINE + PAD), scrolls: true });
 });

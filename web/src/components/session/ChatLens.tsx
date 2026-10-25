@@ -114,6 +114,23 @@ export function ChatLens({ paneId, status, onOpenTerminal }: ChatLensProps) {
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [blocked, paneId]);
 
+  // The composer grows as the operator writes, which takes height off the lane.
+  // A reader who was at the bottom stays there, exactly as if a poll had landed:
+  // otherwise the line being answered scrolls away under their own typing.
+  useEffect(() => {
+    const lane = laneRef.current;
+    if (lane === null || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      if (stickyRef.current) {
+        lane.scrollTop = lane.scrollHeight;
+      }
+    });
+    observer.observe(lane);
+    return () => observer.disconnect();
+  }, []);
+
   const onScroll = () => {
     const lane = laneRef.current;
     if (lane === null) {

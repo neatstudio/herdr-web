@@ -1269,9 +1269,13 @@ body::before {
 .prompt__input {
   min-width: 0;
   /* A textarea so a long line wraps and a message can be written over several
-     lines; the height is set from its content, up to a limit, by the component. */
+     lines; the height is set from its content, up to a limit, by the component.
+     Scrolling stays off until that limit is reached — a native scrollbar over a
+     one-line box is noise — and its bar stays hidden at the limit too, because
+     the last line reaching the edge already says the box is full. */
   resize: none;
-  overflow-y: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
   padding: 7px 0;
   background: none;
   border: 0;
@@ -1281,6 +1285,11 @@ body::before {
   line-height: 1.4;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.prompt__input::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 /* Raw mode turns the composer into a keyboard for the pane: no text is colleted

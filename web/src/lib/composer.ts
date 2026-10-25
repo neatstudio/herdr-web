@@ -269,6 +269,55 @@ export function clearDraft(store: DraftStore | null, paneId: string): void {
   }
 }
 
+/* ------------------------------------------------------------- box sizing */
+
+/** How many lines the composer may grow to before it scrolls instead. */
+export const COMPOSER_MAX_ROWS = 8;
+
+/**
+ * The tallest the box may grow relative to the viewport. A composer that
+ * swallows the transcript is worse than one that scrolls: on a phone with the
+ * keyboard up the visual viewport is a third of the screen.
+ */
+export const COMPOSER_VIEWPORT_SHARE = 0.4;
+
+/** What one measurement of the textarea says about the box it needs. */
+export type ComposerMetrics = {
+  /** `scrollHeight` measured with the height left to the content; includes padding. */
+  content: number;
+  /** One line box (`line-height`), in px. */
+  line: number;
+  /** Vertical padding, in px. `scrollHeight` counts it, so the cap must too. */
+  padding: number;
+  /** Visual viewport height, in px; the on-screen keyboard shrinks it. */
+  viewport: number;
+  /** Rows before the box scrolls instead of growing. */
+  maxRows: number;
+};
+
+/** The height the box gets and whether the rest of the text scrolls. */
+export type ComposerFit = { height: number; scrolls: boolean };
+
+/**
+ * Size the composer to its text: one line when empty, eight lines at most, then
+ * the box stops growing and the text scrolls instead.
+ *
+ * The rounding matters more than it looks. `scrollHeight` is an integer while
+ * `line-height` is not (16px × 1.4 = 22.4px), so a box set to the measured
+ * height can still be a fraction short — and a textarea that is even one pixel
+ * short of its content grows a native scrollbar over what looks like an empty
+ * box. Rounding up and never going below one line + padding keeps it exact.
+ */
+export function fitComposer(metrics: ComposerMetrics): ComposerFit {
+  const oneLine = metrics.line + metrics.padding;
+  const byRows = metrics.line * metrics.maxRows + metrics.padding;
+  const byViewport = metrics.viewport * COMPOSER_VIEWPORT_SHARE;
+  const cap = Math.max(oneLine, Math.min(byRows, byViewport));
+  const wanted = Math.max(metrics.content, oneLine);
+  const height = Math.ceil(Math.min(wanted, cap));
+  return { height, scrolls: wanted > height + 0.5 };
+}
+
 /* -------------------------------------------------------------- actions */
 
 /**

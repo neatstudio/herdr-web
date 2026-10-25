@@ -27,7 +27,9 @@ import {
 } from "@/lib/attachments";
 import {
   APP_ACTIONS,
+  COMPOSER_MAX_ROWS,
   applyCompletion,
+  fitComposer,
   mentionItems,
   mentionQuery,
   readDraft,
@@ -42,8 +44,6 @@ import {
 const HISTORY_MAX = 50;
 /** Longest line that is typed key by key before it becomes a paste. */
 const TYPE_LIMIT = 400;
-/** The box grows to this many lines, then scrolls. */
-const MAX_ROWS = 8;
 /** A keyboard may cover at most this share of the viewport before lifting stops. */
 const LIFT_MAX_RATIO = 0.6;
 
@@ -362,15 +362,65 @@ export function PromptBar({
     pendingCaret.current = { at: draft.length, length: draft.length };
   }, [paneId, store]);
 
-  // Grow with the content, up to MAX_ROWS lines, then scroll.
+  /**
+   * Grow with the content, up to COMPOSER_MAX_ROWS lines, then scroll there.
+   *
+   * A one-shot measurement is not enough. The webfont arrives after the first
+   * paint and the line box moves with it, the phone rotates, and the keyboard
+   * changes how tall the box may get — a box left a single pixel short of its
+   * text shows a native scrollbar over an empty composer. So measure the
+   * settled font, keep the height inline (only the content knows how many lines
+   * it needs), and re-fit whenever any of those inputs change.
+   */
   useEffect(() => {
     const box = inputRef.current;
     if (box === null) {
       return;
     }
-    box.style.height = "auto";
-    const line = parseFloat(getComputedStyle(box).lineHeight) || 17;
-    box.style.height = `${Math.min(box.scrollHeight, line * MAX_ROWS)}px`;
+    let live = true;
+    let frame = 0;
+
+    const fit = () => {
+      if (!live || !box.isConnected) {
+        return;
+      }
+      const style = getComputedStyle(box);
+      const fontSize = parseFloat(style.fontSize) || 15;
+      const line = parseFloat(style.lineHeight) || fontSize * 1.4;
+      const padding = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
+      const viewport = window.visualViewport?.height ?? window.innerHeight;
+      // `height: auto` first: otherwise scrollHeight can only report the height
+      // it was given.
+      box.style.height = "auto";
+      const { height, scrolls } = fitComposer({
+        content: box.scrollHeight,
+        line,
+        padding,
+        viewport,
+        maxRows: COMPOSER_MAX_ROWS,
+      });
+      box.style.height = `${height}px`;
+      // Scrolling is off below the cap, where nothing should ever scroll, and on
+      // again at the cap, where it is the only way to reach the earlier lines.
+      box.style.overflowY = scrolls ? "auto" : "hidden";
+    };
+
+    const refit = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(fit);
+    };
+
+    fit();
+    // The bundled fonts swap in after mount; the metrics change underneath us.
+    document.fonts?.ready.then(refit, () => {});
+    window.addEventListener("resize", refit);
+    window.visualViewport?.addEventListener("resize", refit);
+    return () => {
+      live = false;
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", refit);
+      window.visualViewport?.removeEventListener("resize", refit);
+    };
   }, [value, raw]);
 
   // Keep the caret state in step with the box, so a menu is computed from where
