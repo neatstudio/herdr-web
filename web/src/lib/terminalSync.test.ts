@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { TerminalSync } from "./terminalSync.ts";
+import { TerminalSync, gridFor, } from "./terminalSync.ts";
 
 const CSI = "\u001b[";
 const ERASE = `${CSI}2K`;
@@ -212,4 +212,18 @@ test("a 400 KB / 1000-line snapshot stays cheap and a repaint stays small", () =
   const delta = sync.push(next);
   assert.ok(delta.length < 8000, `repaint wrote ${delta.length} bytes`);
   assert.ok(delta.length < snapshot.length / 20, "repaint must not resend the snapshot");
+});
+
+/* --------------------------------------------------------------- geometry */
+
+test("the grid is the terminal's own, with no column spent on a margin", () => {
+  // Two columns cost a 40-column phone 5% of every long line, and every break
+  // moved mid-word. The differ already counts wide glyphs as two cells.
+  assert.deepEqual(gridFor(40, 24), { cols: 40, rows: 24 });
+  assert.deepEqual(gridFor(201, 51), { cols: 201, rows: 51 });
+});
+
+test("a grid too small to draw still has a row and a few columns", () => {
+  assert.deepEqual(gridFor(0, 0), { cols: 8, rows: 1 });
+  assert.deepEqual(gridFor(2, -3), { cols: 8, rows: 1 });
 });

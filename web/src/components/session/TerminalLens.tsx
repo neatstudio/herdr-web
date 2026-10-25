@@ -9,7 +9,7 @@ import type { ITheme, Terminal } from "@xterm/xterm";
 import { sendPaneKeys, sendPaneText, terminalKeyName, type KeyStroke } from "@/lib/herdr";
 import type { PageTheme } from "@/lib/fleet";
 import { emptyLatches, type KeyLatch } from "@/lib/keybar";
-import { TerminalSync } from "@/lib/terminalSync";
+import { gridFor, TerminalSync } from "@/lib/terminalSync";
 import { usePaneRead } from "@/lib/usePaneRead";
 
 import { KeyBar } from "./KeyBar";
@@ -92,16 +92,9 @@ function readTheme(): ITheme {
   return theme;
 }
 
-/**
- * The row geometry the sync works in.
- *
- * One column is spent on a margin: the snapshot's own idea of a line's width is
- * measured after stripping ANSI, and an under-counted wide glyph would wrap in
- * xterm and desynchronise every row below it. Losing the last column is much
- * cheaper than losing the grid.
- */
+/** The row geometry the sync works in: the terminal's own grid, no margin. */
 function geometryFor(term: Terminal): { cols: number; rows: number } {
-  return { cols: Math.max(8, term.cols - 2), rows: Math.max(1, term.rows) };
+  return gridFor(term.cols, term.rows);
 }
 
 /**
@@ -224,8 +217,13 @@ export function TerminalLens({ paneId, status, theme }: TerminalLensProps) {
           cursorStyle: "bar",
           fontFamily: '"Geist Mono Variable", ui-monospace, monospace',
           fontSize: 13,
+          // A cell the height of the em box clips glyphs that draw to both
+          // edges of it — box drawing and block elements lose their last
+          // pixel row, which reads as a torn frame at the bottom of the grid.
+          // A fifth of a line of leading costs one row on a phone and makes
+          // every frame character whole.
           letterSpacing: 0,
-          lineHeight: 1,
+          lineHeight: 1.2,
           scrollback: 2000,
           theme: readTheme(),
         });

@@ -68,6 +68,29 @@ const REFLOW_CACHE_LIMIT = 2048;
 
 type Token = { raw: string; width: number };
 
+/** The narrowest grid worth drawing: below this a row is not a row. */
+const MIN_COLS = 8;
+
+/**
+ * The grid the differ works in, for a terminal of `cols` × `rows` cells.
+ *
+ * The width is the terminal's own: a snapshot line is reflowed to exactly as
+ * many cells as xterm will render, so a line that fits the pane's idea of its
+ * width is not wrapped two characters early at every break. An earlier version
+ * spent two columns on a safety margin; measured on a phone against a 201-column
+ * pane it only made every long line break mid-word two characters earlier.
+ *
+ * The width arithmetic is not naive: `charWidth` counts a CJK or emoji code
+ * point as two cells, so a reflowed row cannot hide a wide glyph that xterm
+ * would then wrap on its own and desynchronise every row below it.
+ */
+export function gridFor(cols: number, rows: number): { cols: number; rows: number } {
+  return {
+    cols: Math.max(MIN_COLS, Math.floor(cols)),
+    rows: Math.max(1, Math.floor(rows)),
+  };
+}
+
 function isWide(code: number): boolean {
   return (
     (code >= 0x1100 && code <= 0x115f) || // Hangul Jamo init.
