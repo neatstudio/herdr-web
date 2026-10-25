@@ -68,6 +68,12 @@ func (s *Server) orchestratorTick(ctx context.Context) {
 			if limit := maxJobs(); limit > 0 && s.ledger.runningCount() >= limit {
 				return
 			}
+			if step.role == sharedledger.RoleMerge {
+				if s.mergeApprovedTask(ctx, task) {
+					return
+				}
+				continue
+			}
 			if !agentAvailable(task.Kind) {
 				continue
 			}
@@ -106,4 +112,42 @@ func rolePrompt(task sharedledger.Task, role sharedledger.Role) string {
 	default:
 		return task.Prompt
 	}
+}
+
+// mergeApprovedTask performs the merge role server-side through the provider.
+// It creates the PR if the task has a branch but no PR yet, claims the merge
+// lease, merges, and attests the resulting commit. A provider failure releases
+// the lease so the next tick can retry; conflicts stay visible on the board.
+func (s *Server) mergeApprovedTask(ctx context.Context, task sharedledger.Task) bool {
+	repo, ok := s.repos.Get(task.Repo)
+	if !ok {
+		return false
+	}
+	pr := task.PR
+	if pr == 0 {
+		if strings.TrimSpace(task.Branch) == "" {
+			return false
+		}
+		pull, err := repo.createPull(ctx, task.Branch, repo.DefaultBranch, task.Title, task.Prompt)
+		if err != nil {
+			return false
+		}
+		pr = pull.Number
+		linked, err := s.sharedLedger.LinkPR(ctx, task.ID, pr)
+		if err != nil {
+			return false
+		}
+		task = linked
+	}
+	claimed, err := s.sharedLedger.Claim(ctx, task.ID, sharedledger.RoleMerge, localNodeID(), 30*time.Minute, task.Version)
+	if err != nil {
+		return false
+	}
+	merged, err := repo.mergePull(ctx, pr, "merge")
+	if err != nil || (!merged.Merged && merged.SHA == "") {
+		_, _ = s.sharedLedger.Release(ctx, task.ID, sharedledger.RoleMerge, localNodeID(), "provider merge failed")
+		return false
+	}
+	_, err = s.sharedLedger.Attest(ctx, task.ID, sharedledger.RoleMerge, localNodeID(), merged.SHA, "", "local", claimed.Version)
+	return err == nil
 }
