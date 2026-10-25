@@ -693,6 +693,24 @@ export function PromptBar({
     box?.focus();
   }
 
+  /**
+   * The soft keyboard's Return key sends (a phone has no Shift to hold), and
+   * while typing this control takes the "/" slot — the keyboard already has a
+   * slash, so a button that only types one is spending the best target in the
+   * card on a key the operator can reach. A newline is the one thing the phone
+   * cannot do otherwise: without it a paragraph cannot be written at all. */
+  function insertNewline(): void {
+    const box = inputRef.current;
+    const at = box?.selectionStart ?? value.length;
+    const end = box?.selectionEnd ?? at;
+    const head = `${value.slice(0, at)}\n`;
+    const text = head + value.slice(end);
+    pendingCaret.current = { at: head.length, length: text.length };
+    setValue(text);
+    setCaret(head.length);
+    box?.focus();
+  }
+
   function onRawKey(event: React.KeyboardEvent<HTMLTextAreaElement>): void {
     // Escape belongs to the pane: it cancels a menu, leaves insert mode, closes
     // a dialog. Taking it to leave raw mode is what made "/model" impossible to
@@ -1029,6 +1047,19 @@ export function PromptBar({
           </button>
           <button
             type="button"
+            id="herdr-newline-button"
+            className="prompt__act prompt__act--newline"
+            title="new line in the draft (shift+enter)"
+            aria-label="Insert a newline"
+            // Keep the soft keyboard up: a tap that blurs the box would close
+            // it and take the whole card down with it.
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={insertNewline}
+          >
+            <NewlineIcon />
+          </button>
+          <button
+            type="button"
             id="herdr-command-button"
             className="prompt__act prompt__act--system"
             title="commands: chat, terminal, files, upload, workspace, stop"
@@ -1192,6 +1223,25 @@ function ImageIcon() {
       <rect x="3" y="4" width="18" height="16" rx="2" />
       <circle cx="8.5" cy="9.5" r="1.5" />
       <path d="m21 16-4.5-4.5L6 21" />
+    </svg>
+  );
+}
+
+/** A return arrow: the line curls back to the left where the next one starts. */
+function NewlineIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      focusable="false"
+    >
+      <path d="M20 5v5a4 4 0 0 1-4 4H6" />
+      <path d="m10 10-4 4 4 4" />
     </svg>
   );
 }

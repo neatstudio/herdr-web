@@ -267,6 +267,14 @@
 }
 
 
+/* A newline in the draft is the one thing a soft keyboard cannot do: its Return
+   sends. The control exists for that case and is swapped into the pad only
+   while the keyboard is up (see the touch block), so the four desktop and
+   keyboard-closed controls stay four. */
+.prompt__act--newline {
+  display: none;
+}
+
 /* ------------------------------------------------------------------ touch */
 /* Coarse pointers and narrow frames get the mobile arrangement of the same
    card: a 2x2 pad of 36px controls beside the draft, 16px text so iOS does not
@@ -290,6 +298,8 @@
      card sits right on it instead of floating a finger's width above. */
   .has-keyboard .prompt {
     margin-bottom: 8px;
+    padding-top: 8px;
+    padding-bottom: 8px;
   }
 
   /* Focus is a soft accent edge, not a second border: the card is one surface
@@ -346,6 +356,49 @@
   .prompt__send svg {
     width: 18px;
     height: 18px;
+  }
+
+  /* Typing mode. The 2×2 pad is 74px tall, so it — not the draft — was setting
+     the height of a 96px card, and every pixel of the card is a pixel the
+     transcript loses to the keyboard. While the keyboard is up the same four
+     controls fold into one 32px row beside the draft: the card drops to 66px
+     (the draft's own two rows plus padding), the row still sits inside the
+     thumb arc, and send stays the last, filled control at the edge of the
+     grip. Nothing is hidden, so the pad keeps its meaning between the two
+     states; it only stops being the tallest thing in the card. */
+  .has-keyboard .prompt__pad {
+    display: flex;
+    flex-direction: row;
+    gap: 2px;
+    align-content: start;
+  }
+
+  .has-keyboard .prompt__field {
+    align-items: center;
+  }
+
+  .has-keyboard .prompt__act,
+  .has-keyboard .prompt__send {
+    width: 32px;
+    height: 32px;
+  }
+
+  .has-keyboard .prompt__act svg,
+  .has-keyboard .prompt__send svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* The row has four slots and typing mode gives one of them to the newline:
+     the "/" control's whole job is to type a slash, and the keyboard in front
+     of the operator has that key. Nothing leaves the card — the swap is only
+     where the one unreachable key was standing. */
+  .has-keyboard .prompt__act--newline {
+    display: inline-flex;
+  }
+
+  .has-keyboard #herdr-command-button {
+    display: none;
   }
 
   /* The raw-mode toggle is the one control with words on it, and on a phone it

@@ -2450,6 +2450,30 @@ body::before {
   }
 }
 
+/* The soft keyboard takes half a phone screen, and the two chrome rows above
+   the pane were spending 92px of what was left. While the keyboard is up they
+   step aside: the tab strip — which tab, which agent, what state — is the one
+   identity row the session needs, and the masthead's brand, daemon and theme
+   controls come back the moment the keyboard closes. Scoped to the lens
+   layout, the only place a phone shows a pane, and to `.is-narrow`, so a
+   desktop window with a soft keyboard keeps its chrome. */
+@media (max-width: 900px) {
+  /* The shell's three rows are auto/1fr/auto and a hidden masthead would pull
+     `.body` up into the auto row, leaving the session at its content height.
+     Two rows instead: the session takes the slack, the footer keeps its line. */
+  .has-keyboard .shell.is-narrow {
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .has-keyboard .shell.is-narrow .masthead {
+    display: none;
+  }
+
+  .has-keyboard .shell.is-narrow .stage--lens .stage__head {
+    display: none;
+  }
+}
+
 /* Narrower than any current phone, and the masthead's five items stop fitting
    at the phone gap. Tighten the row rather than drop a control from it. */
 @media (max-width: 359px) {
