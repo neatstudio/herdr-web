@@ -116,6 +116,18 @@ test("fences, quotes and blank lines end a list item", () => {
   });
 });
 
+test("a terminal bullet opens a list item too", () => {
+  const lines = ["• 文档已同步", "• 未跟踪的 server/orchestrator.go 是那边的活"];
+  assert.deepEqual(parseList(lines, 0), {
+    ordered: false,
+    items: [
+      { depth: 0, text: "文档已同步" },
+      { depth: 0, text: "未跟踪的 server/orchestrator.go 是那边的活" },
+    ],
+    end: 2,
+  });
+});
+
 test("a non-list line is not parsed as a list", () => {
   assert.equal(parseList(["plain prose"], 0), null);
 });

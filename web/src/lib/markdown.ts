@@ -26,7 +26,8 @@ export type ListBlock = {
 
 export const FENCE_RE = /^\s*(```|~~~)\s*([\w+-]*)\s*$/;
 export const HEADING_RE = /^(#{1,6})\s+(.*)$/;
-export const LIST_RE = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
+// Terminals print bullets as `•`, not as `-`; both open a list item.
+export const LIST_RE = /^(\s*)([-*+•]|\d+[.)])\s+(.*)$/;
 export const QUOTE_RE = /^\s*>\s?(.*)$/;
 
 /* ----------------------------------------------------------------- inline */
