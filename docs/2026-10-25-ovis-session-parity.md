@@ -37,7 +37,7 @@ herdr-web 建立在**客户端重解 ANSI 快照**之上（`readPane(paneId, 200
 | `@` 提及 / `/` 命令 | `lib/mentions.ts` + `usePaneCommands` | `lib/composer.ts` `mentionQuery`/`slashQuery` + `PromptBar.tsx`（提及 pane/workspace/路径，非 agent 专有） |
 | 附件上传 / 粘贴 / 拖入 | `uploadImages` + `.composer-attachments` | `lib/attachments.ts` + `PromptBar.tsx`（`uploadFile`） |
 | 真实 xterm，不做假终端 | `useTerminalMount.ts`（`scrollback: 0`，翻页走 RPC） | `components/session/TerminalLens.tsx`（本地 `scrollback: 2000`，滚轮天然可用） |
-| 控制键条 | `KeyBar.tsx`（默认 12 键、粘滞修饰、长按连发、安全区、mask 渐隐） | `components/session/KeyBar.tsx` + `lib/keybar.ts`（同一套：`KEY_BAR_KEYS`/`PICKER_BAR_KEYS` 两组、粘滞修饰、长按连发、`is-at-screen-bottom`） |
+| 控制键条 | `KeyBar.tsx`（默认 12 键、粘滞修饰、长按连发、安全区、mask 渐隐） | `components/session/KeyBar.tsx` + `lib/keybar.ts`（同一套：粘滞修饰、长按连发、`is-at-screen-bottom`；键分三层，见 §4 `057348e`） |
 | 终端里回答选择菜单 | `PromptCard` + 键位协议 | `PICKER_BAR_KEYS` + 窗口捕获方向键（`ChatLens.tsx:92-115`），聊天里直接回 Esc/↑↓/Enter（提交 `ce2abcd`） |
 | 状态色 / 主题 | `--status-*` + light/dark | `--working/--blocked/--idle/--done` + `lib/theme.ts`（auto/light/dark） |
 | 空态与断链态 | `chat-empty`、`Waiting for the PC…` | `.chat__empty`（`No transcript yet.` / `Waiting for the pane to paint.` + 开终端）、`daemon unreachable — showing the last snapshot` |
@@ -99,10 +99,14 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `5ee48b6` | 代码块语言标签 + 复制 + 超长折叠；围栏内缩进保真（`conversation.ts` 只对围栏行不 trim） |
 | `4278e69` | 输入框随内容长高、到上限才内部滚动（原来自带滚动条） |
 | `ce2abcd` | 聊天 lens 里直接回答终端 picker（键条 + 键盘） |
+| `f35db01` | 输入框半行裁切修掉：`padding` 归零、内边距挪到外框、高度按整行算 |
+| `057348e` | 键条改成两层：6 键常驻并按屏宽拉伸，其余（含手机键盘没有的 Backspace/Home/End/PgUp/PgDn）收进 `keys` 菜单的 4×4 网格；顺带藏掉 xterm 自带滚动条、抹掉亮色主题下那条黑带 |
 
-配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 274/274；
+配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 278/278；
 `/tmp/probe-code.mjs` 34/34（390×844 手机、700×900 窄桌面）；`probe-diff.mjs` 24/24；
-`probe-composer-fit.mjs` 16/16。
+`probe-composer-fit.mjs` 16/16、`probe-composer-refit.mjs` 8/8；
+`/tmp/probe-keys.mjs`（390×844 与 320×700，明暗两色）：键条 `scrollWidth == clientWidth`，
+菜单 4 列、页面无横向溢出、xterm 视口无滚动条，Esc/外点都能收起。
 
 ## 5. 给服务端的一页需求（若要继续逼近 Ovis）
 
