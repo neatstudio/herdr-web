@@ -319,3 +319,158 @@
     font-size: 10.5px;
   }
 }
+
+/* ------------------------------------------------------------- find bar */
+/* Search the local scrollback (2000 lines, `@xterm/addon-search`).
+
+   Two entrances, because the halves of the product have different keyboards:
+   ⌘F when the grid has focus, and the magnifier in the top-right corner for a
+   phone, where no chord exists. Ctrl+F is *not* a third: every TUI behind this
+   grid binds it to "forward one character", so it stays a pane key.
+
+   The bar floats over the grid instead of taking a row. A row would resize the
+   box, and the fit addon answers a resize by resetting and repainting the whole
+   buffer — a reader would lose the lines they were searching on the first
+   keystroke. It sits at the top for the same class of reason: the soft keyboard
+   rises from the bottom, so a bar pinned to the top cannot be covered by it,
+   and it never has to move when the keyboard opens or closes. The 16px field is
+   the iOS no-zoom floor, the same number `.prompt__input` uses. */
+
+.term__find-open {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: var(--rule-w) solid var(--ui-border-strong, var(--rule-strong));
+  border-radius: 999px;
+  background: var(--ui-elev, var(--raised));
+  color: var(--ui-faint, var(--ink-faint));
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.term__find-open:hover {
+  color: var(--ui-text, var(--ink));
+}
+
+.term__find-open:focus-visible,
+.term__find-step:focus-visible,
+.term__find-close:focus-visible {
+  outline: 2px solid var(--ui-accent, var(--accent));
+  outline-offset: 1px;
+}
+
+.term__find {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  left: 8px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 44px;
+  padding: 0 4px 0 8px;
+  border: var(--rule-w) solid var(--ui-border-strong, var(--rule-strong));
+  border-radius: 12px;
+  background: var(--ui-elev, var(--raised));
+  box-shadow: 0 10px 24px rgb(0 0 0 / 0.24);
+}
+
+.term__find-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--ui-text, var(--ink));
+  font-family: var(--ui-mono, var(--font-mono));
+  font-size: 16px;
+  line-height: 1;
+}
+
+.term__find-field::placeholder {
+  color: var(--ui-faint, var(--ink-faint));
+}
+
+.term__find-field:focus {
+  outline: none;
+}
+
+/* The bar has its own ×, so the platform's clear button would be a second one. */
+.term__find-field::-webkit-search-cancel-button {
+  display: none;
+}
+
+.term__find-count {
+  flex: none;
+  min-width: 40px;
+  color: var(--ui-dim, var(--ink-dim));
+  font-family: var(--ui-mono, var(--font-mono));
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.term__find-step,
+.term__find-close {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--ui-dim, var(--ink-dim));
+  font-family: var(--ui-mono, var(--font-mono));
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.term__find-step:hover,
+.term__find-close:hover {
+  background: var(--ui-panel, var(--surface));
+  color: var(--ui-text, var(--ink));
+}
+
+.term__find-close {
+  margin-left: 2px;
+  font-size: 17px;
+}
+
+/* A thumb needs a bigger face than a mouse pointer, and the whole bar grows with
+   it: 48px keeps three 36px buttons on one line without clipping the field. */
+@media (pointer: coarse) {
+  .term__find {
+    top: 6px;
+    right: 6px;
+    left: 6px;
+    height: 48px;
+    border-radius: 14px;
+  }
+
+  .term__find-open {
+    top: 6px;
+    right: 6px;
+    width: 40px;
+    height: 40px;
+  }
+
+  .term__find-step,
+  .term__find-close {
+    width: 36px;
+    height: 36px;
+  }
+}

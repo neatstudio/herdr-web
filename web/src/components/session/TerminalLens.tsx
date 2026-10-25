@@ -4,10 +4,12 @@ import "@xterm/xterm/css/xterm.css";
 import "../../terminal.css";
 
 import type { FitAddon } from "@xterm/addon-fit";
+import type { SearchAddon } from "@xterm/addon-search";
 import type { ITheme, Terminal } from "@xterm/xterm";
 
 import { sendPaneKeys, sendPaneText, terminalKeyName, type KeyStroke } from "@/lib/herdr";
 import type { PageTheme } from "@/lib/fleet";
+import { FIND_MISS, findInk, findLabel, type FindHit } from "@/lib/find";
 import { emptyLatches, type KeyLatch } from "@/lib/keybar";
 import { gridFor, TerminalSync } from "@/lib/terminalSync";
 import { usePaneRead } from "@/lib/usePaneRead";
@@ -119,10 +121,15 @@ export function TerminalLens({ paneId, status, theme }: TerminalLensProps) {
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const syncRef = useRef<TerminalSync | null>(null);
+  const searchRef = useRef<SearchAddon | null>(null);
+  const fieldRef = useRef<HTMLInputElement | null>(null);
   const snapshotRef = useRef("");
 
   const [failed, setFailed] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
+  const [finding, setFinding] = useState(false);
+  const [query, setQuery] = useState("");
+  const [hit, setHit] = useState<FindHit>(FIND_MISS);
   // Modifier latches live here, not in the key bar: a character typed into the
   // terminal must spend them too, otherwise a latched Ctrl would quietly turn
   // the next keyboard word into `ctrl+<letter>` an hour later.
@@ -136,6 +143,53 @@ export function TerminalLens({ paneId, status, theme }: TerminalLensProps) {
     }
     const buffer = term.buffer.active;
     setAtBottom(buffer.viewportY >= buffer.baseY);
+  };
+
+  /**
+   * Search options for the *current* palette.
+   *
+   * Read on every call rather than memoised: xterm's decorations only accept
+   * `#RRGGBB`, so the highlight cannot be a `var()` and has to be re-derived
+   * when the page flips theme.
+   */
+  const searchOptions = () => {
+    const ink = findInk(theme);
+    return {
+      incremental: true,
+      decorations: {
+        matchBackground: ink.match,
+        activeMatchBackground: ink.active,
+        activeMatchBorder: ink.accent,
+        matchOverviewRuler: ink.match,
+        activeMatchColorOverviewRuler: ink.accent,
+      },
+    };
+  };
+
+  /** Search the scrollback; an empty query only clears the highlight. */
+  const find = (text: string, back = false): void => {
+    const search = searchRef.current;
+    if (search === null) {
+      return;
+    }
+    if (text === "") {
+      search.clearDecorations();
+      setHit(FIND_MISS);
+      return;
+    }
+    if (back) {
+      search.findPrevious(text, searchOptions());
+    } else {
+      search.findNext(text, searchOptions());
+    }
+  };
+
+  /** Close the bar, drop the highlight, and hand focus back to the grid. */
+  const closeFind = (): void => {
+    searchRef.current?.clearDecorations();
+    setFinding(false);
+    setHit(FIND_MISS);
+    termRef.current?.focus();
   };
 
   /** Write whatever the sync says changed. Input is never written locally. */
@@ -202,9 +256,10 @@ export function TerminalLens({ paneId, status, theme }: TerminalLensProps) {
 
     void (async () => {
       try {
-        const [xterm, fitModule] = await Promise.all([
+        const [xterm, fitModule, searchModule] = await Promise.all([
           import("@xterm/xterm"),
           import("@xterm/addon-fit"),
+          import("@xterm/addon-search"),
         ]);
         if (disposed) {
           return;
@@ -229,6 +284,12 @@ export function TerminalLens({ paneId, status, theme }: TerminalLensProps) {
         });
         fit = new fitModule.FitAddon();
         term.loadAddon(fit);
+        const search = new searchModule.SearchAddon();
+        term.loadAddon(search);
+        searchRef.current = search;
+        search.onDidChangeResults(({ resultIndex, resultCount }) => {
+          setHit({ index: resultIndex, count: resultCount });
+        });
         term.open(host);
         if (disposed) {
           term.dispose();
@@ -261,6 +322,19 @@ export function TerminalLens({ paneId, status, theme }: TerminalLensProps) {
         term.attachCustomKeyEventHandler((event) => {
           if (event.type !== "keydown") {
             return true;
+          }
+          if (
+            event.metaKey &&
+            !event.ctrlKey &&
+            !event.altKey &&
+            event.key.toLowerCase() === "f"
+          ) {
+            // ⌘F is the console's own find, not the browser's: xterm paints
+            // onto canvases, so Chromium's find bar reports "no results" on
+            // rows the reader can plainly see. Ctrl+F is deliberately left to
+            // the pane — readline and every TUI behind it bind it.
+            setFinding(true);
+            return false;
           }
           const stroke: KeyStroke = {
             key: event.key,
@@ -309,7 +383,12 @@ export function TerminalLens({ paneId, status, theme }: TerminalLensProps) {
       termRef.current = null;
       fitRef.current = null;
       syncRef.current = null;
+      searchRef.current = null;
       snapshotRef.current = "";
+      // The bar, the query and the highlight belong to the pane that closed.
+      setFinding(false);
+      setQuery("");
+      setHit(FIND_MISS);
     };
     // A different pane means a different grid: xterm is rebuilt from scratch so
     // no scrollback, latch or pending diff can cross the switch.
@@ -322,15 +401,37 @@ export function TerminalLens({ paneId, status, theme }: TerminalLensProps) {
   }, [read.text]);
 
   // The palette is re-read from the live stylesheet; the prop only says "the
-  // page changed theme". Setting `theme` also repaints xterm's own cells.
+  // page changed theme". Setting `theme` also repaints xterm's own cells, so an
+  // open highlight has to be re-run: its colours are hex, not custom properties.
   useEffect(() => {
     const term = termRef.current;
     if (term === null) {
       return;
     }
     term.options.theme = readTheme();
+    if (finding && query !== "") {
+      find(query);
+    }
     syncScrollState();
   }, [theme]);
+
+  // Opening the bar takes the keyboard: the field is the only place a reader can
+  // type, and `select()` makes a second ⌘F replace the old query.
+  useEffect(() => {
+    if (!finding) {
+      return;
+    }
+    const field = fieldRef.current;
+    if (field !== null) {
+      field.focus();
+      field.select();
+    }
+    if (query !== "") {
+      find(query);
+    }
+    // `theme` is here on purpose: reopening after a theme flip must repaint the
+    // highlight with the new hex pair.
+  }, [finding, theme]);
 
   return (
     <div className="term" data-status={status ?? "unknown"}>
@@ -342,6 +443,112 @@ export function TerminalLens({ paneId, status, theme }: TerminalLensProps) {
         }}
       >
         <div className="term__xterm" ref={screenRef} />
+        {finding ? (
+          <div
+            className="term__find"
+            role="search"
+            // The host focuses the grid on any pointer down; the bar is the
+            // one place inside this box that must keep the keyboard instead.
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+          >
+            <input
+              ref={fieldRef}
+              className="term__find-field"
+              type="search"
+              value={query}
+              placeholder="find in scrollback"
+              aria-label="Find in the terminal"
+              autoComplete="off"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              enterKeyHint="search"
+              onChange={(event) => {
+                const next = event.target.value;
+                setQuery(next);
+                find(next);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  closeFind();
+                  return;
+                }
+                if (event.key === "Enter") {
+                  // Enter walks forward, Shift+Enter back: the direction a
+                  // reader already has in their fingers from the key bar.
+                  event.preventDefault();
+                  find(query, event.shiftKey);
+                  return;
+                }
+                if (event.metaKey && event.key.toLowerCase() === "f") {
+                  event.preventDefault();
+                  event.currentTarget.select();
+                }
+              }}
+            />
+            <span className="term__find-count" aria-live="polite">
+              {findLabel(hit)}
+            </span>
+            <button
+              type="button"
+              className="term__find-step"
+              aria-label="Previous match"
+              onClick={() => {
+                find(query, true);
+              }}
+            >
+              ↑
+            </button>
+            <button
+              type="button"
+              className="term__find-step"
+              aria-label="Next match"
+              onClick={() => {
+                find(query);
+              }}
+            >
+              ↓
+            </button>
+            <button
+              type="button"
+              className="term__find-close"
+              aria-label="Close find"
+              onClick={closeFind}
+            >
+              ×
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="term__find-open"
+            aria-label="Find in the terminal"
+            title="Find (⌘F)"
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+            onClick={() => {
+              setFinding(true);
+            }}
+          >
+            <svg
+              viewBox="0 0 20 20"
+              width="17"
+              height="17"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
+              <circle cx="8.75" cy="8.75" r="5.25" />
+              <path d="M12.75 12.75 16.5 16.5" />
+            </svg>
+          </button>
+        )}
         {failed ? (
           <p>The terminal could not be loaded in this browser. The pane is still running.</p>
         ) : null}
