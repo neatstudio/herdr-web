@@ -40,6 +40,7 @@ import {
   type PageTheme,
 } from "@/lib/fleet";
 import { defaultLens, readStoredLens, storeLens, type Lens } from "@/lib/lens";
+import { readStoredPane, resolveStoredPane, storePane } from "@/lib/selection";
 import type { ComposerAction } from "@/lib/composer";
 import { longPressHandlers } from "@/lib/press";
 import {
@@ -92,7 +93,9 @@ export function App() {
   const [status, setStatus] = useState<HerdrStatus | null>(null);
   const [workspaces, setWorkspaces] = useState<HerdrWorkspace[]>([]);
   const [panes, setPanes] = useState<HerdrPane[]>([]);
-  const [paneId, setPaneId] = useState<string | null>(null);
+  // Seeded from the last session: a reload should reopen the turn that was
+  // being read, not jump to whichever pane happens to be most urgent.
+  const [paneId, setPaneId] = useState<string | null>(() => readStoredPane(safeStorage()));
   const [menu, setMenu] = useState<MenuTarget | null>(null);
   const [picker, setPicker] = useState(false);
   const [layout, setLayout] = useState<PaneLayout | null>(null);
@@ -107,7 +110,12 @@ export function App() {
   const [narrow, setNarrow] = useState(false);
   // Which register the session is being read in on a phone. Seeded per pane by
   // the effect below; a shell ignores it and keeps the terminal.
-  const [lens, setLens] = useState<Lens>("terminal");
+  // A restored pane paints before the fleet poll answers, so its stored lens is
+  // read now: trusting the default would flash the terminal at a transcript.
+  const [lens, setLens] = useState<Lens>(() => {
+    const stored = readStoredPane(safeStorage());
+    return (stored === null ? null : readStoredLens(safeStorage(), stored)) ?? "terminal";
+  });
   // Panes whose working directory is not on this host: herdr can drive panes on
   // another machine over SSH, and a preview there cannot work from here.
   const [remotePanes, setRemotePanes] = useState<Set<string>>(() => new Set());
@@ -143,6 +151,13 @@ export function App() {
     storeChoice(safeStorage(), next);
   }, []);
 
+  // Remember what is being read, so the next load reopens it.
+  useEffect(() => {
+    if (paneId !== null) {
+      storePane(safeStorage(), paneId);
+    }
+  }, [paneId]);
+
   const loadFleet = useCallback(async (): Promise<void> => {
     {
       const [nextStatus, nextWorkspaces, nextPanes] = await Promise.all([
@@ -170,8 +185,11 @@ export function App() {
         return blocked?.id ?? nextWorkspaces[0]?.id ?? null;
       });
       setPaneId((current) => {
-        if (current !== null && nextPanes.some((pane) => pane.id === current)) {
-          return current;
+        // The pane being read, or the one restored from the last session, stays
+        // while herdr still reports it.
+        const kept = resolveStoredPane(current, nextPanes.map((pane) => pane.id));
+        if (kept !== null) {
+          return kept;
         }
         // A pane that herdr has only just created is not in this poll yet.
         // Falling back across every workspace would throw the view somewhere
@@ -214,10 +232,15 @@ export function App() {
     };
   }, []);
 
+  // A restored pane can already be gone by the time the console opens, and
+  // asking for the layout of a pane herdr does not know answers 502. Wait for
+  // the fleet poll to confirm the pane before asking for anything about it.
+  const paneKnown = paneId !== null && panes.some((pane) => pane.id === paneId);
+
   // A split can change while the page is open, so the layout is polled with the
   // fleet rather than fetched once per selection.
   useEffect(() => {
-    if (paneId === null) {
+    if (!paneKnown) {
       setLayout(null);
       return;
     }
@@ -234,7 +257,7 @@ export function App() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [paneId]);
+  }, [paneId, paneKnown]);
 
   // Side by side needs width; below this the panes stack instead.
   useEffect(() => {
@@ -274,8 +297,12 @@ export function App() {
     if (paneId === null) {
       return;
     }
+    if (!paneKnown) {
+      // Nothing is known about a restored pane yet; the default would be wrong.
+      return;
+    }
     setLens(readStoredLens(safeStorage(), paneId) ?? defaultLens(hasAgent));
-  }, [paneId, hasAgent]);
+  }, [paneId, paneKnown, hasAgent]);
 
   const chooseLens = useCallback(
     (next: Lens) => {
