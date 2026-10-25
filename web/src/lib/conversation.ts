@@ -458,6 +458,9 @@ function readUserBand(lines: Line[], start: number, groups: Map<number, BoxGroup
 
 /* ------------------------------------------------------------------ boxes */
 
+const FENCE_OPEN_RE = /^\s*(```|~~~)\s*([\w+#.-]*)\s*$/;
+const FENCE_CLOSE_RE = /^\s*(```|~~~)\s*$/;
+
 const BOX_OPENER_RE = /^\+-{3,}/;
 /**
  * A box row starts at its left border. Agents draw that border with `|`, `│`,
@@ -1029,8 +1032,38 @@ function appendOrphanBox(blocks: Block[], body: string[]): void {
   blocks.push({ kind: "work", rows: [{ kind: "other", title: "Earlier output", detail: lines }] });
 }
 
+/**
+ * Rows that sit inside a fenced block, opening fence included. Inside one,
+ * indentation *is* the content, and `textOf` trims every row — right for prose,
+ * fatal for a Python or YAML block. The chat renderer folds and copies these
+ * blocks, so they have to arrive exactly as the agent printed them.
+ */
+function fencedRows(lines: readonly Line[]): boolean[] {
+  const inside: boolean[] = [];
+  let open: string | null = null;
+  for (const line of lines) {
+    const plain = line.plain;
+    if (open !== null) {
+      inside.push(true);
+      if (FENCE_CLOSE_RE.test(plain) && plain.trim().startsWith(open)) {
+        open = null;
+      }
+      continue;
+    }
+    const fence = FENCE_OPEN_RE.exec(plain);
+    if (fence !== null) {
+      open = fence[1];
+      inside.push(true);
+      continue;
+    }
+    inside.push(false);
+  }
+  return inside;
+}
+
 function buildBlocks(lines: Line[], groups: Map<number, BoxGroup>): Block[] {
   const blocks: Block[] = [];
+  const fenced = fencedRows(lines);
   let answer: string[] = [];
   let thought: string[] = [];
 
@@ -1058,7 +1091,7 @@ function buildBlocks(lines: Line[], groups: Map<number, BoxGroup>): Block[] {
       continue;
     }
     const line = lines[index];
-    const text = textOf(line);
+    const text = fenced[index] === true ? line.plain.replace(/\s+$/, "") : textOf(line);
     if (text === "") {
       flushThought();
       if (answer.length > 0) {

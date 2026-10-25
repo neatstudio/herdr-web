@@ -1,6 +1,15 @@
-import type { ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { FENCE_RE, HEADING_RE, LIST_RE, QUOTE_RE, inlineSpans, parseList } from "@/lib/markdown";
+import { copyText, COPY_ACK_MS } from "@/lib/clipboard";
+import {
+  FENCE_RE,
+  HEADING_RE,
+  LIST_RE,
+  QUOTE_RE,
+  foldCode,
+  inlineSpans,
+  parseList,
+} from "@/lib/markdown";
 
 /**
  * The agent's prose, rendered as a quiet document.
@@ -92,6 +101,70 @@ function listItems(
   };
 }
 
+type CopyState = "idle" | "copied" | "failed";
+
+/**
+ * A fenced block: the language, a copy button, and — past 30 lines — a fold,
+ * because a build log inside the transcript otherwise buries the answer under
+ * a screen of scroll.
+ */
+function CodeBlock({ language, value }: { language: string; value: string }) {
+  const fold = useMemo(() => foldCode(value), [value]);
+  const [expanded, setExpanded] = useState(false);
+  const [copyState, setCopyState] = useState<CopyState>("idle");
+  const block = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (copyState === "idle") {
+      return;
+    }
+    const timer = setTimeout(() => setCopyState("idle"), COPY_ACK_MS);
+    return () => clearTimeout(timer);
+  }, [copyState]);
+
+  const copy = () => {
+    void copyText(value).then((ok) => setCopyState(ok ? "copied" : "failed"));
+  };
+
+  const toggle = () => {
+    const collapsing = expanded;
+    setExpanded(!expanded);
+    if (collapsing) {
+      // "show less" sits under the block, so bring its top back into view.
+      block.current?.scrollIntoView({ block: "nearest" });
+    }
+  };
+
+  return (
+    <div className="chat__code" ref={block}>
+      <div className="chat__code-head">
+        <span className="chat__code-lang">{language === "" ? "text" : language}</span>
+        <button
+          type="button"
+          className="chat__code-copy"
+          onClick={copy}
+          aria-label="copy this code block"
+        >
+          {copyState === "copied" ? "copied" : "copy"}
+        </button>
+      </div>
+      {copyState === "failed" && (
+        <p className="chat__code-error" role="alert">
+          couldn&apos;t copy — select the text above and copy it
+        </p>
+      )}
+      <pre className="chat__code-body">
+        {fold !== null && !expanded ? fold.head : value}
+      </pre>
+      {fold !== null && (
+        <button type="button" className="chat__code-more" aria-expanded={expanded} onClick={toggle}>
+          {expanded ? "show less" : `show all ${fold.lines} lines`}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function blocks(lines: readonly string[]): ReactNode[] {
   const nodes: ReactNode[] = [];
   let index = 0;
@@ -107,12 +180,7 @@ function blocks(lines: readonly string[]): ReactNode[] {
         end += 1;
       }
       index = end + 1;
-      nodes.push(
-        <div className="chat__code" key={`code-${index}`}>
-          {fence[2] !== "" && <div className="chat__code-head">{fence[2]}</div>}
-          <pre className="chat__code-body">{code.join("\n")}</pre>
-        </div>,
-      );
+      nodes.push(<CodeBlock key={`code-${index}`} language={fence[2]} value={code.join("\n")} />);
       continue;
     }
     if (text === "") {

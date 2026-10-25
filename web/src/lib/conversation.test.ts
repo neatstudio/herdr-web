@@ -534,3 +534,46 @@ test("a status nobody reported is called unknown", () => {
   assert.equal(statusWord(null), "unknown");
   assert.equal(statusWord(""), "unknown");
 });
+
+/**
+ * A fenced block is copied and folded by the chat renderer, so its inner
+ * indentation has to survive: every other prose row is trimmed, which would
+ * flatten a Python or YAML block into a left margin.
+ */
+test("a fenced code block keeps its indentation", () => {
+  const text = snapshot([
+    band(" ❯ paste the config"),
+    ink("Here it is:"),
+    ink("```yaml"),
+    ink("server:"),
+    ink("  port: 5001"),
+    ink("  hosts:"),
+    ink("    - 127.0.0.1"),
+    ink("```"),
+    ink("And the python one:"),
+    ink("```python"),
+    ink("def ship(job):"),
+    ink("    if job is None:"),
+    ink("        return 0"),
+    ink("```"),
+  ]);
+  const conversation = deriveConversation(text);
+  const turn = conversation.turns[0];
+  assert.match(turn.answer, /\n  port: 5001\n/);
+  assert.match(turn.answer, /\n    - 127\.0\.0\.1\n/);
+  assert.match(turn.answer, /\n    if job is None:\n/);
+  assert.match(turn.answer, /\n        return 0/);
+});
+
+test("prose around a fence is still trimmed", () => {
+  const text = snapshot([
+    band(" ❯ hi"),
+    ink("    a deeply indented paragraph"),
+    ink("```"),
+    ink("  code"),
+    ink("```"),
+  ]);
+  const turn = deriveConversation(text).turns[0];
+  assert.match(turn.answer, /^a deeply indented paragraph/m);
+  assert.match(turn.answer, /\n  code/);
+});

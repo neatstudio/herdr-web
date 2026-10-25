@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { inlineSpans, parseList } from "./markdown.ts";
+import {
+  FOLD_CODE_AFTER_LINES,
+  FOLDED_CODE_LINES,
+  foldCode,
+  inlineSpans,
+  parseList,
+} from "./markdown.ts";
 
 /* ----------------------------------------------------------------- inline */
 
@@ -131,3 +137,19 @@ test("a terminal bullet opens a list item too", () => {
 test("a non-list line is not parsed as a list", () => {
   assert.equal(parseList(["plain prose"], 0), null);
 });
+
+test("a short fence is not folded", () => {
+  const code = Array.from({ length: FOLD_CODE_AFTER_LINES }, (_, i) => `line ${i}`).join("\n");
+  assert.equal(foldCode(code), null);
+});
+
+test("a long fence folds to its first lines and reports the count", () => {
+  const lines = Array.from({ length: 45 }, (_, i) => `line ${i}`);
+  const fold = foldCode(lines.join("\n"));
+  assert.notEqual(fold, null);
+  assert.equal(fold?.lines, 45);
+  assert.equal(fold?.head.split("\n").length, FOLDED_CODE_LINES);
+  assert.equal(fold?.head.split("\n")[0], "line 0");
+  assert.equal(fold?.head.split("\n").at(-1), `line ${FOLDED_CODE_LINES - 1}`);
+});
+

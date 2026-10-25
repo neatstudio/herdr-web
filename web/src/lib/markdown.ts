@@ -109,3 +109,21 @@ export function parseList(lines: readonly string[], start: number): ListBlock | 
   }
   return { ordered, items, end: index };
 }
+
+/* ------------------------------------------------------------- code block */
+
+/** Fenced blocks longer than this open folded to their first FOLDED_CODE_LINES lines. */
+export const FOLD_CODE_AFTER_LINES = 30;
+export const FOLDED_CODE_LINES = 20;
+
+/**
+ * The part of a long fenced block a folded row shows, plus the block's real
+ * line count for the "show all N lines" label. `null` means it fits as it is.
+ */
+export function foldCode(value: string): { head: string; lines: number } | null {
+  const lines = value.split("\n");
+  if (lines.length <= FOLD_CODE_AFTER_LINES) {
+    return null;
+  }
+  return { head: lines.slice(0, FOLDED_CODE_LINES).join("\n"), lines: lines.length };
+}

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { COPY_ACK_MS, copyText } from "@/lib/clipboard";
 import { statusWord, type ChatTurn } from "@/lib/conversation";
 import { Markdown } from "./Markdown";
 import { WorkBlock } from "./WorkBlock";
@@ -34,8 +35,6 @@ function clock(at: number): string {
   return `${hours}:${minutes}`;
 }
 
-/** How long the copy button says "copied" before it goes back to being a button. */
-const COPY_ACK_MS = 1500;
 
 function turnText(turn: ChatTurn): string {
   const parts: string[] = [];
@@ -72,10 +71,11 @@ export function TurnList({ turns, status, at, truncated, seconds }: TurnListProp
     if (text === "") {
       return;
     }
-    void navigator.clipboard
-      ?.writeText(text)
-      .then(() => setCopied(turn.id))
-      .catch(() => undefined);
+    void copyText(text).then((ok) => {
+      if (ok) {
+        setCopied(turn.id);
+      }
+    });
   };
 
   return (
