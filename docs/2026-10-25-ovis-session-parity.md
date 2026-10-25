@@ -1,0 +1,115 @@
+# 会话区对照：herdr-web 与 Ovis
+
+对象：`/tmp/ovis`（`ovis@0.4.13`，HEAD `7e0861f`，MIT）与 `web/src/components/session/`、
+`web/src/lib/conversation.ts`、`web/src/components/PromptBar.tsx`。
+目的：回答"我们的会话区在 UI 与功能上和 Ovis 差在哪"，并说明哪些差距值得补、哪些不该补。
+
+## 0. 一句话结论
+
+Ovis 的会话区建立在**服务端解析原生转录**之上（`GET /api/pane/conversation`，
+`shared/protocol.ts:427-439`，返回 `source/turns/metadata/cursor/activity/history_id`）；
+herdr-web 建立在**客户端重解 ANSI 快照**之上（`readPane(paneId, 200)` → `deriveConversation()`）。
+这条根差异决定了两边的上限：
+
+- Ovis 拥有结构化 turn（工具名/参数/结果/时间戳/history 世代/翻页游标），因此能做工具卡片、
+  用时摘要、翻页锚定、交互式提问卡、用量与模型行。
+- herdr-web 只有"最近 200 行渲染后的文本"，于是把每条动作压成 `WorkRow{kind,title,detail}`，
+  用 `Edit/Read/Ran/Other` 四个动词 + 展开细节表达同一件事。
+
+在这个前提下，手机端"默认聊天、需要全屏 TUI 才切 xterm"的主路径已经对齐；缺的东西里
+**大部分不是 UI 不做，而是 herdr 客户端 API 没有对应 RPC**（`web/src/lib/herdr.ts` 只有
+`readPane/sendPaneText/sendPaneKeys/uploadFile/pokeTranscript`，无 find、无 scroll、无转录、无历史）。
+
+## 1. 已对齐（同样的事，两边都做了）
+
+| 能力 | Ovis | herdr-web |
+| --- | --- | --- |
+| 双 lens + 粘性选择 | `lib/usePaneLens.ts`、`lib/paneLens.ts`、`localStorage["ovis:view:*"]` | `components/session/LensSwitch.tsx`、`lib/lens.ts`、`localStorage["herdr:lens:*"]` |
+| 保持贴底的滚动 + 回底按钮 | `ChatView.tsx` `following` + `button.btn.chat-new-messages` | `components/session/ChatLens.tsx:84-154` sticky ref + `.chat__jump`（`latest ↓`） |
+| 只手写时也不跳走 | `onItemSizeChanged` 重贴底 | `ResizeObserver` on lane（`ChatLens.tsx:119-131`） |
+| 动作折叠成一行摘要 | `lib/workBlocks.ts` `Worked for 7s · 1 edit` | `components/session/WorkBlock.tsx:99-118` 同一句式，`lib/chatFormat.ts` |
+| 折叠里失败不省略 | `.work-block-failed` | `summariseWork` 的 failed 计数进摘要 |
+| 改动文件按 diff 着色 | `EditDiff`（`ChatView.tsx:306`） | `WorkBlock.tsx` `DiffBody` + `lib/diffLines.ts`（提交 `5511450`） |
+| 代码块语言 / 复制 / 折叠 | `CodeBlock`（`lucide-react` 图标） | `components/session/Markdown.tsx` `CodeBlock`：语言标签、`copy` 文字链、超 30 行折到 20 行（提交 `5ee48b6`） |
+| markdown 正文 | `HighlightedCode`、表格、列表 | `components/session/Markdown.tsx`（`lib/markdown.ts` 解析） |
+| 输入框随内容长高 | `Composer.tsx` `sizeTextarea()`（`useLayoutEffect` + 隐藏测量副本） | `components/PromptBar.tsx` + `lib/composer.ts` `fitComposer()`（提交 `4278e69`） |
+| 按 pane 存草稿 | `ovis:composer-draft:<paneStorageId>` | `herdr:draft:<paneId>`（`lib/composer.ts:95`） |
+| `@` 提及 / `/` 命令 | `lib/mentions.ts` + `usePaneCommands` | `lib/composer.ts` `mentionQuery`/`slashQuery` + `PromptBar.tsx`（提及 pane/workspace/路径，非 agent 专有） |
+| 附件上传 / 粘贴 / 拖入 | `uploadImages` + `.composer-attachments` | `lib/attachments.ts` + `PromptBar.tsx`（`uploadFile`） |
+| 真实 xterm，不做假终端 | `useTerminalMount.ts`（`scrollback: 0`，翻页走 RPC） | `components/session/TerminalLens.tsx`（本地 `scrollback: 2000`，滚轮天然可用） |
+| 控制键条 | `KeyBar.tsx`（默认 12 键、粘滞修饰、长按连发、安全区、mask 渐隐） | `components/session/KeyBar.tsx` + `lib/keybar.ts`（同一套：`KEY_BAR_KEYS`/`PICKER_BAR_KEYS` 两组、粘滞修饰、长按连发、`is-at-screen-bottom`） |
+| 终端里回答选择菜单 | `PromptCard` + 键位协议 | `PICKER_BAR_KEYS` + 窗口捕获方向键（`ChatLens.tsx:92-115`），聊天里直接回 Esc/↑↓/Enter（提交 `ce2abcd`） |
+| 状态色 / 主题 | `--status-*` + light/dark | `--working/--blocked/--idle/--done` + `lib/theme.ts`（auto/light/dark） |
+| 空态与断链态 | `chat-empty`、`Waiting for the PC…` | `.chat__empty`（`No transcript yet.` / `Waiting for the pane to paint.` + 开终端）、`daemon unreachable — showing the last snapshot` |
+
+herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在终端选择菜单时出现），
+它不回答"选项卡片"，而是把真实的按键发给那个 TUI——对 omp/opencode/zerostack 这类
+不提供结构化提问协议的 agent，这是唯一能用的做法。
+
+## 2. 有，但形状不同（不是缺，是取舍）
+
+| 项 | Ovis | herdr-web | 为什么 |
+| --- | --- | --- | --- |
+| 窄屏阈值 | 768px（`styles.css` 断点） | 720px（lens 仅在 ≤720 出现） | herdr 桌面保留 `TabStage`/`Scope` 的多 tab 分屏，窄于 720 才让位给聊天 |
+| 发送按钮 | 一律圆形图标，且兼作停止键 | 桌面保留 herdr 的 `SEND` 文字键；≤900px/粗指针才是圆形 | 保留 herdr 自己的控制台形态，不把桌面也做成手机 |
+| 折叠摘要时长 | 服务端时间戳差（下一 turn 减本 turn） | 从转录里读 TUI 自己打印的用时，并补"上次轮询到现在"的活动计时（`ChatLens.tsx:60-72`） | 快照无时间戳 |
+| 状态行（模型/推理等级/上下文环/用量） | `.composer-strip`，数据来自 `ConversationResponse.metadata` | 无 | 客户端 API 无 metadata，硬猜模型违反"认不出就不画"的原则 |
+| 快捷键全集 | 12 条可覆盖 + `Mod+Shift+Space` 听写 | 无全局快捷键层（herdr 的交互在 panel/palette 里） | 不是会话区的事务，属控制台骨架 |
+| 翻页历史 | 游标 `{before,from,since}` + 槽位锚定 | 只读最近 200 行；更早的在终端 lens 里滚（本地 2000 行） | `readPane` 的 `lines` 是上限参数，无游标 |
+| 空态文案 | `No conversation yet — say something below` | `No transcript yet.` + `Open terminal` | herdr 的空态多数是"agent 还没画"，动作应该是看终端 |
+
+## 3. 缺失（按"能不能在客户端补"分类）
+
+### 3.1 需要服务端（`server/*`，不在本次 UI 范围内）
+
+| 能力 | Ovis 实现 | herdr 缺什么 |
+| --- | --- | --- |
+| 结构化 turn / 工具参数 / 工具结果 | `server/conversation.ts`、`server/codex.ts`、`shared/protocol.ts:190-195`（12 种原生转录 + `scrollback`） | 没有转录 RPC，只能从 ANSI 文本反推 |
+| 历史被替换的语义 | `history_id` + `incarnation`（`lib/chatRows.ts:5-11`） | 无 id，行身份只能靠位置 |
+| 更早一页 | `cursor` + `LOAD_OLDER_PX` | 无游标 |
+| 工具卡片族（`ToolFile`/`ToolImages`/`TaskResultRow`/`TeammateMessageRow`/`GoalActivity`/`SkillActivityList`） | 由结构化块驱动 | 全部塌缩进 `WorkRow`；图片、子代理消息没有独立行 |
+| 交互式提问卡（选项、默认项、自定义答案、409 `prompt_changed`） | `PromptCard` + `.prompt-dock` | herdr 用键条回真实按键（见 §1 末），卡片需要协议 |
+| 会话历史恢复 | `GET /api/sessions/history` + `SessionHistory.tsx` | 无接口 |
+| 上下文用量/成本面板 | `ContextRing`、`UsageMeters.tsx` | 无数据来源 |
+| 通知与推送 | `public/sw.js` + `pane-status` | 无 service worker，也无推送通道 |
+
+### 3.2 纯前端可补（值得排期，按收益/成本排序）
+
+1. **终端内查找**：Ovis 的 `FindBar` 是服务端搜索（它 `scrollback: 0`）；herdr 有本地
+   2000 行，用 `@xterm/addon-search` 即可，不依赖 RPC。约 1 个组件 + 键条入口。
+2. **把答案复制为 markdown / 纯文本**：`TurnList.tsx` 已有逐轮复制，扩一个 `plainText()`
+   （标题、列表、代码围栏、链接）即可，成本一个函数。
+3. **键条自定义**：herdr 目前固定 `KEY_BAR_KEYS`/`PICKER_BAR_KEYS` 两组；Ovis 有 `KeyBarSettings.tsx`
+   从 `KEY_BAR_KEYS` 池里选键并排序。要加设置面板 + 持久化，属中等。
+4. **会话内查找**：两边都没有；聊天是 DOM，`window.find` 不可控，自建高亮成本高，暂不排。
+
+### 3.3 刻意不做
+
+- **小地图**：Ovis `@media (max-width:768px)` 就隐藏，而 herdr 的聊天 lens 只在 ≤720 出现，
+  等于永远在手机上——做了看不见。桌面没有聊天 lens。
+- **动画式打字机 / 流式光标**：只会增加噪声，herdr 的贴底 + 状态点已经够表达"正在写"。
+- **在聊天里渲染附件图片**：需要服务端给出代码块的图片引用；当前上传只是把文件交给 TUI。
+- **↑ 召回上一条已发消息**：Ovis 自己也没有（`↑/↓` 全部用于菜单高亮），不算差距。
+
+## 4. 这一轮已经补掉的（会话区）
+
+| 提交 | 内容 |
+| --- | --- |
+| `5511450` | 改动文件在折叠里画成彩色 diff（`+n/−n` 统计、`lib/diffLines.ts`） |
+| `5ee48b6` | 代码块语言标签 + 复制 + 超长折叠；围栏内缩进保真（`conversation.ts` 只对围栏行不 trim） |
+| `4278e69` | 输入框随内容长高、到上限才内部滚动（原来自带滚动条） |
+| `ce2abcd` | 聊天 lens 里直接回答终端 picker（键条 + 键盘） |
+
+配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 274/274；
+`/tmp/probe-code.mjs` 34/34（390×844 手机、700×900 窄桌面）；`probe-diff.mjs` 24/24；
+`probe-composer-fit.mjs` 16/16。
+
+## 5. 给服务端的一页需求（若要继续逼近 Ovis）
+
+最小可用集，按依赖排序：
+
+1. `pane.conversation` 至少返回 **turn 边界 + 每个动作的开始/结束时间**。
+   有它才有时长摘要与稳定行身份；不需要解析所有 agent，`source: "scrollback"` 作为兜底即可。
+2. `pane.read` 增加 **`before` 游标**，让聊天能往前翻而不是只有 200 行。
+3. 会话历史的 `history_id`/世代号，避免历史被替换时整段重排。
+4. （可选）选择菜单的结构化读出：`{options[], default_index}`。没有也能用键条，有则能做卡片。
