@@ -41,6 +41,7 @@ import {
 } from "@/lib/fleet";
 import { defaultLens, readStoredLens, storeLens, type Lens } from "@/lib/lens";
 import { readStoredPane, resolveStoredPane, storePane } from "@/lib/selection";
+import { holdCreatedPane, type CreatedPane } from "@/lib/createdPane";
 import type { ComposerAction } from "@/lib/composer";
 import { longPressHandlers } from "@/lib/press";
 import {
@@ -55,6 +56,12 @@ import {
 
 /** One poll drives the whole fleet: status, workspaces and every pane. */
 const FLEET_POLL_MS = 3000;
+
+/**
+ * How long a pane this console has just created is believed without herdr
+ * listing it: three polls, enough for a daemon that is one listing behind.
+ */
+const CREATED_PANE_GRACE_MS = 3 * FLEET_POLL_MS;
 
 /** The socket path without a trailing separator, which reads as a directory. */
 function trimPath(path: string): string {
@@ -129,6 +136,8 @@ export function App() {
   // rather than from a closure captured when the interval was created.
   const workspaceRef = useRef<string | null>(null);
   workspaceRef.current = workspaceId;
+  // A pane this console has just made, kept in the view until herdr lists it.
+  const createdPaneRef = useRef<CreatedPane | null>(null);
 
   // Keep <html data-theme> in step with the choice and the OS preference.
   useEffect(() => {
@@ -174,7 +183,18 @@ export function App() {
         return;
       }
       setWorkspaces(nextWorkspaces);
-      setPanes(nextPanes);
+      // A pane this console has just made can be missing from the daemon's own
+      // listing for a poll, and "missing" is not "closed": holding it keeps the
+      // view on the pane that was asked for instead of throwing it back to
+      // whichever pane was open before.
+      const held = holdCreatedPane(
+        createdPaneRef.current,
+        nextPanes,
+        Date.now(),
+        CREATED_PANE_GRACE_MS,
+      );
+      createdPaneRef.current = held.pending;
+      setPanes(held.panes);
       setWorkspaceId((current) => {
         if (current !== null && nextWorkspaces.some((workspace) => workspace.id === current)) {
           return current;
@@ -186,16 +206,20 @@ export function App() {
       });
       setPaneId((current) => {
         // The pane being read, or the one restored from the last session, stays
-        // while herdr still reports it.
-        const kept = resolveStoredPane(current, nextPanes.map((pane) => pane.id));
+        // while herdr still reports it. A pane that was only just created counts
+        // as reported: it is in `held.panes` from the moment it was asked for.
+        const kept = resolveStoredPane(
+          current,
+          held.panes.map((pane) => pane.id),
+        );
         if (kept !== null) {
           return kept;
         }
         // A pane that herdr has only just created is not in this poll yet.
         // Falling back across every workspace would throw the view somewhere
         // else, so the search stays inside the workspace being viewed.
-        const here = nextPanes.filter((pane) => pane.workspaceId === workspaceRef.current);
-        return (mostUrgentPane(here) ?? mostUrgentPane(nextPanes))?.id ?? null;
+        const here = held.panes.filter((pane) => pane.workspaceId === workspaceRef.current);
+        return (mostUrgentPane(here) ?? mostUrgentPane(held.panes))?.id ?? null;
       });
     }
   }, []);
@@ -383,6 +407,21 @@ export function App() {
     setPicker(false);
   }, []);
 
+  /**
+   * Take the console to a pane herdr has only just made.
+   *
+   * Making a tab answers with the pane's id, but the fleet poll answers from the
+   * daemon's listing, which can still be a poll behind. Without this the pane is
+   * dropped from the strip and the selection falls back to the pane that was
+   * open before; with it the pane joins the view now and stays until herdr
+   * reports it (`holdCreatedPane`).
+   */
+  const adoptCreatedPane = useCallback((pane: HerdrPane) => {
+    createdPaneRef.current = { pane, at: Date.now() };
+    setPanes((current) => (current.some((row) => row.id === pane.id) ? current : [...current, pane]));
+    setPaneId(pane.id);
+  }, []);
+
   const newTab = useCallback(async (): Promise<void> => {
     const workspace = shownWorkspaceId ?? workspaceRef.current ?? null;
     if (workspace === null) {
@@ -395,27 +434,19 @@ export function App() {
     // herdr reports the new tab on the next poll, and the strip is built from the
     // pane list, so the pane joins it at once instead of the strip staying short
     // for a second.
-    setPanes((current) =>
-      current.some((pane) => pane.id === created.paneId)
-        ? current
-        : [
-            ...current,
-            {
-              id: created.paneId,
-              workspaceId: created.workspaceId || workspace,
-              tabId: created.tabId,
-              focused: false,
-              agentStatus: "unknown",
-              cwd: "",
-            },
-          ],
-    );
-    setPaneId(created.paneId);
+    adoptCreatedPane({
+      id: created.paneId,
+      workspaceId: created.workspaceId || workspace,
+      tabId: created.tabId,
+      focused: false,
+      agentStatus: "unknown",
+      cwd: "",
+    });
     const layoutOfNew = await fetchLayout(created.paneId);
     if (layoutOfNew !== null) {
       setLayout(layoutOfNew);
     }
-  }, [shownWorkspaceId]);
+  }, [shownWorkspaceId, adoptCreatedPane]);
 
   const closeActivePane = useCallback(async (target: string): Promise<void> => {
     if (!(await closePane(target))) {
@@ -664,22 +695,16 @@ export function App() {
               return;
             }
             const layoutOfNew = await fetchLayout(created);
-            setPanes((current) =>
-              current.some((pane) => pane.id === created)
-                ? current
-                : [
-                    ...current,
-                    {
-                      id: created,
-                      workspaceId: source?.workspaceId ?? workspaceRef.current ?? "",
-                      tabId: layoutOfNew?.tabId ?? source?.tabId ?? "",
-                      focused: false,
-                      agentStatus: "unknown",
-                      cwd: "",
-                    },
-                  ],
-            );
-            setPaneId(created);
+            // Same rule as a new tab: the pane belongs to the view the moment
+            // the call answers, not the moment a listing happens to include it.
+            adoptCreatedPane({
+              id: created,
+              workspaceId: source?.workspaceId ?? workspaceRef.current ?? "",
+              tabId: layoutOfNew?.tabId ?? source?.tabId ?? "",
+              focused: false,
+              agentStatus: "unknown",
+              cwd: "",
+            });
             if (layoutOfNew !== null) {
               setLayout(layoutOfNew);
             }
