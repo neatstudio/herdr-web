@@ -82,6 +82,9 @@ service-restart:
 # Deliberately does not depend on `clean`: cleaning removes web/dist, and these
 # binaries must embed the frontend built just before.
 release-archives: go-build web
+	@if find web/dist -name '*.map' -print -quit | grep -q .; then \
+		echo "release: source maps are not allowed in the embedded bundle" >&2; exit 1; \
+	fi
 	mkdir -p dist/release
 	@for target in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64; do \
 		os=$${target%/*}; arch=$${target#*/}; \
