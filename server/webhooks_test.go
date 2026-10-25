@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"herdr-web/server/sharedledger"
 )
 
 func TestGitHubWebhookCreatesTask(t *testing.T) {
@@ -51,5 +53,43 @@ func TestGitHubWebhookCreatesTask(t *testing.T) {
 	again := post(signature)
 	if again.Code != http.StatusOK {
 		t.Fatalf("replay = %d: %s", again.Code, again.Body.String())
+	}
+}
+
+func TestPullRequestMergedWebhook(t *testing.T) {
+	isolateState(t)
+	t.Setenv("TEST_WEBHOOK_SECRET", "secret")
+	console := NewServer("", nil)
+	if _, err := console.repos.Add(Repo{
+		Provider: "github", BaseURL: "https://api.github.com", Owner: "acme", Name: "app",
+		Checkout: "/repo", TokenEnv: "TEST_GITHUB_TOKEN", WebhookSecretEnv: "TEST_WEBHOOK_SECRET",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := console.sharedLedger.Create(t.Context(), sharedledger.Task{ID: "p1", Repo: "github:acme/app"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := console.sharedLedger.LinkPR(t.Context(), "p1", 9); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"action":"closed","repository":{"full_name":"acme/app"},"pull_request":{"number":9,"merged":true,"merge_commit_sha":"def"}}`
+	mac := hmac.New(sha256.New, []byte("secret"))
+	_, _ = mac.Write([]byte(body))
+	signature := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/github", strings.NewReader(body))
+	request.Header.Set("X-GitHub-Event", "pull_request")
+	request.Header.Set("X-Hub-Signature-256", signature)
+	recorder := httptest.NewRecorder()
+	console.Handler().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("merged webhook = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	task, err := console.sharedLedger.Get(t.Context(), "p1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.State != sharedledger.Merged || task.Artifacts.Commit != "def" {
+		t.Fatalf("task = %+v", task)
 	}
 }

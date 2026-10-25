@@ -97,6 +97,8 @@ type Server struct {
 	sharedLedger sharedledger.Ledger
 	// repos are the GitHub/Gitea repositories tasks can be created from.
 	repos *repoRegistry
+	// streams is one poller per pane, fanned out to SSE clients.
+	streams *paneStreamHub
 	// tailnetFacing is set from the listeners: a console with no Tailscale bind
 	// is local-only and must not discover or follow the tailnet.
 	tailnetFacing bool
@@ -124,6 +126,7 @@ func NewServer(socketPath string, webFS fs.FS) *Server {
 		ledger:        newJobLedger(),
 		sharedLedger:  shared,
 		repos:         newRepoRegistry(),
+		streams:       newPaneStreamHub(),
 		dispatch:      newDispatchState(),
 		tailnetFacing: true,
 	}
@@ -822,6 +825,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/repos", s.handleRepos)
 	mux.HandleFunc("/api/v1/repos/", s.handleRepoAction)
 	mux.HandleFunc("/api/v1/webhooks/", s.handleWebhook)
+	mux.HandleFunc("/api/v1/remote/", s.handleRemoteProxy)
 
 	mux.HandleFunc("/api/v1/herdr/workspaces", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
@@ -861,6 +865,8 @@ func (s *Server) Handler() http.Handler {
 		switch {
 		case strings.HasSuffix(rest, "/read"):
 			s.handlePaneRead(w, r, strings.TrimSuffix(rest, "/read"))
+		case strings.HasSuffix(rest, "/stream"):
+			s.handlePaneStream(w, r, strings.TrimSuffix(rest, "/stream"))
 		case strings.HasSuffix(rest, "/input"):
 			s.handlePaneInput(w, r, strings.TrimSuffix(rest, "/input"))
 		case strings.HasSuffix(rest, "/run"):
@@ -901,6 +907,11 @@ func (s *Server) Handler() http.Handler {
 			// Streaming completions must not go through the gzip recorder,
 			// which buffers the whole response (review PERF-01).
 			proxy.ServeHTTP(w, r)
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/stream") || strings.HasPrefix(r.URL.Path, "/api/v1/remote/") {
+			// SSE and proxied WebSocket upgrades must never be buffered.
+			mux.ServeHTTP(w, r)
 			return
 		}
 		gzipMux.ServeHTTP(w, r)

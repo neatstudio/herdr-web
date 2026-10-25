@@ -230,6 +230,27 @@ func (m *Memory) LinkPR(_ context.Context, id string, number int) (Task, error) 
 	return cloneTask(task), nil
 }
 
+func (m *Memory) MarkMerged(_ context.Context, id, commit string) (Task, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	task, ok := m.tasks[id]
+	if !ok {
+		return Task{}, ErrNotFound
+	}
+	task.State = Merged
+	task.Owner = ""
+	task.Role = ""
+	task.LeaseUntil = time.Time{}
+	if commit != "" {
+		task.Artifacts.Commit = commit
+	}
+	task.Version++
+	task.UpdatedAt = m.clock()
+	m.tasks[id] = task
+	m.eventLocked(task, "merged", "", "")
+	return cloneTask(task), nil
+}
+
 func (m *Memory) Release(_ context.Context, id string, role Role, node, reason string) (Task, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

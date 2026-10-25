@@ -141,6 +141,7 @@ type Ledger interface {
 	// the version read before the attest.
 	Attest(ctx context.Context, id string, role Role, node, commit, digest, signature string, expectedVersion uint64) (Task, error)
 	LinkPR(ctx context.Context, id string, number int) (Task, error)
+	MarkMerged(ctx context.Context, id, commit string) (Task, error)
 	Release(ctx context.Context, id string, role Role, node, reason string) (Task, error)
 	Cancel(ctx context.Context, id string, node, reason string) (Task, error)
 

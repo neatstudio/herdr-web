@@ -302,6 +302,27 @@ func (n *NATS) LinkPR(ctx context.Context, id string, number int) (Task, error) 
 	return cloneTask(task), nil
 }
 
+func (n *NATS) MarkMerged(ctx context.Context, id, commit string) (Task, error) {
+	task, entry, err := n.getRaw(ctx, id)
+	if err != nil {
+		return Task{}, err
+	}
+	task.State = Merged
+	task.Owner = ""
+	task.Role = ""
+	task.LeaseUntil = time.Time{}
+	if commit != "" {
+		task.Artifacts.Commit = commit
+	}
+	task.Version++
+	task.UpdatedAt = time.Now()
+	if err := n.update(ctx, task, entry); err != nil {
+		return Task{}, err
+	}
+	n.publish(ctx, task, "merged", "", "")
+	return cloneTask(task), nil
+}
+
 func (n *NATS) Release(ctx context.Context, id string, role Role, node, reason string) (Task, error) {
 	task, entry, err := n.getRaw(ctx, id)
 	if err != nil {

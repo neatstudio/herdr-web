@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -28,6 +29,13 @@ type webhookPayload struct {
 			Login string `json:"login"`
 		} `json:"user"`
 	} `json:"issue"`
+	PullRequest *struct {
+		Number         int    `json:"number"`
+		Merged         bool   `json:"merged"`
+		MergeCommitSHA string `json:"merge_commit_sha"`
+		HTMLURL        string `json:"html_url"`
+		Title          string `json:"title"`
+	} `json:"pull_request"`
 }
 
 // handleWebhook turns provider issue events into shared tasks. The signature is
@@ -75,6 +83,20 @@ func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	if provider == "gitea" {
 		event = r.Header.Get("X-Gitea-Event")
 	}
+	if event == "pull_request" && payload.Action == "closed" && payload.PullRequest != nil && payload.PullRequest.Merged {
+		task, ok := s.findPRTask(r.Context(), repo.ID, payload.PullRequest.Number)
+		if !ok {
+			writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "ignored": true})
+			return
+		}
+		updated, err := s.sharedLedger.MarkMerged(r.Context(), task.ID, payload.PullRequest.MergeCommitSHA)
+		if err != nil {
+			writeLedgerError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "task": updated})
+		return
+	}
 	if event != "issues" || payload.Action != "opened" || payload.Issue == nil {
 		writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "ignored": true})
 		return
@@ -106,6 +128,19 @@ func (s *Server) findWebhookRepo(provider, fullName string) (Repo, bool) {
 		}
 	}
 	return Repo{}, false
+}
+
+func (s *Server) findPRTask(ctx context.Context, repoID string, number int) (sharedledger.Task, bool) {
+	tasks, err := s.sharedLedger.List(ctx, sharedledger.Filter{})
+	if err != nil {
+		return sharedledger.Task{}, false
+	}
+	for _, task := range tasks {
+		if task.Repo == repoID && task.PR == number {
+			return task, true
+		}
+	}
+	return sharedledger.Task{}, false
 }
 
 func validWebhookSignature(secret string, body []byte, signature, provider string) bool {

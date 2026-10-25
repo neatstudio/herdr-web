@@ -74,6 +74,13 @@ func (s *Server) orchestratorTick(ctx context.Context) {
 				}
 				continue
 			}
+			if step.role == sharedledger.RoleReview {
+				var pulled bool
+				task, pulled = s.ensurePull(ctx, task)
+				if !pulled {
+					continue
+				}
+			}
 			if !agentAvailable(task.Kind) {
 				continue
 			}
@@ -119,25 +126,14 @@ func rolePrompt(task sharedledger.Task, role sharedledger.Role) string {
 // lease, merges, and attests the resulting commit. A provider failure releases
 // the lease so the next tick can retry; conflicts stay visible on the board.
 func (s *Server) mergeApprovedTask(ctx context.Context, task sharedledger.Task) bool {
-	repo, ok := s.repos.Get(task.Repo)
+	task, ok := s.ensurePull(ctx, task)
 	if !ok {
 		return false
 	}
 	pr := task.PR
-	if pr == 0 {
-		if strings.TrimSpace(task.Branch) == "" {
-			return false
-		}
-		pull, err := repo.createPull(ctx, task.Branch, repo.DefaultBranch, task.Title, task.Prompt)
-		if err != nil {
-			return false
-		}
-		pr = pull.Number
-		linked, err := s.sharedLedger.LinkPR(ctx, task.ID, pr)
-		if err != nil {
-			return false
-		}
-		task = linked
+	repo, ok := s.repos.Get(task.Repo)
+	if !ok {
+		return false
 	}
 	claimed, err := s.sharedLedger.Claim(ctx, task.ID, sharedledger.RoleMerge, localNodeID(), 30*time.Minute, task.Version)
 	if err != nil {
@@ -150,4 +146,23 @@ func (s *Server) mergeApprovedTask(ctx context.Context, task sharedledger.Task) 
 	}
 	_, err = s.sharedLedger.Attest(ctx, task.ID, sharedledger.RoleMerge, localNodeID(), merged.SHA, "", "local", claimed.Version)
 	return err == nil
+}
+
+func (s *Server) ensurePull(ctx context.Context, task sharedledger.Task) (sharedledger.Task, bool) {
+	if task.PR != 0 || strings.TrimSpace(task.Repo) == "" {
+		return task, true
+	}
+	repo, ok := s.repos.Get(task.Repo)
+	if !ok || strings.TrimSpace(task.Branch) == "" {
+		return task, false
+	}
+	pull, err := repo.createPull(ctx, task.Branch, repo.DefaultBranch, task.Title, task.Prompt)
+	if err != nil {
+		return task, false
+	}
+	linked, err := s.sharedLedger.LinkPR(ctx, task.ID, pull.Number)
+	if err != nil {
+		return task, false
+	}
+	return linked, true
 }
