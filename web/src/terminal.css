@@ -54,6 +54,15 @@
   height: 100%;
 }
 
+/* xterm floors its grid to whole rows, so a few pixels of the host are never
+   painted by a cell. xterm's own sheet gives that leftover the viewport's
+   background, which is black: on the light theme it reads as a stray black
+   band above the key bar. Deeper selector because xterm.css lands after this
+   sheet (it ships with the lazy lens chunk) and would otherwise win the tie. */
+.term__host .term__xterm .xterm .xterm-viewport {
+  background-color: var(--ui-term-bg, var(--paper));
+}
+
 /* Jump back to the newest output. 44px tall because it is the only control
    floating over the grid and a thumb has to hit it without aiming. */
 .term__jump {
@@ -88,16 +97,35 @@
 /* Touch only. Wide frames keep the hardware keyboard and give the grid every
    row, which is the whole point of the terminal lens on a desktop.
 
-   The bar never wraps: eleven 36px keys plus gaps are wider than a phone, so it
-   scrolls sideways under an edge fade instead of stealing a second row from the
-   terminal. Its own height grows by the home-indicator inset (minus the 8px the
-   composer already pads with), so the two never overlap. */
+   The row never wraps: six 36px keys plus the menu button fit a 320px phone, so
+   the six keys a thumb needs mid-run stay put and the rest of the vocabulary
+   lives in the keys menu behind the button (`.keys--grid`). Its own height grows
+   by the home-indicator inset (minus the 8px the composer already pads with), so
+   the two never overlap. */
 
 .keys {
   display: none;
 }
 
+/* The menu column is empty while the row is hidden, but it is still a box: keep
+   it out of the layout on every frame that has no touch row. */
+.keymenu {
+  display: none;
+}
+
 @media (pointer: coarse), (max-width: 720px) {
+  /* xterm scrolls its own viewport, and that viewport paints the browser's grey
+     scrollbar the moment the grid overflows — which is exactly what happens
+     when the keys menu takes its height. A phone scrolls the terminal by touch,
+     so the rail is noise; wheel and touch scrolling are untouched. */
+  .term__host .xterm-viewport {
+    scrollbar-width: none;
+  }
+
+  .term__host .xterm-viewport::-webkit-scrollbar {
+    display: none;
+  }
+
   .keys {
     display: flex;
     flex: none;
@@ -145,6 +173,17 @@
     cursor: pointer;
   }
 
+  /* The six keys and the menu button share the row's whole width. A fixed 36px
+     key leaves a hand's width of dead rail on a 390px phone, and that room is
+     worth more as tap target than as background. The grid keeps its own
+     `width: 100%` below; `lib/keybar.test.ts` pins the 292px that must fit a
+     320px row when the keys do not stretch. */
+  .keys > .keys__key {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 36px;
+  }
+
   .keys__key:focus-visible {
     outline: 2px solid var(--ui-accent, var(--accent));
     outline-offset: 1px;
@@ -156,5 +195,114 @@
     border-color: var(--ui-accent, var(--accent));
     background: var(--ui-accent, var(--accent));
     color: var(--ui-accent-ink, var(--paper));
+  }
+
+  /* The menu button is the last key of the row and the way out of the row. It
+     says `keys` in words, not a keyboard glyph: the composer already uses that
+     glyph for raw mode, and two keyboard icons on one screen mean nothing. */
+  .keys__more {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 44px;
+    padding: 0;
+    border: var(--rule-w) solid var(--ui-border-strong, var(--rule-strong));
+    border-radius: 8px;
+    background: var(--ui-elev, var(--raised));
+    color: var(--ui-dim, var(--ink-faint));
+    font-family: var(--ui-mono, var(--font-mono));
+    font-size: 11px;
+    line-height: 1;
+    letter-spacing: 0.06em;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: pointer;
+  }
+
+  .keys__more:focus-visible {
+    outline: 2px solid var(--ui-accent, var(--accent));
+    outline-offset: 1px;
+  }
+
+  .keys__more--open {
+    border-color: var(--ui-accent, var(--accent));
+    color: var(--ui-accent, var(--accent));
+  }
+
+  /* -------------------------------------------------------- keys menu */
+
+  /* The panel is in flow above the row, so opening it shrinks the terminal
+     rather than covering the line being edited; the xterm fit addon picks the
+     new size up on the same frame. */
+  .keymenu {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+  }
+
+  .keymenu__panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px 8px 6px;
+    border-top: var(--rule-w) solid var(--ui-border, var(--rule));
+    background: var(--ui-panel, var(--surface));
+  }
+
+  .keymenu__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 20px;
+    padding: 0 2px;
+    color: var(--ui-faint, var(--ink-faint));
+    font-family: var(--ui-mono, var(--font-mono));
+    font-size: 11px;
+    line-height: 1.4;
+    letter-spacing: 0.08em;
+    text-transform: lowercase;
+  }
+
+  .keymenu__hide {
+    flex: none;
+    min-height: 20px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .keymenu__hide:hover {
+    color: var(--ui-dim, var(--ink));
+  }
+
+  /* Four per row — the grid is the map: fix the line, the modifiers, the
+     arrows, navigation. `KEY_MENU_COLUMNS` in `lib/keybar.ts` is the same 4. */
+  .keys--grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(44px, 1fr));
+    gap: 6px;
+    flex: none;
+    min-height: 0;
+    padding: 0;
+    overflow: visible;
+    border-top: 0;
+    background: none;
+    touch-action: auto;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  .keys--grid .keys__key {
+    width: 100%;
+    height: 46px;
   }
 }

@@ -12,7 +12,7 @@ import { emptyLatches, type KeyLatch } from "@/lib/keybar";
 import { gridFor, TerminalSync } from "@/lib/terminalSync";
 import { usePaneRead } from "@/lib/usePaneRead";
 
-import { KeyBar } from "./KeyBar";
+import { KeyMenu } from "./KeyMenu";
 
 export type TerminalLensProps = {
   paneId: string;
@@ -358,7 +358,7 @@ export function TerminalLens({ paneId, status, theme }: TerminalLensProps) {
           </button>
         ) : null}
       </div>
-      <KeyBar paneId={paneId} latches={latches} onLatches={setLatches} />
+      <KeyMenu paneId={paneId} latches={latches} onLatches={setLatches} />
     </div>
   );
 }

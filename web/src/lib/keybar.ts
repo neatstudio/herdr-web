@@ -40,10 +40,10 @@ export const KEY_REPEAT_DELAY = 400;
 export const KEY_REPEAT_INTERVAL = 50;
 
 /**
- * The bar, left to right: leave a TUI, Tab, the three modifiers, the four
- * arrows, then the two keys that end an interaction. Modifiers sit together
- * because they are the only keys that do not act immediately, and the arrows
- * stay in a block so a thumb can find them without looking.
+ * The whole keyboard, in the order the old single-row bar laid it out: leave a
+ * TUI, Tab, the three modifiers, the four arrows, then the two keys that end an
+ * interaction. `BAR_KEYS` is the part of it on screen; `KEY_MENU_KEYS` is all of
+ * it plus the five keys a phone keyboard never had.
  */
 export const KEY_BAR_KEYS: readonly KeyBarKey[] = [
   {
@@ -127,6 +127,109 @@ export const KEY_BAR_KEYS: readonly KeyBarKey[] = [
     repeat: false,
   },
 ];
+
+/**
+ * Keys the menu adds to the bar's vocabulary.
+ *
+ * A phone keyboard has no Backspace, no Home/End and no page keys, and an
+ * editor or a pager needs all five. They were never part of the always-visible
+ * row because they are not the keys a thumb reaches for mid-run; the menu is
+ * exactly where a rare key belongs.
+ */
+const EXTRA_KEYS: readonly KeyBarKey[] = [
+  {
+    id: "backspace",
+    label: "⌫",
+    ariaLabel: "Backspace",
+    stroke: { key: "Backspace" },
+    repeat: true,
+  },
+  {
+    id: "home",
+    label: "home",
+    ariaLabel: "Home",
+    stroke: { key: "Home" },
+    repeat: false,
+  },
+  {
+    id: "end",
+    label: "end",
+    ariaLabel: "End",
+    stroke: { key: "End" },
+    repeat: false,
+  },
+  {
+    id: "pageup",
+    label: "PgUp",
+    ariaLabel: "Page up",
+    stroke: { key: "PageUp" },
+    repeat: false,
+  },
+  {
+    id: "pagedown",
+    label: "PgDn",
+    ariaLabel: "Page down",
+    stroke: { key: "PageDown" },
+    repeat: false,
+  },
+];
+
+const ALL_KEYS: readonly KeyBarKey[] = [...KEY_BAR_KEYS, ...EXTRA_KEYS];
+
+const KEY_BY_ID = new Map(ALL_KEYS.map((key) => [key.id, key]));
+
+function pick(ids: readonly string[]): readonly KeyBarKey[] {
+  return ids.map((id) => {
+    const key = KEY_BY_ID.get(id);
+    if (key === undefined) {
+      throw new Error(`unknown key ${id}`);
+    }
+    return key;
+  });
+}
+
+/**
+ * The always-visible row, left to right: leave a TUI, Tab, Ctrl (every arrow
+ * chord needs it), interrupt, the key that recalls the last prompt, confirm.
+ *
+ * Six 36px keys plus the menu button fit a 320px phone without scrolling,
+ * which is why the rest of the vocabulary moved behind the button.
+ */
+export const BAR_KEYS: readonly KeyBarKey[] = pick([
+  "esc",
+  "tab",
+  "ctrl",
+  "ctrl-c",
+  "up",
+  "enter",
+]);
+
+/** How many keys the menu lays out per row; its CSS grid mirrors this. */
+export const KEY_MENU_COLUMNS = 4;
+
+/**
+ * The menu's grid, four per row: fix the line, then the modifiers, then the
+ * arrows, then navigation. Grouping beats frequency here: a key is found by
+ * where it sits, and the four blocks are the four things one does to a TUI.
+ */
+export const KEY_MENU_KEYS: readonly KeyBarKey[] = pick([
+  "esc",
+  "tab",
+  "backspace",
+  "enter",
+  "ctrl",
+  "alt",
+  "shift",
+  "ctrl-c",
+  "up",
+  "down",
+  "left",
+  "right",
+  "home",
+  "end",
+  "pageup",
+  "pagedown",
+]);
 
 /**
  * The part of the bar a terminal picker needs: leave, the arrows, confirm.

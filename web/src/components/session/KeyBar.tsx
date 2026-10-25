@@ -20,6 +20,19 @@ export type KeyBarProps = {
   onLatches: (next: KeyLatch) => void;
   /** Which keys to show; the chat lens shows only what a picker answers to. */
   keys?: readonly KeyBarKey[];
+  /**
+   * `row` scrolls sideways under an edge fade; `grid` wraps into rows and is
+   * what the keys menu uses. The grid is only ever shown on touch widths.
+   */
+  layout?: "row" | "grid";
+  /** Fires after a press has been handled, so a menu can react to it. */
+  onPress?: (key: KeyBarKey) => void;
+  /** Adds a trailing button that opens the keys menu. */
+  onMore?: () => void;
+  /** Whether that button reads as open. */
+  moreOpen?: boolean;
+  /** Id of the panel that button controls, for assistive tech. */
+  moreControls?: string;
 };
 
 /**
@@ -35,11 +48,22 @@ export type KeyBarProps = {
  *    the next key from anywhere — a key-bar tap, or a character typed into the
  *    terminal — so `ctrl` + `up` is one keystroke, not a mode. The state lives
  *    in the lens for exactly that reason.
- * 3. Only the keys a TUI expects to autorepeat (Tab and the arrows) repeat, and
- *    they repeat the *resolved* name from the first press, so `ctrl` + `→` held
- *    down keeps arriving as `ctrl+right` after the latch is spent.
+ * 3. Only the keys a TUI expects to autorepeat (Tab, Backspace and the arrows)
+ *    repeat, and they repeat the *resolved* name from the first press, so
+ *    `ctrl` + `→` held down keeps arriving as `ctrl+right` after the latch is
+ *    spent.
  */
-export function KeyBar({ paneId, latches, onLatches, keys = KEY_BAR_KEYS }: KeyBarProps) {
+export function KeyBar({
+  paneId,
+  latches,
+  onLatches,
+  keys = KEY_BAR_KEYS,
+  layout = "row",
+  onPress,
+  onMore,
+  moreOpen = false,
+  moreControls,
+}: KeyBarProps) {
   // The press handler reads the latches synchronously; a re-render would only
   // be visible one tap too late for a thumb.
   const latchesRef = useRef<KeyLatch>(latches);
@@ -82,6 +106,7 @@ export function KeyBar({ paneId, latches, onLatches, keys = KEY_BAR_KEYS }: KeyB
   }, [paneId]);
 
   const press = (key: KeyBarKey): void => {
+    onPress?.(key);
     if (key.modifier !== undefined) {
       commitLatches(latchesAfterPress(latchesRef.current, key));
       return;
@@ -110,7 +135,11 @@ export function KeyBar({ paneId, latches, onLatches, keys = KEY_BAR_KEYS }: KeyB
   };
 
   return (
-    <div className="keys" role="toolbar" aria-label="terminal keys">
+    <div
+      className={layout === "grid" ? "keys keys--grid" : "keys"}
+      role="toolbar"
+      aria-label="terminal keys"
+    >
       {keys.map((key) => {
         const armed = isArmed(key, latches);
         return (
@@ -137,6 +166,31 @@ export function KeyBar({ paneId, latches, onLatches, keys = KEY_BAR_KEYS }: KeyB
           </button>
         );
       })}
+      {onMore === undefined ? null : (
+        <button
+          type="button"
+          className={moreOpen ? "keys__more keys__more--open" : "keys__more"}
+          aria-label="more keys"
+          aria-expanded={moreOpen}
+          aria-controls={moreControls}
+          onPointerDown={(event) => {
+            if (event.pointerType === "mouse" && event.button !== 0) {
+              return;
+            }
+            event.preventDefault();
+            event.currentTarget.setPointerCapture(event.pointerId);
+            onMore();
+          }}
+          onContextMenu={(event) => event.preventDefault()}
+          onClick={(event) => {
+            if (event.detail === 0) {
+              onMore();
+            }
+          }}
+        >
+          <span aria-hidden="true">keys</span>
+        </button>
+      )}
     </div>
   );
 }
