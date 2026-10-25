@@ -276,23 +276,13 @@
 }
 
 /* ------------------------------------------------------------------ touch */
-/* Coarse pointers and narrow frames get the mobile arrangement of the same
-   card: a 2x2 pad of 36px controls beside the draft, 16px text so iOS does not
-   zoom on focus, and the card inset from the edge. The .is-narrow hook covers
-   the same case for a desktop browser squeezed down. */
+/* Coarse pointers and narrow frames get the tactile version of the same card:
+   36px faces, 16px prose so iOS does not zoom on focus, and row layout only
+   where the draft can spare a line. The .is-narrow hook covers the same case
+   for a desktop browser squeezed down; the framing that turns the card into a
+   sheet is width-scoped at the end of this file. */
 
 @media (pointer: coarse), (max-width: 900px) {
-  /* The phone composer is the same card, inset from the edge: the radius lifts
-     it off the transcript and gives the pad a boundary the eye can find without
-     a full-width rule cutting the screen in half. */
-  .prompt {
-    width: calc(100% - 16px);
-    margin: 0 0 max(8px, env(safe-area-inset-bottom));
-    border-radius: 20px;
-    background: var(--ui-elev, var(--raised));
-    box-shadow: 0 8px 24px rgb(0 0 0 / 0.08);
-  }
-
   /* With the keyboard open the shell has already given back its height, so the
      home-indicator inset the card was padding for is behind the keyboard: the
      card sits right on it instead of floating a finger's width above. */
@@ -300,19 +290,6 @@
     margin-bottom: 8px;
     padding-top: 8px;
     padding-bottom: 8px;
-  }
-
-  /* Focus is a soft accent edge, not a second border: the card is one surface
-     and a heavier outline around it would fight the sheet behind. */
-  .prompt:focus-within {
-    border-color: color-mix(
-      in srgb,
-      var(--ui-accent, var(--accent)) 40%,
-      var(--ui-border, var(--rule))
-    );
-    box-shadow:
-      0 8px 24px rgb(0 0 0 / 0.12),
-      0 0 0 3px color-mix(in srgb, var(--ui-accent, var(--accent)) 10%, transparent);
   }
 
   .prompt__input {
@@ -331,19 +308,6 @@
 
   .prompt__input::placeholder {
     color: var(--ui-faint, var(--ink-faint));
-  }
-
-  /* Four controls in a 2×2 pad on the right of a two-row box, not a row under
-     it: a row cost a whole line of the phone screen and put send at the far
-     edge of a one-handed grip. Two columns keep the pad inside the thumb arc of
-     the hand holding the phone, and every control keeps a 36px face. */
-  .prompt__pad {
-    display: grid;
-    grid-template-columns: repeat(2, 36px);
-    grid-auto-rows: 36px;
-    gap: 2px;
-    justify-items: center;
-    align-content: end;
   }
 
   .prompt__act,
@@ -459,4 +423,58 @@
   .prompt__opt--active .prompt__hint {
     color: var(--ui-faint, var(--ink-faint));
   }
+}
+
+/* The phone card's framing belongs to the frame, not to the pointer or to a
+   width that only folds the shell. A tablet in landscape or a touch laptop is
+   coarser than 900px: it takes the bigger faces and the focus halo above, but
+   keeps the desktop card — centered, capped at 56rem, 14px radius — instead of
+   a sheet stretched to both edges of a 1440px screen. A mouse-driven window
+   squeezed to 800px is the mirror case: it keeps the desktop card too, because
+   a row of four controls is not what costs it height. Only `.is-narrow` — a
+   real phone, or a coarse frame that narrow — insets the card and folds the pad
+   into two columns. */
+.shell.is-narrow .prompt {
+  width: calc(100% - 16px);
+  margin: 0 0 max(8px, env(safe-area-inset-bottom));
+  border-radius: 20px;
+  background: var(--ui-elev, var(--raised));
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.08);
+}
+
+/* Focus is a soft accent edge, not a second border: the card is one surface
+   and a heavier outline around it would fight the sheet behind. */
+.shell.is-narrow .prompt:focus-within {
+  border-color: color-mix(
+    in srgb,
+    var(--ui-accent, var(--accent)) 40%,
+    var(--ui-border, var(--rule))
+  );
+  box-shadow:
+    0 8px 24px rgb(0 0 0 / 0.12),
+    0 0 0 3px color-mix(in srgb, var(--ui-accent, var(--accent)) 10%, transparent);
+}
+
+/* Four controls in a 2×2 pad on the right of a two-row box, not a row under
+   it: a row cost a whole line of the phone screen and put send at the far edge
+   of a one-handed grip. Two columns keep the pad inside the thumb arc of the
+   hand holding the phone, and every control keeps a 36px face. */
+.shell.is-narrow .prompt__pad {
+  display: grid;
+  grid-template-columns: repeat(2, 36px);
+  grid-auto-rows: 36px;
+  gap: 2px;
+  justify-items: center;
+  align-content: end;
+}
+
+/* Typing mode folds the pad back into one row (see the touch block above), and
+   that has to keep winning over the 2×2 grid now that both rules carry two
+   classes: this one carries three. `.has-keyboard` sits on the root element —
+   it is an ancestor of the shell, never a descendant of it. */
+.has-keyboard .shell.is-narrow .prompt__pad {
+  display: flex;
+  flex-direction: row;
+  gap: 2px;
+  align-content: start;
 }
