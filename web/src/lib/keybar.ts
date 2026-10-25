@@ -128,6 +128,18 @@ export const KEY_BAR_KEYS: readonly KeyBarKey[] = [
   },
 ];
 
+/**
+ * The part of the bar a terminal picker needs: leave, the arrows, confirm.
+ *
+ * The terminal lens shows the whole keyboard because a TUI takes everything it
+ * can get. The chat lens shows only this subset: a picker is the one thing
+ * prose cannot express, and there is nothing to type with the rest of the bar
+ * when the caret lives in the composer below it.
+ */
+export const PICKER_BAR_KEYS: readonly KeyBarKey[] = KEY_BAR_KEYS.filter((key) =>
+  ["esc", "up", "down", "left", "right", "enter"].includes(key.id),
+);
+
 export function emptyLatches(): KeyLatch {
   return { ctrl: false, alt: false, shift: false };
 }

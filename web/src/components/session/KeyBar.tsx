@@ -18,10 +18,12 @@ export type KeyBarProps = {
   /** Armed modifiers, owned by the lens so typed input can spend them too. */
   latches: KeyLatch;
   onLatches: (next: KeyLatch) => void;
+  /** Which keys to show; the chat lens shows only what a picker answers to. */
+  keys?: readonly KeyBarKey[];
 };
 
 /**
- * The touch keyboard for the terminal lens.
+ * The touch keyboard for a pane.
  *
  * Three rules decide everything here:
  *
@@ -37,7 +39,7 @@ export type KeyBarProps = {
  *    they repeat the *resolved* name from the first press, so `ctrl` + `→` held
  *    down keeps arriving as `ctrl+right` after the latch is spent.
  */
-export function KeyBar({ paneId, latches, onLatches }: KeyBarProps) {
+export function KeyBar({ paneId, latches, onLatches, keys = KEY_BAR_KEYS }: KeyBarProps) {
   // The press handler reads the latches synchronously; a re-render would only
   // be visible one tap too late for a thumb.
   const latchesRef = useRef<KeyLatch>(latches);
@@ -109,7 +111,7 @@ export function KeyBar({ paneId, latches, onLatches }: KeyBarProps) {
 
   return (
     <div className="keys" role="toolbar" aria-label="terminal keys">
-      {KEY_BAR_KEYS.map((key) => {
+      {keys.map((key) => {
         const armed = isArmed(key, latches);
         return (
           <button

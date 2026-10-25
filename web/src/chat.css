@@ -64,6 +64,13 @@
   overscroll-behavior: contain;
 }
 
+/* A picker in the transcript needs keys, and that bar belongs to the document,
+   not to the composer: the composer below it already pads for the home
+   indicator, so the bar keeps only its own 2px instead of doubling the inset. */
+.chat .keys {
+  padding-bottom: 2px;
+}
+
 /* ------------------------------------------------------------------ turns */
 
 .chat__turn {

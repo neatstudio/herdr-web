@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   KEY_BAR_KEYS,
+  PICKER_BAR_KEYS,
   KEY_REPEAT_DELAY,
   KEY_REPEAT_INTERVAL,
   clearLatches,
@@ -80,6 +81,22 @@ test("the bar has eleven keys and none of them repeat by accident", () => {
     assert.ok(key.label.length > 0, `${key.id} has no label`);
     assert.ok(key.ariaLabel.length > 0, `${key.id} has no spoken name`);
   }
+});
+
+test("the picker bar carries only the keys a picker reads", () => {
+  assert.deepEqual(
+    PICKER_BAR_KEYS.map((key) => key.id),
+    ["esc", "up", "down", "left", "right", "enter"],
+  );
+  // Every button in the picker bar sends itself; none of them latches.
+  for (const key of PICKER_BAR_KEYS) {
+    assert.equal(key.modifier, undefined, `${key.id} latches`);
+  }
+  const latches = emptyLatches();
+  assert.deepEqual(
+    PICKER_BAR_KEYS.map((key) => keyNameFor(key, latches)),
+    ["esc", "Up", "Down", "Left", "Right", "Enter"],
+  );
 });
 
 test("with nothing latched each key sends its plain herdr name", () => {
