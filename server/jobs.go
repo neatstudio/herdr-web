@@ -26,8 +26,16 @@ type jobRequest struct {
 	Prompt string `json:"prompt"`
 	// Cwd is the repository (or directory) to work in. With Branch, the work
 	// happens in a git worktree, so two jobs on one machine do not collide.
-	Cwd    string `json:"cwd"`
-	Branch string `json:"branch"`
+	Cwd        string `json:"cwd"`
+	Branch     string `json:"branch"`
+	Repo       string `json:"repo,omitempty"`
+	CloneURL   string `json:"cloneUrl,omitempty"`
+	TokenEnv   string `json:"tokenEnv,omitempty"`
+	BaseBranch string `json:"baseBranch,omitempty"`
+	// TestCommand is a deterministic command for the test role. When set, the
+	// test job runs as a command instead of an agent, so a pass is not a model's
+	// opinion.
+	TestCommand string `json:"testCommand,omitempty"`
 	// Kind is the agent to start, e.g. "claude" or "opencode".
 	Kind string `json:"kind"`
 	// Role is the pipeline stage: dev, review, test, audit or merge. Empty is dev.
@@ -63,6 +71,13 @@ printf '\n__HERDR_JOB_DONE__:%d\n' "$rc"
 `
 
 const jobDoneMarker = "__HERDR_JOB_DONE__:"
+
+// commandOneShot runs the test command in a shell and prints the same completion
+// marker zerostack uses. The command arrives as $1 so its quoting is untouched.
+const commandOneShot = `sh -c "$1"
+rc=$?
+printf '\n__HERDR_JOB_DONE__:%d\n' "$rc"
+`
 
 // splitJobOutput separates a command's output from the completion marker. It
 // returns done=false when the marker is absent (the command is still running).
@@ -120,6 +135,10 @@ func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "herdr_agent_failed", "zerostack is not installed on this machine")
 		return
 	}
+	if strings.EqualFold(kind, "command") && strings.TrimSpace(request.TestCommand) == "" {
+		writeError(w, http.StatusBadRequest, "invalid_request", "a command job needs testCommand")
+		return
+	}
 	// Admission and the slot claim are one step: a check now and a record after
 	// the herdr calls let concurrent starts both pass it.
 	taskID := strings.TrimSpace(request.TaskID)
@@ -154,8 +173,16 @@ func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
 	defer cancel()
+
+	// The target may not have the repository yet. Provisioning is explicit and
+	// authenticated: a missing checkout is an error, not an agent started in the
+	// wrong directory.
+	if err := s.prepareCheckout(ctx, request); err != nil {
+		writeError(w, http.StatusBadGateway, "checkout_failed", err.Error())
+		return
+	}
 
 	// A workspace is the unit herdr places work in; a worktree keeps each job's
 	// checkout apart when the work is in a repository.
@@ -197,6 +224,28 @@ func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 	// (-p), so the job is a command in the new pane, not agent.start. The wrapper
 	// prints a marker with the exit code: the pane has no exit status to poll, and
 	// that marker is how the status endpoint knows the command is done.
+	if strings.EqualFold(kind, "command") {
+		command := []string{"sh", "-c", commandOneShot, "test-command", request.TestCommand}
+		if err := s.runInPane(ctx, paneID, command); err != nil {
+			s.abandonWorkspace(workspaceID)
+			writeBadGateway(w, "herdr_job_failed", err)
+			return
+		}
+		s.ledger.started(reservation, workspaceID, paneID, kind, string(role), label, sharedTaskID(request, paneID), jobCheckout(request))
+		taskID = sharedTaskID(request, paneID)
+		if err := s.startSharedTask(ctx, request, taskID, label); err != nil {
+			fmt.Fprintf(os.Stderr, "herdr-web: shared task %s: %v\n", taskID, err)
+		}
+		writeJSON(w, http.StatusOK, jobStarted{
+			OK:          true,
+			JobID:       paneID,
+			WorkspaceID: workspaceID,
+			PaneID:      paneID,
+			TaskID:      taskID,
+			Branch:      strings.TrimSpace(request.Branch),
+		})
+		return
+	}
 	if strings.EqualFold(kind, "zerostack") {
 		command := []string{"sh", "-c", zerostackOneShot, "zerostack", request.Prompt}
 		if err := s.runInPane(ctx, paneID, command); err != nil {
@@ -204,7 +253,7 @@ func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 			writeBadGateway(w, "herdr_job_failed", err)
 			return
 		}
-		s.ledger.started(reservation, workspaceID, paneID, kind, string(role), label, sharedTaskID(request, paneID))
+		s.ledger.started(reservation, workspaceID, paneID, kind, string(role), label, sharedTaskID(request, paneID), jobCheckout(request))
 		taskID = sharedTaskID(request, paneID)
 		if err := s.startSharedTask(ctx, request, taskID, label); err != nil {
 			fmt.Fprintf(os.Stderr, "herdr-web: shared task %s: %v\n", taskID, err)
@@ -240,7 +289,7 @@ func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.ledger.started(reservation, workspaceID, paneID, request.Kind, string(role), label, sharedTaskID(request, paneID))
+	s.ledger.started(reservation, workspaceID, paneID, request.Kind, string(role), label, sharedTaskID(request, paneID), jobCheckout(request))
 	taskID = sharedTaskID(request, paneID)
 	if err := s.startSharedTask(ctx, request, taskID, label); err != nil {
 		fmt.Fprintf(os.Stderr, "herdr-web: shared task %s: %v\n", taskID, err)
@@ -333,7 +382,7 @@ func (s *Server) handleJobOffer(w http.ResponseWriter, r *http.Request) {
 			accepted, reason = false, "review/test/audit require an independent node"
 		}
 	}
-	if !agentAvailable(kind) {
+	if !jobKindAvailable(kind) {
 		accepted, reason = false, "agent not installed"
 	} else if limit := maxJobs(); limit > 0 && s.ledger.runningCount() >= limit {
 		accepted, reason = false, "at capacity"
@@ -369,6 +418,10 @@ func (s *Server) handleJobTask(w http.ResponseWriter, r *http.Request, taskID st
 		answer["workspaceId"] = event.WorkspaceID
 	}
 	writeJSON(w, http.StatusOK, answer)
+}
+
+func jobKindAvailable(kind string) bool {
+	return strings.EqualFold(kind, "command") || agentAvailable(kind)
 }
 
 func agentAvailable(kind string) bool {
@@ -412,6 +465,16 @@ func roleReady(task sharedledger.Task, role sharedledger.Role) bool {
 
 // sharedTaskID ties a job to its shared-ledger task. A dispatched task already
 // has an id; a directly started job gets one derived from its pane.
+func jobCheckout(request jobRequest) ledgerEvent {
+	return ledgerEvent{
+		Repo:       strings.TrimSpace(request.Repo),
+		Branch:     strings.TrimSpace(request.Branch),
+		CloneURL:   strings.TrimSpace(request.CloneURL),
+		TokenEnv:   strings.TrimSpace(request.TokenEnv),
+		BaseBranch: strings.TrimSpace(request.BaseBranch),
+	}
+}
+
 func sharedTaskID(request jobRequest, paneID string) string {
 	if id := strings.TrimSpace(request.TaskID); id != "" {
 		return id
@@ -437,7 +500,9 @@ func (s *Server) startSharedTask(ctx context.Context, request jobRequest, taskID
 		}
 		task, err = s.sharedLedger.Create(ctx, sharedledger.Task{
 			ID: taskID, Title: label, Prompt: request.Prompt, Cwd: request.Cwd,
-			Branch: request.Branch, Kind: request.Kind, Weight: request.Weight,
+			Branch: request.Branch, Repo: request.Repo,
+			CloneURL: request.CloneURL, TokenEnv: request.TokenEnv, BaseBranch: request.BaseBranch,
+			TestCommand: request.TestCommand, Kind: request.Kind, Weight: request.Weight,
 		})
 		if err != nil {
 			return err
@@ -462,7 +527,7 @@ func (s *Server) attestSharedTask(ctx context.Context, taskID string, role share
 	if task.Owner != localNodeID() {
 		return nil
 	}
-	_, err = s.sharedLedger.Attest(ctx, taskID, role, localNodeID(), "", "", "local", task.Version)
+	_, err = s.sharedLedger.Attest(ctx, taskID, role, localNodeID(), "", "", signAttestation(taskID, role, "", ""), task.Version)
 	return err
 }
 
@@ -538,11 +603,11 @@ func (s *Server) handleJobStatus(w http.ResponseWriter, r *http.Request, paneID 
 		writeError(w, http.StatusBadRequest, "invalid_request", "job id is required")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 
 	event, isJob := s.ledger.eventForPane(paneID)
-	commandJob := isJob && event.Kind == "zerostack"
+	commandJob := isJob && (event.Kind == "zerostack" || event.Kind == "command")
 
 	var agent struct {
 		Agent struct {
@@ -613,6 +678,13 @@ func (s *Server) handleJobStatus(w http.ResponseWriter, r *http.Request, paneID 
 		role := sharedledger.Role(strings.TrimSpace(event.Role))
 		if role == "" {
 			role = sharedledger.RoleDev
+		}
+		if status == "done" && role == sharedledger.RoleDev {
+			if err := s.pushDevBranch(ctx, event); err != nil {
+				fmt.Fprintf(os.Stderr, "herdr-web: push dev branch %s: %v\n", taskID, err)
+				writeBadGateway(w, "branch_push_failed", err)
+				return
+			}
 		}
 		if err := s.attestSharedTask(ctx, taskID, role); err != nil {
 			fmt.Fprintf(os.Stderr, "herdr-web: attest shared task %s: %v\n", taskID, err)

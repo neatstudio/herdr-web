@@ -32,3 +32,36 @@
 - `go vet` / `gofmt`：干净
 - `go test ./...` 与 `go test -race ./server`：全部通过（新增 3 个并发/补偿用例、更新发布链相关用例）
 - 前端：typecheck 通过，225 个单测通过；3 个相关 e2e（含新增"无人接单"用例）通过
+
+## 2026-10-25（可信生产：签名、鉴权、checkout、门禁、HA）
+
+### 节点身份与账本
+
+- 节点身份从 Tailscale 节点名改为本地 ed25519 密钥（`~/.local/share/herdr-web/jobs/node.key`，0600；`HERDR_WEB_NODE_KEY` 可覆盖），节点 id 即公钥。
+- `attest` 必须携带覆盖 task/role/node/commit/digest 的签名；Memory 与 NATS 适配器都验签，空签名、伪造签名、跨任务重放均返回 `ErrSignature`。
+- dev/merge 的服务端 attest 改用本节点签名；原有“local”占位签名删除。
+
+### API 鉴权
+
+- `HERDR_WEB_TOKEN` 可选：设置后 `/api/`（health 与 webhook 除外）和 `/opendesign/` 必须带 `Authorization: Bearer`、`X-Herdr-Token` 或 HttpOnly cookie。
+- `GET /auth?token=...` 验证后设置 HttpOnly cookie，现有 UI 的 EventSource/WebSocket 可直接复用。
+- fleet 心跳、dispatch、job 状态、remote proxy 的出站请求自动携带同一 token；constant-time 比较。
+
+### 仓库 checkout 与分支推送
+
+- job 请求/任务/账本事件携带 `repo`、`cloneUrl`、`tokenEnv`、`baseBranch`；`prepareCheckout` 在 worktree 创建前 clone 或在已有仓库 fetch+checkout 基分支，脏工作区拒绝切换。
+- 凭证只通过 `tokenEnv` 指定的环境变量读取，clone 后把 origin 改回不含 token 的 URL。
+- dev 角色完成时先 `git push` 到远端分支再 attest；推送失败返回 `branch_push_failed`，不把未推送的结果标成完成。
+
+### 流水线门禁与 merge 失败
+
+- 任务新增 `testCommand`；repo 可配置测试命令，orchestrator 的 test 角色变成 `kind=command` 的命令 job（打印 `__HERDR_JOB_DONE__` 退出码），不再只依赖 agent 自述。
+- review/test/audit 仍要求独立节点；merge 失败从无限重试改为 `FailMerge`：保留 `audit_approved` 重试，3 次后进入 `merge_blocked`。
+- NATS 适配器支持逗号/空白分隔的集群 URL、自动重连、token/用户名密码、JetStream stream/KV 副本数（`HERDR_WEB_NATS_REPLICAS`）。
+
+### 验证
+
+- `go vet ./...` 干净。
+- `go test ./...` 全部通过（新增签名/重放、token、checkout、push、命令 job、merge 失败有界、NATS URL 规范化用例）。
+- `npm --prefix web run test:unit` 281/281。
+- Playwright 79/87；8 个失败均为已提交 UI 的布局用例，与本次后端改动无关（wrap/phone/split 显示）。

@@ -30,6 +30,7 @@ const (
 	AuditApproved    State = "audit_approved"
 	AuditRejected    State = "audit_rejected"
 	MergeQueued      State = "merge_queued"
+	MergeBlocked     State = "merge_blocked"
 	Merged           State = "merged"
 	Cancelled        State = "cancelled"
 	Unknown          State = "unknown"
@@ -46,23 +47,28 @@ const (
 )
 
 type Task struct {
-	ID      string `json:"id"`
-	Title   string `json:"title,omitempty"`
-	Prompt  string `json:"prompt,omitempty"`
-	Cwd     string `json:"cwd,omitempty"`
-	Branch  string `json:"branch,omitempty"`
-	Kind    string `json:"kind,omitempty"`
-	Weight  string `json:"weight,omitempty"`
-	Repo    string `json:"repo,omitempty"`
-	Issue   int    `json:"issue,omitempty"`
-	PR      int    `json:"pr,omitempty"`
-	State   State  `json:"state"`
-	Version uint64 `json:"version"`
-	Role    Role   `json:"role,omitempty"`
-	Owner   string `json:"owner,omitempty"`
+	ID          string `json:"id"`
+	Title       string `json:"title,omitempty"`
+	Prompt      string `json:"prompt,omitempty"`
+	Cwd         string `json:"cwd,omitempty"`
+	Branch      string `json:"branch,omitempty"`
+	Kind        string `json:"kind,omitempty"`
+	Weight      string `json:"weight,omitempty"`
+	Repo        string `json:"repo,omitempty"`
+	CloneURL    string `json:"cloneUrl,omitempty"`
+	TokenEnv    string `json:"tokenEnv,omitempty"`
+	BaseBranch  string `json:"baseBranch,omitempty"`
+	TestCommand string `json:"testCommand,omitempty"`
+	Issue       int    `json:"issue,omitempty"`
+	PR          int    `json:"pr,omitempty"`
+	State       State  `json:"state"`
+	Version     uint64 `json:"version"`
+	Role        Role   `json:"role,omitempty"`
+	Owner       string `json:"owner,omitempty"`
 
-	LeaseUntil time.Time `json:"leaseUntil,omitempty"`
-	Attempts   int       `json:"attempts,omitempty"`
+	LeaseUntil    time.Time `json:"leaseUntil,omitempty"`
+	Attempts      int       `json:"attempts,omitempty"`
+	MergeAttempts int       `json:"mergeAttempts,omitempty"`
 
 	Artifacts    Artifacts     `json:"artifacts,omitempty"`
 	Attestations []Attestation `json:"attestations,omitempty"`
@@ -117,6 +123,11 @@ var (
 	ErrMergeBusy       = errors.New("sharedledger: another task is already merging in this repository")
 )
 
+// MaxMergeAttempts bounds automatic provider retries. A conflict or a revoked
+// token is not fixed by trying again; three attempts is enough to distinguish a
+// transient failure from a task that needs a human.
+const MaxMergeAttempts = 3
+
 // mergeRepo is the single-writer lock key: one merge per checkout at a time.
 func mergeRepo(task Task) string {
 	if cwd := strings.TrimSpace(task.Cwd); cwd != "" {
@@ -140,6 +151,10 @@ type Ledger interface {
 	// Attest records a signed result and advances the state. expectedVersion is
 	// the version read before the attest.
 	Attest(ctx context.Context, id string, role Role, node, commit, digest, signature string, expectedVersion uint64) (Task, error)
+	// FailMerge records a provider merge failure. It keeps the task in
+	// audit_approved for a retry, then blocks it after MaxMergeAttempts so a
+	// conflict is visible instead of retried forever.
+	FailMerge(ctx context.Context, id, node, reason string) (Task, error)
 	LinkPR(ctx context.Context, id string, number int) (Task, error)
 	MarkMerged(ctx context.Context, id, commit string) (Task, error)
 	Release(ctx context.Context, id string, role Role, node, reason string) (Task, error)

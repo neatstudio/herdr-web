@@ -168,14 +168,19 @@ func (s *Server) handleDispatch(w http.ResponseWriter, r *http.Request) {
 // each, which is the point: the same task, run in parallel on machines with
 // different models and different reachability, then compared.
 type dispatchRequest struct {
-	Prompt   string   `json:"prompt"`
-	Cwd      string   `json:"cwd"`
-	Branch   string   `json:"branch"`
-	Kind     string   `json:"kind"`
-	Role     string   `json:"role"`
-	Weight   string   `json:"weight"`
-	Strategy string   `json:"strategy"`
-	Targets  []string `json:"targets"`
+	Prompt      string   `json:"prompt"`
+	Cwd         string   `json:"cwd"`
+	Branch      string   `json:"branch"`
+	Repo        string   `json:"repo,omitempty"`
+	CloneURL    string   `json:"cloneUrl,omitempty"`
+	TokenEnv    string   `json:"tokenEnv,omitempty"`
+	BaseBranch  string   `json:"baseBranch,omitempty"`
+	TestCommand string   `json:"testCommand,omitempty"`
+	Kind        string   `json:"kind"`
+	Role        string   `json:"role"`
+	Weight      string   `json:"weight"`
+	Strategy    string   `json:"strategy"`
+	Targets     []string `json:"targets"`
 }
 
 func (s *Server) handleDispatchJob(w http.ResponseWriter, r *http.Request) {
@@ -238,12 +243,17 @@ func (s *Server) handleDispatchJob(w http.ResponseWriter, r *http.Request) {
 		base := fleetBase(target)
 		entry := dispatchedJob{Host: base, Weight: normalizeWeight(request.Weight)}
 		body, err := json.Marshal(jobRequest{
-			Prompt: request.Prompt,
-			Cwd:    request.Cwd,
-			Branch: request.Branch,
-			Kind:   request.Kind,
-			Role:   request.Role,
-			Weight: normalizeWeight(request.Weight),
+			Prompt:      request.Prompt,
+			Cwd:         request.Cwd,
+			Branch:      request.Branch,
+			Repo:        request.Repo,
+			CloneURL:    request.CloneURL,
+			TokenEnv:    request.TokenEnv,
+			BaseBranch:  request.BaseBranch,
+			TestCommand: request.TestCommand,
+			Kind:        request.Kind,
+			Role:        request.Role,
+			Weight:      normalizeWeight(request.Weight),
 		})
 		if err != nil {
 			entry.Error = err.Error()
@@ -294,14 +304,19 @@ type jobOfferAnswer struct {
 // the workspace.
 func (s *Server) runMarket(ctx context.Context, request dispatchRequest, targets []string, taskID string) (dispatch, bool, error) {
 	body, err := json.Marshal(jobRequest{
-		Prompt: request.Prompt,
-		Cwd:    request.Cwd,
-		Branch: request.Branch,
-		Kind:   request.Kind,
-		Role:   request.Role,
-		Label:  "task " + taskID,
-		TaskID: taskID,
-		Weight: normalizeWeight(request.Weight),
+		Prompt:      request.Prompt,
+		Cwd:         request.Cwd,
+		Branch:      request.Branch,
+		Repo:        request.Repo,
+		CloneURL:    request.CloneURL,
+		TokenEnv:    request.TokenEnv,
+		BaseBranch:  request.BaseBranch,
+		TestCommand: request.TestCommand,
+		Kind:        request.Kind,
+		Role:        request.Role,
+		Label:       "task " + taskID,
+		TaskID:      taskID,
+		Weight:      normalizeWeight(request.Weight),
 	})
 	if err != nil {
 		return dispatch{}, false, err
@@ -587,7 +602,7 @@ func newTaskID() string {
 func postJobOffer(ctx context.Context, base string, body []byte) (jobOfferAnswer, error) {
 	requestCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
-	request, err := http.NewRequestWithContext(requestCtx, http.MethodPost,
+	request, err := newConsoleRequest(requestCtx, http.MethodPost,
 		base+"/api/v1/herdr/job/offer", bytes.NewReader(body))
 	if err != nil {
 		return jobOfferAnswer{}, err
@@ -611,7 +626,7 @@ func postJobOffer(ctx context.Context, base string, body []byte) (jobOfferAnswer
 func getJobTask(ctx context.Context, base, taskID string) (bool, string, string, bool) {
 	requestCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	request, err := http.NewRequestWithContext(requestCtx, http.MethodGet,
+	request, err := newConsoleRequest(requestCtx, http.MethodGet,
 		base+"/api/v1/herdr/job/task/"+url.PathEscape(taskID), nil)
 	if err != nil {
 		return false, "", "", false
@@ -639,7 +654,7 @@ func getJobTask(ctx context.Context, base, taskID string) (bool, string, string,
 func postJobStart(ctx context.Context, base string, body []byte) (jobStarted, error) {
 	requestCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
-	request, err := http.NewRequestWithContext(requestCtx, http.MethodPost,
+	request, err := newConsoleRequest(requestCtx, http.MethodPost,
 		base+"/api/v1/herdr/job", bytes.NewReader(body))
 	if err != nil {
 		return jobStarted{}, err
@@ -724,7 +739,7 @@ func (s *Server) handleDispatchStop(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	target := host + "/api/v1/herdr/job/" + url.PathEscape(workspaceID) + "/stop"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, nil)
+	req, err := newConsoleRequest(ctx, http.MethodPost, target, nil)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
@@ -846,7 +861,7 @@ type jobDiffAnswer struct {
 func getJobDiff(ctx context.Context, base, workspaceID string) (jobDiffAnswer, bool) {
 	requestCtx, cancel := context.WithTimeout(ctx, jobPollTimeout)
 	defer cancel()
-	request, err := http.NewRequestWithContext(requestCtx, http.MethodGet,
+	request, err := newConsoleRequest(requestCtx, http.MethodGet,
 		base+"/api/v1/herdr/job/"+workspaceID+"/diff", nil)
 	if err != nil {
 		return jobDiffAnswer{}, false
@@ -889,7 +904,7 @@ func getJobDiff(ctx context.Context, base, workspaceID string) (jobDiffAnswer, b
 func getJobStatus(ctx context.Context, base, jobID string) (string, string, error) {
 	requestCtx, cancel := context.WithTimeout(ctx, jobPollTimeout)
 	defer cancel()
-	request, err := http.NewRequestWithContext(requestCtx, http.MethodGet,
+	request, err := newConsoleRequest(requestCtx, http.MethodGet,
 		base+"/api/v1/herdr/job/"+jobID, nil)
 	if err != nil {
 		return "", "", err

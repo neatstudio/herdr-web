@@ -83,11 +83,12 @@ func TestNATSLedgerLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	claimed, err := ledger.Claim(ctx, "n1", RoleDev, "dev", time.Minute, task.Version)
+	dev := testIdentity(t, "dev")
+	claimed, err := ledger.Claim(ctx, "n1", RoleDev, dev.NodeID(), time.Minute, task.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	done, err := ledger.Attest(ctx, "n1", RoleDev, "dev", "abc", "", "sig", claimed.Version)
+	done, err := ledger.Attest(ctx, "n1", RoleDev, dev.NodeID(), "abc", "", dev.Sign("n1", RoleDev, "abc", ""), claimed.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,5 +143,15 @@ func TestNATSConcurrentClaimOnlyOneWins(t *testing.T) {
 	}
 	if successes != 1 || conflicts != 1 {
 		t.Fatalf("successes=%d conflicts=%d", successes, conflicts)
+	}
+}
+
+func TestNormalizeNATSURLs(t *testing.T) {
+	got := normalizeNATSURLs(" nats://a:4222, b:4223\n nats://c:4224 ")
+	if len(got) != 3 || got[0] != "nats://a:4222" || got[1] != "nats://b:4223" || got[2] != "nats://c:4224" {
+		t.Fatalf("urls = %#v", got)
+	}
+	if got := normalizeNATSURLs("  , "); len(got) != 0 {
+		t.Fatalf("empty = %#v", got)
 	}
 }

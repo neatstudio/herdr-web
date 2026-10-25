@@ -30,6 +30,11 @@ type ledgerEvent struct {
 	Label       string `json:"label,omitempty"`
 	TaskID      string `json:"taskId,omitempty"`
 	Reason      string `json:"reason,omitempty"`
+	Repo        string `json:"repo,omitempty"`
+	Branch      string `json:"branch,omitempty"`
+	CloneURL    string `json:"cloneUrl,omitempty"`
+	TokenEnv    string `json:"tokenEnv,omitempty"`
+	BaseBranch  string `json:"baseBranch,omitempty"`
 }
 
 type jobLedger struct {
@@ -207,7 +212,7 @@ func (l *jobLedger) startingLocked(taskID string) bool {
 
 // started records a running job and consumes its reservation under the same
 // lock, so the slot is never counted twice or not at all.
-func (l *jobLedger) started(reservation, workspaceID, paneID, kind, role, label, taskID string) {
+func (l *jobLedger) started(reservation, workspaceID, paneID, kind, role, label, taskID string, checkout ...ledgerEvent) {
 	if l == nil || workspaceID == "" {
 		return
 	}
@@ -223,6 +228,13 @@ func (l *jobLedger) started(reservation, workspaceID, paneID, kind, role, label,
 		Role:        role,
 		Label:       label,
 		TaskID:      taskID,
+	}
+	if len(checkout) > 0 {
+		event.Repo = checkout[0].Repo
+		event.Branch = checkout[0].Branch
+		event.CloneURL = checkout[0].CloneURL
+		event.TokenEnv = checkout[0].TokenEnv
+		event.BaseBranch = checkout[0].BaseBranch
 	}
 	l.running[workspaceID] = event
 	if taskID != "" {

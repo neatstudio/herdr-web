@@ -81,20 +81,43 @@ func (s *Server) orchestratorTick(ctx context.Context) {
 					continue
 				}
 			}
-			if !agentAvailable(task.Kind) {
+			kind := task.Kind
+			testCommand := ""
+			if step.role == sharedledger.RoleTest && strings.TrimSpace(task.TestCommand) != "" {
+				kind = "command"
+				testCommand = task.TestCommand
+			}
+			if !jobKindAvailable(kind) {
 				continue
 			}
 			targets := s.fleetConsoles()
 			if len(targets) == 0 {
 				continue
 			}
+			cloneURL, tokenEnv, baseBranch := task.CloneURL, task.TokenEnv, task.BaseBranch
+			if repo, found := s.repos.Get(task.Repo); found {
+				if cloneURL == "" {
+					cloneURL = repo.cloneURL()
+				}
+				if tokenEnv == "" {
+					tokenEnv = repo.TokenEnv
+				}
+				if baseBranch == "" {
+					baseBranch = repo.DefaultBranch
+				}
+			}
 			request := dispatchRequest{
-				Prompt:   rolePrompt(task, step.role),
-				Kind:     task.Kind,
-				Role:     string(step.role),
-				Cwd:      task.Cwd,
-				Branch:   task.Branch,
-				Strategy: "single",
+				Prompt:      rolePrompt(task, step.role),
+				Kind:        kind,
+				TestCommand: testCommand,
+				Role:        string(step.role),
+				Cwd:         task.Cwd,
+				Branch:      task.Branch,
+				Repo:        task.Repo,
+				CloneURL:    cloneURL,
+				TokenEnv:    tokenEnv,
+				BaseBranch:  baseBranch,
+				Strategy:    "single",
 			}
 			job, started, err := s.runMarket(ctx, request, targets, task.ID)
 			if err != nil || !started {
@@ -141,10 +164,10 @@ func (s *Server) mergeApprovedTask(ctx context.Context, task sharedledger.Task) 
 	}
 	merged, err := repo.mergePull(ctx, pr, "merge")
 	if err != nil || (!merged.Merged && merged.SHA == "") {
-		_, _ = s.sharedLedger.Release(ctx, task.ID, sharedledger.RoleMerge, localNodeID(), "provider merge failed")
+		_, _ = s.sharedLedger.FailMerge(ctx, task.ID, localNodeID(), "provider merge failed")
 		return false
 	}
-	_, err = s.sharedLedger.Attest(ctx, task.ID, sharedledger.RoleMerge, localNodeID(), merged.SHA, "", "local", claimed.Version)
+	_, err = s.sharedLedger.Attest(ctx, task.ID, sharedledger.RoleMerge, localNodeID(), merged.SHA, "", signAttestation(task.ID, sharedledger.RoleMerge, merged.SHA, ""), claimed.Version)
 	return err == nil
 }
 

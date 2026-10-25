@@ -2,6 +2,7 @@ package sharedledger
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"sync"
 	"testing"
@@ -24,9 +25,20 @@ func createTask(t *testing.T, ledger *Memory) Task {
 	return task
 }
 
+func testIdentity(t *testing.T, name string) Identity {
+	t.Helper()
+	seed := sha256.Sum256([]byte("sharedledger-test/" + name))
+	identity, err := IdentityFromSeed(seed[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return identity
+}
+
 func claimDev(t *testing.T, ledger *Memory, version uint64) Task {
 	t.Helper()
-	task, err := ledger.Claim(context.Background(), "t1", RoleDev, "dev", time.Hour, version)
+	dev := testIdentity(t, "dev")
+	task, err := ledger.Claim(context.Background(), "t1", RoleDev, dev.NodeID(), time.Hour, version)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +47,8 @@ func claimDev(t *testing.T, ledger *Memory, version uint64) Task {
 
 func attestDev(t *testing.T, ledger *Memory, version uint64) Task {
 	t.Helper()
-	task, err := ledger.Attest(context.Background(), "t1", RoleDev, "dev", "abc", "", "sig", version)
+	dev := testIdentity(t, "dev")
+	task, err := ledger.Attest(context.Background(), "t1", RoleDev, dev.NodeID(), "abc", "", dev.Sign("t1", RoleDev, "abc", ""), version)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +93,8 @@ func TestLeaseExpiryReclaimsTask(t *testing.T) {
 	now := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
 	ledger := newTestMemory(t, &now)
 	task := createTask(t, ledger)
-	claimed, err := ledger.Claim(context.Background(), "t1", RoleDev, "dev", time.Minute, task.Version)
+	dev := testIdentity(t, "dev")
+	claimed, err := ledger.Claim(context.Background(), "t1", RoleDev, dev.NodeID(), time.Minute, task.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +107,7 @@ func TestLeaseExpiryReclaimsTask(t *testing.T) {
 	if got.State != Proposed || got.Attempts != 2 || got.Owner != "" {
 		t.Fatalf("after expiry = %+v", got)
 	}
-	if _, err := ledger.Attest(context.Background(), "t1", RoleDev, "dev", "abc", "", "sig", claimed.Version); !errors.Is(err, ErrConflict) {
+	if _, err := ledger.Attest(context.Background(), "t1", RoleDev, dev.NodeID(), "abc", "", dev.Sign("t1", RoleDev, "abc", ""), claimed.Version); !errors.Is(err, ErrConflict) {
 		t.Fatalf("stale attest error = %v", err)
 	}
 }
@@ -104,10 +118,12 @@ func TestReviewMustUseIndependentNode(t *testing.T) {
 	dev := claimDev(t, ledger, task.Version)
 	done := attestDev(t, ledger, dev.Version)
 
-	if _, err := ledger.Claim(context.Background(), "t1", RoleReview, "dev", time.Hour, done.Version); !errors.Is(err, ErrIndependentNode) {
+	devIdentity := testIdentity(t, "dev")
+	reviewIdentity := testIdentity(t, "review")
+	if _, err := ledger.Claim(context.Background(), "t1", RoleReview, devIdentity.NodeID(), time.Hour, done.Version); !errors.Is(err, ErrIndependentNode) {
 		t.Fatalf("same-node review error = %v", err)
 	}
-	if _, err := ledger.Claim(context.Background(), "t1", RoleReview, "review", time.Hour, done.Version); err != nil {
+	if _, err := ledger.Claim(context.Background(), "t1", RoleReview, reviewIdentity.NodeID(), time.Hour, done.Version); err != nil {
 		t.Fatalf("independent review error = %v", err)
 	}
 }
@@ -116,12 +132,37 @@ func TestAttestRequiresSignature(t *testing.T) {
 	ledger := NewMemory()
 	task := createTask(t, ledger)
 	dev := claimDev(t, ledger, task.Version)
+	identity := testIdentity(t, "dev")
 
-	if _, err := ledger.Attest(context.Background(), "t1", RoleDev, "dev", "abc", "", "", dev.Version); !errors.Is(err, ErrSignature) {
+	if _, err := ledger.Attest(context.Background(), "t1", RoleDev, identity.NodeID(), "abc", "", "", dev.Version); !errors.Is(err, ErrSignature) {
 		t.Fatalf("unsigned attest error = %v", err)
 	}
-	if _, err := ledger.Attest(context.Background(), "t1", RoleDev, "dev", "abc", "", "sig", dev.Version); err != nil {
+	if _, err := ledger.Attest(context.Background(), "t1", RoleDev, identity.NodeID(), "abc", "", "not-a-signature", dev.Version); !errors.Is(err, ErrSignature) {
+		t.Fatalf("forged attest error = %v", err)
+	}
+	valid := identity.Sign("t1", RoleDev, "abc", "")
+	if _, err := ledger.Attest(context.Background(), "t1", RoleDev, identity.NodeID(), "abc", "", valid, dev.Version); err != nil {
 		t.Fatalf("signed attest error = %v", err)
+	}
+}
+
+func TestAttestationCannotBeReplayedForAnotherTask(t *testing.T) {
+	ledger := NewMemory()
+	first := createTask(t, ledger)
+	_ = first
+	identity := testIdentity(t, "dev")
+	signature := identity.Sign("t1", RoleDev, "abc", "")
+
+	second, err := ledger.Create(context.Background(), Task{ID: "t2", Title: "second"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := ledger.Claim(context.Background(), "t2", RoleDev, identity.NodeID(), time.Hour, second.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ledger.Attest(context.Background(), "t2", RoleDev, identity.NodeID(), "abc", "", signature, claimed.Version); !errors.Is(err, ErrSignature) {
+		t.Fatalf("replayed attest error = %v", err)
 	}
 }
 
@@ -136,8 +177,9 @@ func TestStateMachineRejectsReviewBeforeDevDone(t *testing.T) {
 func TestReleaseAndCancel(t *testing.T) {
 	ledger := NewMemory()
 	task := createTask(t, ledger)
+	dev := testIdentity(t, "dev")
 	claimed := claimDev(t, ledger, task.Version)
-	released, err := ledger.Release(context.Background(), "t1", RoleDev, "dev", "needs changes")
+	released, err := ledger.Release(context.Background(), "t1", RoleDev, dev.NodeID(), "needs changes")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +187,7 @@ func TestReleaseAndCancel(t *testing.T) {
 		t.Fatalf("released = %+v", released)
 	}
 	claimed = claimDev(t, ledger, released.Version)
-	cancelled, err := ledger.Cancel(context.Background(), "t1", "dev", "stop")
+	cancelled, err := ledger.Cancel(context.Background(), "t1", dev.NodeID(), "stop")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,12 +216,13 @@ func TestHeartbeatExtendsLease(t *testing.T) {
 	now := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
 	ledger := newTestMemory(t, &now)
 	task := createTask(t, ledger)
-	claimed, err := ledger.Claim(context.Background(), "t1", RoleDev, "dev", time.Minute, task.Version)
+	dev := testIdentity(t, "dev")
+	claimed, err := ledger.Claim(context.Background(), "t1", RoleDev, dev.NodeID(), time.Minute, task.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
 	now = now.Add(30 * time.Second)
-	if _, err := ledger.Heartbeat(context.Background(), "t1", RoleDev, "dev", 2*time.Minute); err != nil {
+	if _, err := ledger.Heartbeat(context.Background(), "t1", RoleDev, dev.NodeID(), 2*time.Minute); err != nil {
 		t.Fatal(err)
 	}
 	now = now.Add(90 * time.Second)
@@ -187,7 +230,7 @@ func TestHeartbeatExtendsLease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.State != DevClaimed || got.Owner != "dev" {
+	if got.State != DevClaimed || got.Owner != dev.NodeID() {
 		t.Fatalf("after heartbeat = %+v (claimed %+v)", got, claimed)
 	}
 }
@@ -206,21 +249,23 @@ func TestMergeQueueIsSingleWriterPerRepo(t *testing.T) {
 	first = advanceToAuditApproved(t, ledger, first)
 	second = advanceToAuditApproved(t, ledger, second)
 
-	mergeA, err := ledger.Claim(ctx, "m1", RoleMerge, "merge-a", time.Hour, first.Version)
+	mergeAIdentity := testIdentity(t, "merge-a")
+	mergeBIdentity := testIdentity(t, "merge-b")
+	mergeA, err := ledger.Claim(ctx, "m1", RoleMerge, mergeAIdentity.NodeID(), time.Hour, first.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ledger.Claim(ctx, "m2", RoleMerge, "merge-b", time.Hour, second.Version); !errors.Is(err, ErrMergeBusy) {
+	if _, err := ledger.Claim(ctx, "m2", RoleMerge, mergeBIdentity.NodeID(), time.Hour, second.Version); !errors.Is(err, ErrMergeBusy) {
 		t.Fatalf("second merge error = %v", err)
 	}
-	merged, err := ledger.Attest(ctx, "m1", RoleMerge, "merge-a", "", "", "sig", mergeA.Version)
+	merged, err := ledger.Attest(ctx, "m1", RoleMerge, mergeAIdentity.NodeID(), "", "", mergeAIdentity.Sign("m1", RoleMerge, "", ""), mergeA.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if merged.State != Merged {
 		t.Fatalf("merged = %+v", merged)
 	}
-	if _, err := ledger.Claim(ctx, "m2", RoleMerge, "merge-b", time.Hour, second.Version); err != nil {
+	if _, err := ledger.Claim(ctx, "m2", RoleMerge, mergeBIdentity.NodeID(), time.Hour, second.Version); err != nil {
 		t.Fatalf("after merge error = %v", err)
 	}
 }
@@ -228,35 +273,40 @@ func TestMergeQueueIsSingleWriterPerRepo(t *testing.T) {
 func advanceToAuditApproved(t *testing.T, ledger *Memory, task Task) Task {
 	t.Helper()
 	ctx := context.Background()
-	dev, err := ledger.Claim(ctx, task.ID, RoleDev, "dev", time.Hour, task.Version)
+	dev := testIdentity(t, "dev")
+	review := testIdentity(t, "review")
+	testingNode := testIdentity(t, "test")
+	audit := testIdentity(t, "audit")
+
+	devLease, err := ledger.Claim(ctx, task.ID, RoleDev, dev.NodeID(), time.Hour, task.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	done, err := ledger.Attest(ctx, task.ID, RoleDev, "dev", "abc", "", "sig", dev.Version)
+	done, err := ledger.Attest(ctx, task.ID, RoleDev, dev.NodeID(), "abc", "", dev.Sign(task.ID, RoleDev, "abc", ""), devLease.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	review, err := ledger.Claim(ctx, task.ID, RoleReview, "review", time.Hour, done.Version)
+	reviewLease, err := ledger.Claim(ctx, task.ID, RoleReview, review.NodeID(), time.Hour, done.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	reviewed, err := ledger.Attest(ctx, task.ID, RoleReview, "review", "abc", "", "sig", review.Version)
+	reviewed, err := ledger.Attest(ctx, task.ID, RoleReview, review.NodeID(), "abc", "", review.Sign(task.ID, RoleReview, "abc", ""), reviewLease.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	test, err := ledger.Claim(ctx, task.ID, RoleTest, "test", time.Hour, reviewed.Version)
+	testLease, err := ledger.Claim(ctx, task.ID, RoleTest, testingNode.NodeID(), time.Hour, reviewed.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tested, err := ledger.Attest(ctx, task.ID, RoleTest, "test", "abc", "", "sig", test.Version)
+	tested, err := ledger.Attest(ctx, task.ID, RoleTest, testingNode.NodeID(), "abc", "", testingNode.Sign(task.ID, RoleTest, "abc", ""), testLease.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	audit, err := ledger.Claim(ctx, task.ID, RoleAudit, "audit", time.Hour, tested.Version)
+	auditLease, err := ledger.Claim(ctx, task.ID, RoleAudit, audit.NodeID(), time.Hour, tested.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	approved, err := ledger.Attest(ctx, task.ID, RoleAudit, "audit", "abc", "", "sig", audit.Version)
+	approved, err := ledger.Attest(ctx, task.ID, RoleAudit, audit.NodeID(), "abc", "", audit.Sign(task.ID, RoleAudit, "abc", ""), auditLease.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,5 +328,39 @@ func TestListFilters(t *testing.T) {
 	one, err := ledger.List(context.Background(), Filter{Limit: 1})
 	if err != nil || len(one) != 1 {
 		t.Fatalf("limit = %v, %v", one, err)
+	}
+}
+
+func TestMergeFailureIsBounded(t *testing.T) {
+	ledger := NewMemory()
+	ctx := context.Background()
+	task, err := ledger.Create(ctx, Task{ID: "mf", Cwd: "/repo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task = advanceToAuditApproved(t, ledger, task)
+	merge := testIdentity(t, "merge")
+	for attempt := 1; attempt <= MaxMergeAttempts; attempt++ {
+		claimed, err := ledger.Claim(ctx, "mf", RoleMerge, merge.NodeID(), time.Hour, task.Version)
+		if err != nil {
+			t.Fatalf("attempt %d claim: %v", attempt, err)
+		}
+		task, err = ledger.FailMerge(ctx, "mf", merge.NodeID(), "conflict")
+		if err != nil {
+			t.Fatalf("attempt %d fail: %v", attempt, err)
+		}
+		if task.MergeAttempts != attempt {
+			t.Fatalf("attempt %d merge attempts = %d", attempt, task.MergeAttempts)
+		}
+		if attempt < MaxMergeAttempts && task.State != AuditApproved {
+			t.Fatalf("attempt %d state = %s", attempt, task.State)
+		}
+		_ = claimed
+	}
+	if task.State != MergeBlocked {
+		t.Fatalf("final state = %s", task.State)
+	}
+	if _, err := ledger.Claim(ctx, "mf", RoleMerge, merge.NodeID(), time.Hour, task.Version); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("blocked merge claim error = %v", err)
 	}
 }

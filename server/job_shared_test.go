@@ -108,11 +108,12 @@ func TestReviewJobClaimsSharedTaskByRole(t *testing.T) {
 	if _, err := console.sharedLedger.Create(ctx, sharedledger.Task{ID: "p1", Cwd: "/repo"}); err != nil {
 		t.Fatal(err)
 	}
-	dev, err := console.sharedLedger.Claim(ctx, "p1", sharedledger.RoleDev, "dev", time.Hour, 1)
+	dev := testLedgerIdentity(t, "dev")
+	devLease, err := console.sharedLedger.Claim(ctx, "p1", sharedledger.RoleDev, dev.NodeID(), time.Hour, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := console.sharedLedger.Attest(ctx, "p1", sharedledger.RoleDev, "dev", "abc", "", "sig", dev.Version); err != nil {
+	if _, err := console.sharedLedger.Attest(ctx, "p1", sharedledger.RoleDev, dev.NodeID(), "abc", "", dev.Sign("p1", sharedledger.RoleDev, "abc", ""), devLease.Version); err != nil {
 		t.Fatal(err)
 	}
 

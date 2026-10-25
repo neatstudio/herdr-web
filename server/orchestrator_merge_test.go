@@ -18,35 +18,40 @@ func advanceTaskToAuditApproved(t *testing.T, console *Server, taskID string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dev, err := console.sharedLedger.Claim(ctx, taskID, sharedledger.RoleDev, "dev", time.Hour, task.Version)
+	dev := testLedgerIdentity(t, "dev")
+	review := testLedgerIdentity(t, "review")
+	tester := testLedgerIdentity(t, "test")
+	auditor := testLedgerIdentity(t, "audit")
+
+	devLease, err := console.sharedLedger.Claim(ctx, taskID, sharedledger.RoleDev, dev.NodeID(), time.Hour, task.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	done, err := console.sharedLedger.Attest(ctx, taskID, sharedledger.RoleDev, "dev", "abc", "", "sig", dev.Version)
+	done, err := console.sharedLedger.Attest(ctx, taskID, sharedledger.RoleDev, dev.NodeID(), "abc", "", dev.Sign(taskID, sharedledger.RoleDev, "abc", ""), devLease.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	review, err := console.sharedLedger.Claim(ctx, taskID, sharedledger.RoleReview, "review", time.Hour, done.Version)
+	reviewLease, err := console.sharedLedger.Claim(ctx, taskID, sharedledger.RoleReview, review.NodeID(), time.Hour, done.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	reviewed, err := console.sharedLedger.Attest(ctx, taskID, sharedledger.RoleReview, "review", "abc", "", "sig", review.Version)
+	reviewed, err := console.sharedLedger.Attest(ctx, taskID, sharedledger.RoleReview, review.NodeID(), "abc", "", review.Sign(taskID, sharedledger.RoleReview, "abc", ""), reviewLease.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	test, err := console.sharedLedger.Claim(ctx, taskID, sharedledger.RoleTest, "test", time.Hour, reviewed.Version)
+	testLease, err := console.sharedLedger.Claim(ctx, taskID, sharedledger.RoleTest, tester.NodeID(), time.Hour, reviewed.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tested, err := console.sharedLedger.Attest(ctx, taskID, sharedledger.RoleTest, "test", "abc", "", "sig", test.Version)
+	tested, err := console.sharedLedger.Attest(ctx, taskID, sharedledger.RoleTest, tester.NodeID(), "abc", "", tester.Sign(taskID, sharedledger.RoleTest, "abc", ""), testLease.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	audit, err := console.sharedLedger.Claim(ctx, taskID, sharedledger.RoleAudit, "audit", time.Hour, tested.Version)
+	auditLease, err := console.sharedLedger.Claim(ctx, taskID, sharedledger.RoleAudit, auditor.NodeID(), time.Hour, tested.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := console.sharedLedger.Attest(ctx, taskID, sharedledger.RoleAudit, "audit", "abc", "", "sig", audit.Version); err != nil {
+	if _, err := console.sharedLedger.Attest(ctx, taskID, sharedledger.RoleAudit, auditor.NodeID(), "abc", "", auditor.Sign(taskID, sharedledger.RoleAudit, "abc", ""), auditLease.Version); err != nil {
 		t.Fatal(err)
 	}
 }

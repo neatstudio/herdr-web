@@ -786,6 +786,7 @@ func (s *Server) handlePaneKeys(w http.ResponseWriter, r *http.Request, paneID s
 // through to the SPA shell.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/auth", s.handleConsoleAuth)
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/v1/herdr/status", s.handleStatus)
 	// GET lists the workspaces; POST makes one. Two registrations of the same

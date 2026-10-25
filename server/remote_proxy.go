@@ -38,6 +38,7 @@ func (s *Server) handleRemoteProxy(w http.ResponseWriter, r *http.Request) {
 	director := proxy.Director
 	proxy.Director = func(request *http.Request) {
 		director(request)
+		addConsoleToken(request)
 		request.URL.Path = path
 		request.Host = target.Host
 	}

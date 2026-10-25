@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -27,6 +28,7 @@ type Repo struct {
 	Checkout         string `json:"checkout"`
 	TokenEnv         string `json:"tokenEnv"`
 	WebhookSecretEnv string `json:"webhookSecretEnv"`
+	TestCommand      string `json:"testCommand,omitempty"`
 }
 
 type repoRegistry struct {
@@ -143,6 +145,7 @@ func normalizeRepo(repo Repo) (Repo, error) {
 	repo.Checkout = strings.TrimSpace(repo.Checkout)
 	repo.TokenEnv = strings.TrimSpace(repo.TokenEnv)
 	repo.WebhookSecretEnv = strings.TrimSpace(repo.WebhookSecretEnv)
+	repo.TestCommand = strings.TrimSpace(repo.TestCommand)
 	if repo.Provider != "github" && repo.Provider != "gitea" {
 		return Repo{}, errors.New("provider must be github or gitea")
 	}
@@ -407,4 +410,18 @@ func getJSON(ctx context.Context, request *http.Request, out any) error {
 		return fmt.Errorf("provider returned %s", response.Status)
 	}
 	return json.NewDecoder(response.Body).Decode(out)
+}
+
+// cloneURL is the git remote for the repository. The GitHub API base is not the
+// git host (api.github.com vs github.com), so it is mapped explicitly; a Gitea
+// base URL is the web/git host.
+func (r Repo) cloneURL() string {
+	if r.Provider == "github" {
+		host := "https://github.com"
+		if parsed, err := url.Parse(r.BaseURL); err == nil && parsed.Host != "" {
+			host = parsed.Scheme + "://" + parsed.Host
+		}
+		return strings.TrimRight(host, "/") + "/" + r.Owner + "/" + r.Name + ".git"
+	}
+	return strings.TrimRight(r.BaseURL, "/") + "/" + r.Owner + "/" + r.Name + ".git"
 }

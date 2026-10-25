@@ -3,44 +3,72 @@ package server
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
+
+	"herdr-web/server/sharedledger"
 )
 
-func TestLocalNodeIDUsesTailscale(t *testing.T) {
-	dir := t.TempDir()
-	script := filepath.Join(dir, "tailscale")
-	body := "#!/bin/sh\nprintf '%s' '{\"Self\":{\"PublicKey\":\"nodekey:abc\"}}'\n"
-	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
+func resetNodeIdentity() {
+	nodeOnce = sync.Once{}
+	nodeSigner = nil
+	nodeErr = nil
+}
+
+func TestNodeIdentityUsesGeneratedKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "node.key")
+	t.Setenv("HERDR_WEB_NODE_KEY", path)
+	resetNodeIdentity()
+	t.Cleanup(resetNodeIdentity)
+
+	nodeID := localNodeID()
+	if !strings.HasPrefix(nodeID, "ed25519:") {
+		t.Fatalf("node id = %q", nodeID)
+	}
+	signature := signAttestation("t1", sharedledger.RoleDev, "abc", "")
+	if !sharedledger.VerifyAttestation("t1", sharedledger.RoleDev, nodeID, "abc", "", signature) {
+		t.Fatal("signature does not verify")
+	}
+	if sharedledger.VerifyAttestation("t2", sharedledger.RoleDev, nodeID, "abc", "", signature) {
+		t.Fatal("signature verified for another task")
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	nodeIDOnce = sync.Once{}
-	nodeID = ""
-	t.Cleanup(func() {
-		nodeIDOnce = sync.Once{}
-		nodeID = ""
-	})
-
-	if got := localNodeID(); got != "nodekey:abc" {
-		t.Fatalf("node id = %q", got)
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("key mode = %o", info.Mode().Perm())
 	}
 }
 
-func TestLocalNodeIDFallsBackToHostname(t *testing.T) {
-	t.Setenv("PATH", t.TempDir())
-	nodeIDOnce = sync.Once{}
-	nodeID = ""
-	t.Cleanup(func() {
-		nodeIDOnce = sync.Once{}
-		nodeID = ""
-	})
+func TestNodeIdentityKeySurvivesRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "node.key")
+	t.Setenv("HERDR_WEB_NODE_KEY", path)
+	resetNodeIdentity()
+	t.Cleanup(resetNodeIdentity)
 
-	host, err := os.Hostname()
-	if err != nil {
-		t.Skip("hostname unavailable")
+	first := localNodeID()
+	resetNodeIdentity()
+	if second := localNodeID(); second != first {
+		t.Fatalf("node id changed from %q to %q", first, second)
 	}
-	if got := localNodeID(); got != host {
-		t.Fatalf("node id = %q, want %q", got, host)
+}
+
+func TestNodeIdentityFailsClosedOnInvalidKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "node.key")
+	if err := os.WriteFile(path, []byte("not a seed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HERDR_WEB_NODE_KEY", path)
+	resetNodeIdentity()
+	t.Cleanup(resetNodeIdentity)
+
+	if got := localNodeID(); got != "local" {
+		t.Fatalf("node id = %q", got)
+	}
+	if signature := signAttestation("t1", sharedledger.RoleDev, "abc", ""); signature != "" {
+		t.Fatalf("signature = %q, want empty", signature)
 	}
 }

@@ -134,15 +134,19 @@ func (s *Server) handleRepoAction(w http.ResponseWriter, r *http.Request) {
 			weight = "standard"
 		}
 		task, err := s.sharedLedger.Create(r.Context(), sharedledger.Task{
-			ID:     repo.ID + "#" + strconv.Itoa(issue.Number),
-			Title:  issue.Title,
-			Prompt: prompt,
-			Cwd:    repo.Checkout,
-			Branch: branch,
-			Kind:   kind,
-			Weight: weight,
-			Repo:   repo.ID,
-			Issue:  issue.Number,
+			ID:          repo.ID + "#" + strconv.Itoa(issue.Number),
+			Title:       issue.Title,
+			Prompt:      prompt,
+			Cwd:         repo.Checkout,
+			Branch:      branch,
+			Kind:        kind,
+			Weight:      weight,
+			Repo:        repo.ID,
+			CloneURL:    repo.cloneURL(),
+			TokenEnv:    repo.TokenEnv,
+			BaseBranch:  repo.DefaultBranch,
+			TestCommand: repo.TestCommand,
+			Issue:       issue.Number,
 		})
 		if err != nil {
 			writeLedgerError(w, err)

@@ -149,3 +149,41 @@ func TestZerostackJobFallsBackToSendTextOnOldHerdr(t *testing.T) {
 		t.Fatalf("sent keys = %#v", sentKeys)
 	}
 }
+
+func TestTestCommandJobRunsAsACommand(t *testing.T) {
+	socket, state, closeFn := startFakeHerdr(t)
+	defer closeFn()
+	handler := newTestHandler(t, socket)
+
+	start := do(t, handler, http.MethodPost, "/api/v1/herdr/job",
+		`{"prompt":"run the unit tests","kind":"command","testCommand":"go test ./..."}`)
+	if start.Code != http.StatusOK {
+		t.Fatalf("start = %d: %s", start.Code, start.Body.String())
+	}
+	var started jobStarted
+	if err := json.Unmarshal(start.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	if state.callsFor("pane.run") != 1 {
+		t.Fatalf("pane.run calls = %d", state.callsFor("pane.run"))
+	}
+	params := state.paramsByMethod["pane.run"]
+	command, ok := params["command"].([]any)
+	if !ok || len(command) != 5 {
+		t.Fatalf("command = %#v", params["command"])
+	}
+	if command[3] != "test-command" || command[4] != "go test ./..." {
+		t.Fatalf("test command argv = %#v", command)
+	}
+
+	state.mu.Lock()
+	state.readText += "\n__HERDR_JOB_DONE__:0\n"
+	state.mu.Unlock()
+	status := do(t, handler, http.MethodGet, "/api/v1/herdr/job/"+started.PaneID, "")
+	if status.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", status.Code, status.Body.String())
+	}
+	if got := decodeMap(t, status)["status"]; got != "done" {
+		t.Fatalf("status = %v", got)
+	}
+}

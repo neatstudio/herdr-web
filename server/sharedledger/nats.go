@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,7 +26,8 @@ type NATS struct {
 }
 
 func NewNATS(url, bucket, stream string) (*NATS, error) {
-	if strings.TrimSpace(url) == "" {
+	urls := normalizeNATSURLs(url)
+	if len(urls) == 0 {
 		return nil, errors.New("sharedledger: nats url is required")
 	}
 	if bucket == "" {
@@ -33,7 +36,32 @@ func NewNATS(url, bucket, stream string) (*NATS, error) {
 	if stream == "" {
 		stream = "herdr-task-events"
 	}
-	conn, err := nats.Connect(url, nats.Name("herdr-web-sharedledger"), nats.Timeout(5*time.Second))
+	replicas := len(urls)
+	if raw := strings.TrimSpace(os.Getenv("HERDR_WEB_NATS_REPLICAS")); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			replicas = parsed
+		}
+	}
+	if replicas > 3 {
+		replicas = 3
+	}
+	options := []nats.Option{
+		nats.Name("herdr-web-sharedledger"),
+		nats.Timeout(5 * time.Second),
+		// A console outlives a NATS restart or a losing cluster member. The
+		// client reconnects to any URL in the list; the ledger operations are
+		// idempotent through KV revisions.
+		nats.MaxReconnects(-1),
+		nats.ReconnectWait(time.Second),
+		nats.ReconnectJitter(500*time.Millisecond, 2*time.Second),
+		nats.DrainTimeout(5 * time.Second),
+	}
+	if token := strings.TrimSpace(os.Getenv("HERDR_WEB_NATS_TOKEN")); token != "" {
+		options = append(options, nats.Token(token))
+	} else if user := strings.TrimSpace(os.Getenv("HERDR_WEB_NATS_USER")); user != "" {
+		options = append(options, nats.UserInfo(user, os.Getenv("HERDR_WEB_NATS_PASSWORD")))
+	}
+	conn, err := nats.Connect(strings.Join(urls, ","), options...)
 	if err != nil {
 		return nil, err
 	}
@@ -51,6 +79,7 @@ func NewNATS(url, bucket, stream string) (*NATS, error) {
 			Retention: jetstream.LimitsPolicy,
 			Storage:   jetstream.FileStorage,
 			MaxAge:    30 * 24 * time.Hour,
+			Replicas:  replicas,
 		}); err != nil {
 			conn.Close()
 			return nil, err
@@ -58,7 +87,7 @@ func NewNATS(url, bucket, stream string) (*NATS, error) {
 	}
 	kv, err := js.KeyValue(ctx, bucket)
 	if err != nil {
-		kv, err = js.CreateKeyValue(ctx, jetstream.KeyValueConfig{Bucket: bucket, History: 10})
+		kv, err = js.CreateKeyValue(ctx, jetstream.KeyValueConfig{Bucket: bucket, History: 10, Replicas: replicas})
 		if err != nil {
 			conn.Close()
 			return nil, err
@@ -248,7 +277,7 @@ func (n *NATS) Attest(ctx context.Context, id string, role Role, node, commit, d
 	if task.Version != expectedVersion {
 		return Task{}, ErrConflict
 	}
-	if signature == "" {
+	if signature == "" || !VerifyAttestation(id, role, node, commit, digest, signature) {
 		return Task{}, ErrSignature
 	}
 	if !isClaimed(task.State) || task.Role != role || task.Owner != node {
@@ -349,6 +378,40 @@ func (n *NATS) Release(ctx context.Context, id string, role Role, node, reason s
 		return Task{}, err
 	}
 	n.publish(ctx, task, "released", node, reason)
+	return cloneTask(task), nil
+}
+
+func (n *NATS) FailMerge(ctx context.Context, id, node, reason string) (Task, error) {
+	task, entry, err := n.getRaw(ctx, id)
+	if err != nil {
+		return Task{}, err
+	}
+	task, err = n.expire(ctx, task, entry)
+	if err != nil {
+		return Task{}, err
+	}
+	task, entry, err = n.getRaw(ctx, id)
+	if err != nil {
+		return Task{}, err
+	}
+	if !isClaimed(task.State) || task.State != MergeQueued || task.Role != RoleMerge || task.Owner != node {
+		return Task{}, ErrNotOwner
+	}
+	task.MergeAttempts++
+	task.Owner = ""
+	task.Role = ""
+	task.LeaseUntil = time.Time{}
+	if task.MergeAttempts >= MaxMergeAttempts {
+		task.State = MergeBlocked
+	} else {
+		task.State = AuditApproved
+	}
+	task.Version++
+	task.UpdatedAt = time.Now()
+	if err := n.update(ctx, task, entry); err != nil {
+		return Task{}, err
+	}
+	n.publish(ctx, task, "merge_failed", node, reason)
 	return cloneTask(task), nil
 }
 
@@ -465,4 +528,25 @@ func (n *NATS) publish(ctx context.Context, task Task, kind, node, reason string
 		return
 	}
 	_, _ = n.js.Publish(ctx, "task."+task.ID+"."+kind, data)
+}
+
+// normalizeNATSURLs accepts a comma- or whitespace-separated cluster list. A
+// single URL stays a single URL; an empty entry is ignored rather than becoming
+// an empty nats:// target.
+func normalizeNATSURLs(raw string) []string {
+	fields := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == ' ' || r == '\n' || r == '\t'
+	})
+	urls := make([]string, 0, len(fields))
+	for _, field := range fields {
+		field = strings.TrimSpace(field)
+		if field == "" {
+			continue
+		}
+		if !strings.Contains(field, "://") {
+			field = "nats://" + field
+		}
+		urls = append(urls, field)
+	}
+	return urls
 }

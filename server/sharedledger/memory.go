@@ -174,7 +174,7 @@ func (m *Memory) Attest(_ context.Context, id string, role Role, node, commit, d
 		m.tasks[id] = task
 		return Task{}, ErrConflict
 	}
-	if signature == "" {
+	if signature == "" || !VerifyAttestation(id, role, node, commit, digest, signature) {
 		m.tasks[id] = task
 		return Task{}, ErrSignature
 	}
@@ -271,6 +271,35 @@ func (m *Memory) Release(_ context.Context, id string, role Role, node, reason s
 	task.UpdatedAt = m.clock()
 	m.tasks[id] = task
 	m.eventLocked(task, "released", node, reason)
+	return cloneTask(task), nil
+}
+
+func (m *Memory) FailMerge(_ context.Context, id, node, reason string) (Task, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	task, ok := m.tasks[id]
+	if !ok {
+		return Task{}, ErrNotFound
+	}
+	m.expireLocked(&task)
+	if !isClaimed(task.State) || task.State != MergeQueued || task.Role != RoleMerge || task.Owner != node {
+		m.tasks[id] = task
+		return Task{}, ErrNotOwner
+	}
+	now := m.clock()
+	task.MergeAttempts++
+	task.Owner = ""
+	task.Role = ""
+	task.LeaseUntil = time.Time{}
+	if task.MergeAttempts >= MaxMergeAttempts {
+		task.State = MergeBlocked
+	} else {
+		task.State = AuditApproved
+	}
+	task.Version++
+	task.UpdatedAt = now
+	m.tasks[id] = task
+	m.eventLocked(task, "merge_failed", node, reason)
 	return cloneTask(task), nil
 }
 

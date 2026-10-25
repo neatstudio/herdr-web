@@ -250,7 +250,7 @@ func (s *Server) fleetDiscoverOnce(ctx context.Context) int {
 			defer wait.Done()
 			probeCtx, cancel := context.WithTimeout(ctx, selfPeerProbeTimeout)
 			defer cancel()
-			request, err := http.NewRequestWithContext(probeCtx, http.MethodGet,
+			request, err := newConsoleRequest(probeCtx, http.MethodGet,
 				strings.TrimRight(ip, "/")+"/api/v1/fleet", nil)
 			if err != nil {
 				return
@@ -371,7 +371,7 @@ func (s *Server) fleetHeartbeat(ctx context.Context) {
 func (s *Server) fleetExchange(ctx context.Context, target string, payload []byte) {
 	requestCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	request, err := http.NewRequestWithContext(requestCtx, http.MethodPost,
+	request, err := newConsoleRequest(requestCtx, http.MethodPost,
 		target+"/api/v1/fleet/hello", bytes.NewReader(payload))
 	if err != nil {
 		return

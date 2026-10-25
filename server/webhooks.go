@@ -111,7 +111,9 @@ func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	task, err := s.sharedLedger.Create(r.Context(), sharedledger.Task{
 		ID: taskID, Title: issue.Title, Prompt: prompt,
 		Cwd: repo.Checkout, Branch: "job/issue-" + strconv.Itoa(issue.Number),
-		Kind: "claude", Weight: "standard", Repo: repo.ID, Issue: issue.Number,
+		Kind: "claude", Weight: "standard", Repo: repo.ID,
+		CloneURL: repo.cloneURL(), TokenEnv: repo.TokenEnv,
+		BaseBranch: repo.DefaultBranch, TestCommand: repo.TestCommand, Issue: issue.Number,
 	})
 	if err != nil {
 		writeLedgerError(w, err)

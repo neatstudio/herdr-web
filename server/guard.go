@@ -51,6 +51,12 @@ func GuardRequests(next http.Handler, listeners []net.Listener) http.Handler {
 				"this console does not answer to that host")
 			return
 		}
+		if token := consoleToken(); token != "" && tokenRequired(r.URL.Path) && !tokenMatches(requestToken(r), token) {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="herdr-web"`)
+			writeError(w, http.StatusUnauthorized, "unauthorized",
+				"a console token is required")
+			return
+		}
 		if isMutation(r.Method) {
 			if !guard.sameOrigin(r) {
 				writeError(w, http.StatusForbidden, "cross_origin",

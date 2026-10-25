@@ -229,11 +229,20 @@ Both listeners serve the same console. Pass `""` to skip one.
 Only loopback, RFC1918, Tailscale CGNAT and IPv6 ULA addresses are accepted;
 a wildcard or public bind is refused at startup.
 
-**This binary has no authentication.** Exposing it means anyone who can reach
-the port can type into your panes, read files this user can read, and close
-panes. Keep it on loopback or a private link. The file endpoints are read-only
-and refuse anything that is not a regular file, and SVG is never served as an
-image (it can carry script), but the console is as powerful as a shell.
+**Without `HERDR_WEB_TOKEN` the console has no authentication.** Exposing it
+means anyone who can reach the port can type into your panes, read files this
+user can read, and close panes. Keep it on loopback or a private link. The file
+endpoints are read-only and refuse anything that is not a regular file, and SVG
+is never served as an image (it can carry script), but the console is as
+powerful as a shell.
+
+Set `HERDR_WEB_TOKEN` to require a bearer token on every `/api/` and
+`/opendesign/` request. A browser can establish the same token as an HttpOnly
+cookie by opening `/auth?token=...` once; EventSource and WebSocket then work
+without putting the secret in JavaScript. `/api/health` and provider webhooks
+stay open (webhooks verify their own HMAC). Fleet peers read the same variable
+for heartbeats, dispatch, and the remote proxy. Set the same token on every
+console in a fleet; do not expose a console to the public internet.
 
 The browser boundary is checked separately: a request must address a host this
 console answers on (the bound address, `localhost`, a single-label LAN name,
@@ -323,6 +332,25 @@ the offer/start gate. The ledger is an append-only JSONL file under
 `~/.local/share/herdr-web/jobs`, and the dispatch board is `dispatch.json`; both
 are loaded on restart, so the running count and the task board survive a console
 restart (herdr keeps the workspaces).
+
+The shared task ledger is the other cross-machine state. Wire it with
+`HERDR_WEB_LEDGER_NATS` (one URL, or a comma-separated cluster list) and the same
+`HERDR_WEB_NATS_TOKEN` on every console; `HERDR_WEB_NATS_REPLICAS` sets the
+JetStream replica count (default: number of URLs, capped at three). Each console
+signs its attestations with an ed25519 key at
+`~/.local/share/herdr-web/jobs/node.key` (override with `HERDR_WEB_NODE_KEY`);
+the node id is the public key, and the ledger rejects an unsigned, forged, or
+replayed result. There is no anonymous write path.
+
+A repo task carries its checkout URL, base branch, and test command. Before a
+worktree job starts, the target clones the repository if the directory is
+missing, or fetches the base branch and refuses to switch a dirty checkout. When
+the dev job reports done, the console pushes its branch before attesting, so the
+review/merge stages see a real remote head. A repo's `testCommand` makes the
+test role a deterministic command job rather than an agent opinion. Review,
+test, and audit leases must be taken by a node other than the developer; merge
+failures retry up to three times and then become `merge_blocked` for a human
+instead of looping forever.
 
 Dispatch has two strategies. `fanout` (the default) runs the same prompt
 independently on every selected machine. `single` offers the task to all selected

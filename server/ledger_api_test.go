@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -27,8 +28,9 @@ func TestLedgerWriteAPI(t *testing.T) {
 		t.Fatalf("created = %+v", created.Task)
 	}
 
+	dev := testLedgerIdentity(t, "node-a")
 	claim := do(t, handler, http.MethodPost, "/api/v1/ledger/tasks/t1/claim",
-		`{"role":"dev","node":"node-a","leaseSeconds":60,"version":1}`)
+		fmt.Sprintf(`{"role":"dev","node":%q,"leaseSeconds":60,"version":1}`, dev.NodeID()))
 	if claim.Code != http.StatusOK {
 		t.Fatalf("claim = %d: %s", claim.Code, claim.Body.String())
 	}
@@ -38,7 +40,7 @@ func TestLedgerWriteAPI(t *testing.T) {
 	if err := json.Unmarshal(claim.Body.Bytes(), &claimed); err != nil {
 		t.Fatal(err)
 	}
-	if claimed.Task.State != sharedledger.DevClaimed || claimed.Task.Owner != "node-a" {
+	if claimed.Task.State != sharedledger.DevClaimed || claimed.Task.Owner != dev.NodeID() {
 		t.Fatalf("claimed = %+v", claimed.Task)
 	}
 
@@ -49,7 +51,7 @@ func TestLedgerWriteAPI(t *testing.T) {
 	}
 
 	attest := do(t, handler, http.MethodPost, "/api/v1/ledger/tasks/t1/attest",
-		`{"role":"dev","node":"node-a","commit":"abc","signature":"sig","version":2}`)
+		fmt.Sprintf(`{"role":"dev","node":%q,"commit":"abc","signature":%q,"version":2}`, dev.NodeID(), dev.Sign("t1", sharedledger.RoleDev, "abc", "")))
 	if attest.Code != http.StatusOK {
 		t.Fatalf("attest = %d: %s", attest.Code, attest.Body.String())
 	}
