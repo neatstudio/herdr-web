@@ -286,6 +286,107 @@ func (r Repo) listGiteaIssues(ctx context.Context, token, state string, limit in
 	return out, nil
 }
 
+type providerPull struct {
+	Number  int    `json:"number"`
+	URL     string `json:"html_url"`
+	State   string `json:"state"`
+	Merged  bool   `json:"merged"`
+	SHA     string `json:"sha,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+func (r Repo) token() (string, error) {
+	token := strings.TrimSpace(os.Getenv(r.TokenEnv))
+	if token == "" {
+		return "", fmt.Errorf("%s is not set", r.TokenEnv)
+	}
+	return token, nil
+}
+
+func (r Repo) createPull(ctx context.Context, head, base, title, body string) (providerPull, error) {
+	token, err := r.token()
+	if err != nil {
+		return providerPull{}, err
+	}
+	payload, err := json.Marshal(map[string]string{
+		"head": head, "base": base, "title": title, "body": body,
+	})
+	if err != nil {
+		return providerPull{}, err
+	}
+	url := fmt.Sprintf("%s/repos/%s/%s/pulls", r.BaseURL, r.Owner, r.Name)
+	auth := "Bearer " + token
+	if r.Provider == "gitea" {
+		auth = "token " + token
+	}
+	var raw struct {
+		Number  int    `json:"number"`
+		HTMLURL string `json:"html_url"`
+		State   string `json:"state"`
+		Merged  bool   `json:"merged"`
+		SHA     string `json:"sha"`
+		Message string `json:"message"`
+	}
+	if err := doJSON(ctx, http.MethodPost, url, auth, payload, &raw); err != nil {
+		return providerPull{}, err
+	}
+	return providerPull{Number: raw.Number, URL: raw.HTMLURL, State: raw.State,
+		Merged: raw.Merged, SHA: raw.SHA, Message: raw.Message}, nil
+}
+
+func (r Repo) mergePull(ctx context.Context, number int, method string) (providerPull, error) {
+	token, err := r.token()
+	if err != nil {
+		return providerPull{}, err
+	}
+	if method == "" {
+		method = "merge"
+	}
+	url := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/merge", r.BaseURL, r.Owner, r.Name, number)
+	var payload []byte
+	httpMethod := http.MethodPut
+	auth := "Bearer " + token
+	if r.Provider == "gitea" {
+		httpMethod = http.MethodPost
+		auth = "token " + token
+		payload, err = json.Marshal(map[string]string{"Do": method})
+	} else {
+		payload, err = json.Marshal(map[string]string{"merge_method": method})
+	}
+	if err != nil {
+		return providerPull{}, err
+	}
+	var raw struct {
+		Merged  bool   `json:"merged"`
+		SHA     string `json:"sha"`
+		Message string `json:"message"`
+	}
+	if err := doJSON(ctx, httpMethod, url, auth, payload, &raw); err != nil {
+		return providerPull{}, err
+	}
+	return providerPull{Number: number, Merged: raw.Merged, SHA: raw.SHA, Message: raw.Message}, nil
+}
+
+func doJSON(ctx context.Context, method, url, authorization string, payload []byte, out any) error {
+	request, err := http.NewRequestWithContext(ctx, method, url, strings.NewReader(string(payload)))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", authorization)
+	client := &http.Client{Timeout: 20 * time.Second}
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf("provider returned %s", response.Status)
+	}
+	return json.NewDecoder(response.Body).Decode(out)
+}
+
 func getJSON(ctx context.Context, request *http.Request, out any) error {
 	client := &http.Client{Timeout: 15 * time.Second}
 	response, err := client.Do(request)

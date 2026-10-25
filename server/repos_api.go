@@ -35,7 +35,7 @@ func (s *Server) handleRepoAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	action := ""
-	for _, candidate := range []string{"issues", "tasks"} {
+	for _, candidate := range []string{"issues", "tasks", "pull", "merge"} {
 		if strings.HasSuffix(rest, "/"+candidate) {
 			action = candidate
 			rest = strings.TrimSuffix(rest, "/"+candidate)
@@ -149,6 +149,65 @@ func (s *Server) handleRepoAction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusCreated, map[string]any{"ok": true, "task": task})
+	case "pull":
+		if r.Method != http.MethodPost {
+			writeMethodNotAllowed(w, "POST")
+			return
+		}
+		var request struct {
+			Head  string `json:"head"`
+			Base  string `json:"base"`
+			Title string `json:"title"`
+			Body  string `json:"body"`
+		}
+		if !decodeBody(w, r, &request) {
+			return
+		}
+		head := strings.TrimSpace(request.Head)
+		if head == "" {
+			writeError(w, http.StatusBadRequest, "invalid_request", "head branch is required")
+			return
+		}
+		base := strings.TrimSpace(request.Base)
+		if base == "" {
+			base = repo.DefaultBranch
+		}
+		title := strings.TrimSpace(request.Title)
+		if title == "" {
+			title = "Task " + head
+		}
+		pull, err := repo.createPull(r.Context(), head, base, title, request.Body)
+		if err != nil {
+			writeBadGateway(w, "repo_failed", err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, map[string]any{"ok": true, "pull": pull})
+	case "merge":
+		if r.Method != http.MethodPost {
+			writeMethodNotAllowed(w, "POST")
+			return
+		}
+		var request struct {
+			Number int    `json:"number"`
+			Method string `json:"method"`
+		}
+		if !decodeBody(w, r, &request) {
+			return
+		}
+		if request.Number <= 0 {
+			writeError(w, http.StatusBadRequest, "invalid_request", "pull number is required")
+			return
+		}
+		method := strings.TrimSpace(request.Method)
+		if method == "" {
+			method = "merge"
+		}
+		pull, err := repo.mergePull(r.Context(), request.Number, method)
+		if err != nil {
+			writeBadGateway(w, "repo_failed", err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "pull": pull})
 	default:
 		writeNotFound(w)
 	}
