@@ -140,6 +140,42 @@ function hasBackground(line: Line): boolean {
   return line.spans.some((span) => span.style.bg !== null);
 }
 
+/**
+ * A *band* row: the fill starts before the text does, and it covers most of
+ * the row.
+ *
+ * `hasBackground` is not enough to recognise a user message. An answer that
+ * mentions a `path` or a `command` carries the inline chip's background on a
+ * handful of glyphs, and devin writes its answers as plain prose. So a
+ * paragraph with one chip in it looked exactly like a filled user band: on
+ * `w6:p7` every answer paragraph was promoted to a user turn, which put the
+ * agent's own words in the operator's bubble and left the real messages
+ * ("❭ /usage", "❭ 继续") behind as chrome.
+ *
+ * A real band is filled for the whole row — the input box pads it out to the
+ * pane width. Requiring the first visible glyph to sit on the fill, and the
+ * fill to cover most of the row, separates the two without comparing colours
+ * (the colours are identical; see `BOX_EDGE_RE`).
+ */
+function isBandRow(line: Line): boolean {
+  let filled = 0;
+  let total = 0;
+  let leading = false;
+  let leadingSeen = false;
+  for (const span of line.spans) {
+    const chars = span.text.length;
+    total += chars;
+    if (span.style.bg !== null) {
+      filled += chars;
+    }
+    if (!leadingSeen && span.text.search(/\S/) !== -1) {
+      leadingSeen = true;
+      leading = span.style.bg !== null;
+    }
+  }
+  return leadingSeen && leading && filled * 2 >= total;
+}
+
 function italicShare(line: Line): number {
   let total = 0;
   let italic = 0;
@@ -225,7 +261,26 @@ function isChromeText(text: string): boolean {
   return /\[Ctrl\+O/.test(text);
 }
 
+/**
+ * Some agents echo the submitted line behind a `❭` marker. Below the input box
+ * that echo is furniture, but a *filled* `❭` row is the first row of a user
+ * message the input box wrapped, and the marker is the only thing that says so
+ * (devin writes answers as prose, so the fill alone would not distinguish it).
+ */
+const PROMPT_ECHO_RE = /^\s*❭\s+/;
+
+function stripPromptEcho(text: string): string {
+  return text.replace(PROMPT_ECHO_RE, "");
+}
+
+function isPromptEcho(line: Line): boolean {
+  return PROMPT_ECHO_RE.test(textOf(line)) && isBandRow(line);
+}
+
 function isChrome(line: Line): boolean {
+  if (isPromptEcho(line)) {
+    return false;
+  }
   return isChromeText(textOf(line));
 }
 
@@ -259,7 +314,9 @@ function joinUserLines(parts: string[]): string {
       continue;
     }
     const previous = parts[index - 1];
-    const startsBlock = /^(?:[-*•>]|\d+[.)])\s/.test(current);
+    // A numbered item starts a line whether it uses `1.`, `1)` or the CJK
+    // `1、` devin writes; agents wrap one submitted message into both.
+    const startsBlock = /^(?:[-*•>]\s|\d+[.)、])/.test(current);
     const previousShort = previous.length < 32;
     const previousEndsSentence = /[。！？.!?:：;；]$/.test(previous);
     if (startsBlock || previousShort || previousEndsSentence) {
@@ -276,6 +333,11 @@ function joinUserLines(parts: string[]): string {
  * A user turn is the run of background-filled rows the agent's input box left
  * on screen. Padding rows at either end are dropped; a run that is too long to
  * be one message is not a message at all and is left to prose.
+ *
+ * Every row has to be a filled band (`isBandRow`). That is what keeps an
+ * answer paragraph carrying an inline code chip from opening a turn, and it
+ * also stops such a prose row from being folded into the message before it:
+ * the chip's fill covers a few glyphs, a band's fill covers the row.
  */
 function readUserBand(lines: Line[], start: number, groups: Map<number, BoxGroup>): { text: string; end: number } | null {
   const parts: string[] = [];
@@ -285,7 +347,10 @@ function readUserBand(lines: Line[], start: number, groups: Map<number, BoxGroup
       break;
     }
     const line = lines[index];
-    if (!hasBackground(line)) {
+    // Every row of a band is filled edge to edge. A row that only carries a
+    // chip (an inline code mention in prose) is not a continuation line, so it
+    // ends the run instead of joining it.
+    if (!isBandRow(line)) {
       break;
     }
     if (isEmptyLine(line)) {
@@ -295,7 +360,7 @@ function readUserBand(lines: Line[], start: number, groups: Map<number, BoxGroup
     if (isChrome(line)) {
       break;
     }
-    const text = textOf(line);
+    const text = stripPromptEcho(textOf(line));
     if (BOX_EDGE_RE.test(text)) {
       break;
     }

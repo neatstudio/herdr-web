@@ -89,6 +89,65 @@ test("each user band opens a new turn", () => {
   );
 });
 
+/**
+ * devin's answers are plain prose, but an inline code mention carries a chip
+ * background on a few glyphs (`48;2;0;43;54`). That rectangle is tiny and sits
+ * mid-line; only a fill that starts before the text and covers the row is a
+ * user message.
+ */
+test("an inline code chip does not turn an answer paragraph into a user turn", () => {
+  const chip = (before: string, code: string, after: string): string =>
+    `${before}${ESC}38;2;220;220;170m${ESC}48;2;0;43;54m ${code} ${RESET}${after}`;
+  const text = snapshot([
+    band(" 帮我看一下这个项目"),
+    chip(" 仓库里有 README 和 ", "Fetures.md", "，没有独立的 SPECS。"),
+    chip(" 工作区还有未提交的改动，我会保留它们。", "git status", " 已经确认。"),
+  ]);
+  const conversation = deriveConversation(text);
+  assert.equal(conversation.turns.length, 1);
+  const turn = conversation.turns[0];
+  assert.equal(turn.user, "帮我看一下这个项目");
+  assert.match(turn.answer, /仓库里有 README 和\s+Fetures\.md/);
+  assert.match(turn.answer, /我会保留它们/);
+});
+
+/**
+ * devin fills the row it echoes as `❭ <first line>` and pads it to the pane
+ * width; the wrapped continuation rows keep the fill but not the marker. The
+ * marker must be stripped and the whole run kept: dropping the marked row as
+ * chrome promoted the rest of the message to an agent answer.
+ */
+test("a filled prompt echo opens the user turn and loses its marker", () => {
+  const text = snapshot([
+    band("❭ 看下 README 和交接文档，"),
+    band("有没有写清楚 SPECS 的范围"),
+    ink("我先读一遍文档。"),
+  ]);
+  const conversation = deriveConversation(text);
+  assert.equal(conversation.turns.length, 1);
+  const turn = conversation.turns[0];
+  assert.equal(turn.user, "看下 README 和交接文档，\n有没有写清楚 SPECS 的范围");
+  assert.equal(turn.answer, "我先读一遍文档。");
+});
+
+/**
+ * devin wraps one submitted message over two filled rows and numbers the
+ * second one `2、`. The item is a block start like `2.` is, otherwise the two
+ * questions arrive glued together (`…逻辑问题2、之前写了…`).
+ */
+test("a numbered item in a wrapped message starts its own line", () => {
+  const text = snapshot([
+    band("❭ 1、深度Review当前项目，看看是否有性能和安全问题，同时判断思路有没有逻辑问题"),
+    band("2、之前写了这么久都没有考虑有SPECS吗"),
+    ink("我先读文档。"),
+  ]);
+  const turn = deriveConversation(text).turns[0];
+  assert.equal(
+    turn.user,
+    "1、深度Review当前项目，看看是否有性能和安全问题，同时判断思路有没有逻辑问题\n2、之前写了这么久都没有考虑有SPECS吗",
+  );
+});
+
 test("scrolled-in noise before the first user band has no user of its own", () => {
   const text = snapshot([ink("Earlier output."), band(" next question"), ink("answer")]);
   const conversation = deriveConversation(text);
