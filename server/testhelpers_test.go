@@ -24,11 +24,14 @@ func isolateState(t *testing.T) {
 	t.Helper()
 	dir := t.TempDir()
 	previousLedger, previousDispatch := ledgerPathOverride, dispatchStatePathOverride
+	previousRepos := repoStatePathOverride
 	ledgerPathOverride = filepath.Join(dir, "ledger.jsonl")
 	dispatchStatePathOverride = filepath.Join(dir, "dispatch.json")
+	repoStatePathOverride = filepath.Join(dir, "repos.json")
 	t.Cleanup(func() {
 		ledgerPathOverride = previousLedger
 		dispatchStatePathOverride = previousDispatch
+		repoStatePathOverride = previousRepos
 	})
 }
 

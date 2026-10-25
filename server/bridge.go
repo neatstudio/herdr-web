@@ -95,6 +95,8 @@ type Server struct {
 	// sharedLedger is the task ledger the board reads. It is in-memory until
 	// HERDR_WEB_LEDGER_NATS wires the NATS adapter; the UI contract is the same.
 	sharedLedger sharedledger.Ledger
+	// repos are the GitHub/Gitea repositories tasks can be created from.
+	repos *repoRegistry
 	// tailnetFacing is set from the listeners: a console with no Tailscale bind
 	// is local-only and must not discover or follow the tailnet.
 	tailnetFacing bool
@@ -121,6 +123,7 @@ func NewServer(socketPath string, webFS fs.FS) *Server {
 		fleetAddr:     defaultFleetAddr,
 		ledger:        newJobLedger(),
 		sharedLedger:  shared,
+		repos:         newRepoRegistry(),
 		dispatch:      newDispatchState(),
 		tailnetFacing: true,
 	}
@@ -816,6 +819,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/herdr/agents", s.handleAgentKinds)
 	mux.HandleFunc("/api/v1/ledger/tasks", s.handleLedgerTasks)
 	mux.HandleFunc("/api/v1/ledger/tasks/", s.handleLedgerTaskAction)
+	mux.HandleFunc("/api/v1/repos", s.handleRepos)
+	mux.HandleFunc("/api/v1/repos/", s.handleRepoAction)
 
 	mux.HandleFunc("/api/v1/herdr/workspaces", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {

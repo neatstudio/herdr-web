@@ -53,6 +53,8 @@ type Task struct {
 	Branch  string `json:"branch,omitempty"`
 	Kind    string `json:"kind,omitempty"`
 	Weight  string `json:"weight,omitempty"`
+	Repo    string `json:"repo,omitempty"`
+	Issue   int    `json:"issue,omitempty"`
 	State   State  `json:"state"`
 	Version uint64 `json:"version"`
 	Role    Role   `json:"role,omitempty"`
