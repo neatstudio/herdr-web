@@ -964,7 +964,7 @@ export function PromptBar({
           aria-label="Attach a file or image"
           onClick={() => fileRef.current?.click()}
         >
-          ＋
+          <PlusIcon />
         </button>
         {restored && value.trim() !== "" && (
           <span className="prompt__draft" title="draft kept for this pane">
@@ -1011,13 +1011,69 @@ export function PromptBar({
           }}
         >
           <span className="prompt__send-word" aria-hidden>
-            send
+            {stopMode ? "stop" : "send"}
           </span>
           <span className="prompt__send-glyph" aria-hidden>
-            {stopMode ? "■" : "↑"}
+            {stopMode ? <StopIcon /> : <ArrowUpIcon />}
           </span>
         </button>
       </div>
     </div>
+  );
+}
+
+/* Drawn, not typed. A text glyph carries its own side bearings and sits off
+   centre in a circle however the box is measured; these have a known 24-unit
+   box, so a flex parent centres them on the axis. */
+function ArrowUpIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      focusable="false"
+    >
+      <path d="M12 19V5" />
+      <path d="m5 12 7-7 7 7" />
+    </svg>
+  );
+}
+
+function StopIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      focusable="false"
+    >
+      <rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      focusable="false"
+    >
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
+    </svg>
   );
 }

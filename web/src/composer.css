@@ -282,19 +282,21 @@
   color: var(--ui-faint, var(--ink-faint));
 }
 
-/* Desktop keeps the word; the phone gets a glyph in a round accent button, so
-   the control sits in the corner where a thumb expects it instead of growing
-   into a wide pill that pushes the textarea off the row. */
+/* Desktop keeps the word — "send" while idle, "stop" while the pane is busy.
+   The glyph is the phone's job, where the control is a round button in the
+   thumb corner. */
 .prompt__send-glyph {
   display: none;
 }
 
-.prompt__stop .prompt__send-glyph {
-  display: inline;
-}
-
-.prompt__stop .prompt__send-word {
-  display: none;
+/* Drawn icons, not typed glyphs. A character carries its own side and vertical
+   bearings, so `↑` inside a circle sits high and left however the box is
+   centred; an SVG has a box we set, and the flex rules centre that. */
+.prompt__send-glyph svg,
+.prompt__attach svg {
+  display: block;
+  width: 18px;
+  height: 18px;
 }
 
 
@@ -309,7 +311,7 @@
      full-width rule cutting the screen in half. */
   .prompt {
     margin: 0 8px max(8px, env(safe-area-inset-bottom));
-    padding: 12px 12px 10px;
+    padding: 10px 12px;
     /* Two rows: the draft gets the full width of the card, and the controls get
        a row of their own under it — a 36px circle wedged beside a five-line
        message shrinks the text and drifts out of thumb reach. The card's own
@@ -321,9 +323,12 @@
       "note"
       "input"
       "actions";
-    row-gap: 4px;
+    /* The draft sits on its action row rather than floating above it: the
+       controls are already mostly whitespace, and a gap of their own made the
+       card read as a tall empty box with two dots at the bottom. */
+    row-gap: 2px;
     border: var(--rule-w) solid var(--ui-border, var(--rule));
-    border-radius: 22px;
+    border-radius: 20px;
     background: var(--ui-elev, var(--raised));
     box-shadow: 0 8px 24px rgb(0 0 0 / 0.08);
     transition: border-color 0.12s ease-out, box-shadow 0.12s ease-out;
@@ -348,42 +353,70 @@
 
   .prompt__input {
     grid-area: input;
-    padding: 0 2px;
+    padding: 0;
+    /* The draft is prose. This is the one field on the console a person writes
+       a sentence into, so it gets the proportional face; everything the pane
+       prints back stays mono. */
+    font-family: var(--font-prose);
+    /* Below 16px, iOS zooms the page when the textarea takes focus. */
+    font-size: max(16px, var(--ui-body, var(--step-body)));
+    /* 24px at 16px: a whole-pixel line box, so the caret is exactly one row
+       tall and the box height stays a multiple of the line. */
+    line-height: 24px;
+    letter-spacing: 0;
+    color: var(--ui-text, var(--ink));
+  }
+
+  .prompt__input::placeholder {
+    color: var(--ui-faint, var(--ink-faint));
   }
 
   .prompt__actions {
     grid-area: actions;
+    align-items: center;
     justify-content: space-between;
     gap: 8px;
+    min-height: 36px;
   }
 
   .prompt__glyph {
     display: none;
   }
 
-  .prompt__input {
-    /* Below 16px, iOS zooms the page when the textarea takes focus. */
-    font-size: max(16px, var(--ui-body, var(--step-body)));
-  }
-
+  /* 36px controls with 44px of finger through an invisible halo: the shape
+     Ovis settled on. The old 44px buttons plus a 48px halo made a control row
+     taller than the text it belonged to, and on a phone with the keyboard up
+     that row was the difference between a usable card and a sliver. */
   .prompt__send,
   .prompt__stop,
   .prompt__attach,
   .prompt__keys {
-    display: flex;
+    position: relative;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 44px;
-    min-height: 44px;
-    padding: 0 10px;
+    min-width: 36px;
+    min-height: 36px;
+    padding: 0;
   }
 
-  /* One 36px accent circle, 48px of finger through an invisible halo: the
-     shape Ovis settled on, and the only control on this row that is pressed
-     blind. The word becomes a glyph so the circle stays a circle. */
+  .prompt__send::before,
+  .prompt__stop::before,
+  .prompt__attach::before,
+  .prompt__keys::before {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border-radius: inherit;
+  }
+
+  /* The raw-mode toggle is the one control on this row with words on it. */
+  .prompt__keys {
+    padding: 0 8px;
+  }
+
   .prompt__send,
   .prompt__stop {
-    position: relative;
     box-sizing: border-box;
     width: 36px;
     min-width: 36px;
@@ -395,24 +428,18 @@
     text-transform: none;
   }
 
-  .prompt__send::before,
-  .prompt__stop::before {
-    content: "";
-    position: absolute;
-    inset: -6px;
-    border-radius: 50%;
-  }
-
   .prompt__send-word {
     display: none;
   }
 
+  /* A 18px box in a 36px circle, centred by flex on both axes: the arrow's
+     stroke ends land on the circle's centre line instead of a character's
+     bearing. line-height 0 keeps the inline box from adding leading. */
   .prompt__send-glyph {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 15px;
-    line-height: 1;
+    line-height: 0;
   }
 
   .prompt__send:not(:disabled) {
@@ -428,7 +455,7 @@
   }
 
   .prompt__attach {
-    font-size: 20px;
+    color: var(--ui-dim, var(--ink-dim));
   }
 
   /* The tile strip scrolls sideways instead of wrapping: a second row of tiles
@@ -483,54 +510,4 @@
   .prompt__opt--active .prompt__hint {
     color: var(--ui-faint, var(--ink-faint));
   }
-}
-
-.is-narrow .prompt__input {
-  font-size: max(16px, var(--ui-body, var(--step-body)));
-}
-
-.is-narrow .prompt__send,
-.is-narrow .prompt__stop,
-.is-narrow .prompt__attach,
-.is-narrow .prompt__keys {
-  min-width: 44px;
-  min-height: 44px;
-}
-
-/* A squeezed desktop window gets the same circle as the phone: the word would
-   eat the row's remaining width at these sizes. */
-.is-narrow .prompt__send,
-.is-narrow .prompt__stop {
-  position: relative;
-  box-sizing: border-box;
-  width: 36px;
-  min-width: 36px;
-  height: 36px;
-  min-height: 36px;
-  padding: 0;
-  border-radius: 50%;
-}
-
-.is-narrow .prompt__send::before,
-.is-narrow .prompt__stop::before {
-  content: "";
-  position: absolute;
-  inset: -6px;
-  border-radius: 50%;
-}
-
-.is-narrow .prompt__send-word {
-  display: none;
-}
-
-.is-narrow .prompt__send-glyph {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 15px;
-  line-height: 1;
-}
-
-.is-narrow .prompt__hints {
-  display: none;
 }

@@ -15,6 +15,10 @@
 :root {
   --font-label: "Martian Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* The draft is prose, not terminal output, and it is the one field on the
+     console a person writes a sentence into. Proportional type there, mono
+     everywhere the pane talks back. */
+  --font-prose: system-ui, -apple-system, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 
   /* Ink for text sitting on a background the *content* declared. These are
      absolute on purpose: the page theme tints the ANSI palette for its own
@@ -1271,11 +1275,17 @@ body::before {
 
 .prompt__glyph {
   align-self: start;
-  /* One line of the input is 1.4em of 12.5px body text; the chevron is a 13px
-     label glyph, so a nudge down is what puts the two on the same line. */
-  padding-top: 2px;
+  /* One line of the input is 1.4em of 12.5px body text. The chevron gets that
+     same box and is centred inside it: a hand-tuned pixel nudge drifts as soon
+     as the type or the line height changes, and it was what held the caret and
+     the leading mark off each other's baseline. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(var(--step-body) * 1.44);
   font-family: var(--font-label);
   font-size: 13px;
+  line-height: 1;
   color: color-mix(in srgb, var(--accent) 78%, var(--ink-faint));
   user-select: none;
 }
@@ -1303,7 +1313,9 @@ body::before {
   outline: none;
   font-family: var(--font-mono);
   font-size: var(--step-body);
-  line-height: 1.4;
+  /* 18px at the 12.5px body size: a whole-pixel line box, so the caret is
+     exactly one row tall instead of straddling two. */
+  line-height: 1.44;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -1357,9 +1369,10 @@ body::before {
 }
 
 .prompt__attach {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0 8px;
-  font-size: 15px;
-  line-height: 1;
   color: var(--ink-dim);
 }
 
@@ -1400,11 +1413,15 @@ body::before {
 }
 
 .prompt__send {
-  padding: 6px 12px 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 12px;
   border: var(--rule-w) solid var(--rule-strong);
   font-family: var(--font-label);
   font-size: var(--step-micro);
   font-weight: 500;
+  line-height: 1.4;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--ink);
