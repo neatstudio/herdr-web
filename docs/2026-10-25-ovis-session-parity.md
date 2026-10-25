@@ -76,8 +76,8 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 
 ### 3.2 纯前端可补（值得排期，按收益/成本排序）
 
-1. **终端内查找**：Ovis 的 `FindBar` 是服务端搜索（它 `scrollback: 0`）；herdr 有本地
-   2000 行，用 `@xterm/addon-search` 即可，不依赖 RPC。约 1 个组件 + 键条入口。
+1. **终端内查找**（已做，`c2af03e`）：Ovis 的 `FindBar` 是服务端搜索（它 `scrollback: 0`）；
+   herdr 有本地 2000 行，用 `@xterm/addon-search` 即可，不依赖 RPC。
 2. **把答案复制为 markdown / 纯文本**：`TurnList.tsx` 已有逐轮复制，扩一个 `plainText()`
    （标题、列表、代码围栏、链接）即可，成本一个函数。
 3. **键条自定义**：herdr 目前固定 `KEY_BAR_KEYS`/`PICKER_BAR_KEYS` 两组；Ovis 有 `KeyBarSettings.tsx`
@@ -109,9 +109,10 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `553c823` | 打字模式把软键盘占掉的那半屏要回来：键盘弹起时 `.masthead` 与 `.stage__head` 让位（只留标签条这一行身份：哪个 tab、哪个 agent、什么状态），`.shell` 从三行栅格切成两行（否则被 `display:none` 的 masthead 会把 `.body` 顶进 `auto` 行，会话区塌到 233px）；同时 2×2 控件簇折成一行 32px，卡片 96→66px。390×844 + 336px 键盘实测：聊天正文 276→398px、终端 232→354px、页面溢出 0。键盘弹起时第四格把 `/` 换成换行键——手机回车就是发送（没有 Shift 可按），没有换行键就写不了段落，而 `/` 只是打一个键盘上已有的斜杠；按钮平时 `display:none`，桌面与键盘收起仍是四个，`#herdr-command-button` 元素与 `aria-expanded` 保留 |
 | `458b51f` | 横向手机落进透镜视图：lens 闸门原来只认 `max-width: 720px`，而样式表早在 900px 就折叠侧栏、放大触屏控件，844×390 于是两边都不管——没有侧栏也没有 lens，却留着桌面 tab 条、AUTO/WRAP/EXACT/FIT 渲染条和约 130px 的终端。闸门改为 `(max-width: 720px), (pointer: coarse) and (max-width: 900px)`，粗指针到 900px 一律走 lens；短边姿态（≤480px）再学打字模式把 46px masthead 与 22px 状态行让出来、`.shell` 栅格并成一行，聊天正文 132→204px，会话头留工作区与 CHAT/TERM，标签条留 tab/agent/状态 |
 | `0b7ac3b` | 触屏版式只跟画面走：`@media (pointer: coarse)` 里原来连整张卡的框（贴边 8px、20px 圆角、抬起底色、2×2 控件簇）都给了触屏，结果 1440px 触屏本上草稿被拉成 1179×96 的整条底栏。改动把触屏拆成两层——字号/点击面（16px 草稿、36px 控件，`pointer: coarse` 霣持，iOS 才不会聚焦放大）和手机框（`.shell.is-narrow` 才算），顺便把 721–900px 的鼠标窗口从 119px 的手机卡还原回 89px 的桌面卡；打字模式的一行折叠改用 `.has-keyboard .shell.is-narrow`（`has-keyboard` 在 `html` 上，是 shell 的祖先不是后代）重整特异性后仍赢过 2×2 |
+| `c2af03e` | 会话透镜里能搜回滚：桌面宽屏根本没有 xterm（`Scope` 把转录画成 DOM 文本），浏览器自带的查找本来就好用，所以只在透镜里补——xterm 画在 canvas 上，Chromium 的查找对看得见的行也报 0 结果。加一条浮在 `.term__host` 里的 bar 跑 `@xterm/addon-search` 搜本地 2000 行：`⌘F` 开、`Ctrl+F` 仍然下行给 readline/TUI，Esc 关、Enter 下一个、Shift+Enter 上一个，计数直接来 `onDidChangeResults`；浮层不改变栅格、不触发 `refit()`（`refit` 会 `reset()` 重画，闪一下）；高亮色只能是 `#RRGGBB`（装饰不认 `var()`），`lib/find.ts` 的 `findInk()` 按主题给色、翻主题时用新色重跑。手机端 bar 高 48px 且贴顶，软键盘遮不到 |
 
-配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 281/281（含 `fitComposer` 两行起底与
-`imeEnter` 各一例）；
+配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（含 `fitComposer` 两行起底、
+`imeEnter` 各一例，以及 `findLabel` 的 1/4、0/0 与越界夹取）；
 `/tmp/probe-enter.mjs`：回车发 `/keys`、`⇧⏎` 只换行、合成 IME 回车不发、发送后焦点仍在草稿；
 `/tmp/probe-card-attach.mjs`：`#herdr-attach` 与 `#herdr-image` 两个选择器都能加附件、卡片长到 231px；
 `/tmp/probe-pc.mjs`：1440×900 草稿 `896×89`、圆角 14、34px 控件、页脚可见，1280×800 与 1024×768 无溢出；
@@ -147,6 +148,16 @@ lens（聊天 612 / 854px，masthead 与状态行照旧）；细指针 1440/1280
 1440/1280/1024 与改前逐像素相同（`896×89`）；390×844 与 834×1112 收起态卡片仍 96px、2×2 36px，
 `probe-kb.mjs` 键盘弹起仍是 66px（一行折叠），关掉键盘回 96px 不跳动，明暗两色 `pp2-900x700-dark.png`、
 `pc-touch-1440x900-dark.png`。
+
+`/tmp/probe-find.mjs`（390×844 与 700×800 粗指针，明暗两色）：收起时右上角放大镜 `[344,134,40,40]`、
+终端 `[0,128,390,568]`；点开后 bar `[6,134,378,48]`、输入框拿到焦点、计数 `0/0`，终端矩形一字未变
+（开 bar 不挪栅格）；输入 `error` 后 `1/4`、`.xterm-decoration` 4 个，Enter `2/4`、Shift+Enter `1/4`、
+Esc 后 bar 消失、放大镜回来、装饰清零；`700x800` 细指针（`TOUCH=0`）拿到基准尺寸 36px 触发球 / 44px bar；
+1440×900 桌面 `findOpen:false`、无 `.term__*`、转录里能读到那行错误、页面无溢出——桌面按设计不改。
+`/tmp/probe-find-kb.mjs`（390×844 + 336px 软键盘）：iOS 只缩 `visualViewport` 时 `--kb-inset:336px`、
+`.shell` 508px、终端 36–390（354px）、bar 落在 `y 42–90`、键盘线 508，未遮；Android 两条 viewport 都缩
+时不重复缩短；关掉键盘 bar 回到 `y 134–182`、终端仍 568px，无跳动。截图 `find-390x844-*-{dark,light}.png`、
+`find-kb-ios-dark.png`。
 
 ## 5. 给服务端的一页需求（若要继续逼近 Ovis）
 
