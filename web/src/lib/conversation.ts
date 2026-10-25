@@ -238,6 +238,11 @@ const CHROME_PATTERNS: readonly RegExp[] = [
   /^\s*-{2,}\s*EOF\b/i,
   // The shell prompt a client paints after its own UI: `⏺ ~/project`.
   /^\s*[\u23FA\u25CF]\s+~?\//,
+  // omp paints a handoff hint in the input box: `🤝 HNDF: Add ...`. It is the
+  // client offering to carry the job elsewhere, not something the agent wrote.
+  /^\s*\uD83E\uDD1D\s/,
+  // The empty input box's own placeholder: `pi > [max] DeepSeek V4.1`.
+  /^\s*[a-z][\w.-]*\s*>\s*\[[^\]]+\]/i,
   // A footer naming the model and the permission mode: `SWE-2 Max · bypass`.
   /^\s*[A-Za-z][\w.\- ]{0,24}·\s*(?:bypass|accept-edits|full-auto)\b/i,
 ];
@@ -330,6 +335,49 @@ function recapText(text: string): string | null {
     return null;
   }
   return match[1].trim();
+}
+
+/** Join terminal-wrapped rows back into one sentence. */
+function joinWrapped(parts: string[]): string {
+  let text = "";
+  for (const part of parts) {
+    if (part === "") {
+      continue;
+    }
+    if (text === "") {
+      text = part;
+      continue;
+    }
+    const cjk = /[\u4e00-\u9fff]$/.test(text) || /^[\u4e00-\u9fff]/.test(part);
+    text = `${text}${cjk ? "" : " "}${part}`;
+  }
+  return text;
+}
+
+/**
+ * A recap is one sentence, but the client wraps it across rows in the same dim
+ * italic it uses for reasoning. Read the wrap so the recap is not cut in half.
+ */
+function readRecap(lines: Line[], start: number): { text: string; end: number } | null {
+  const head = recapText(textOf(lines[start]));
+  if (head === null) {
+    return null;
+  }
+  const parts = [head];
+  let index = start + 1;
+  while (index < lines.length) {
+    const line = lines[index];
+    const text = textOf(line);
+    if (text === "" || isChrome(line) || hasBackground(line)) {
+      break;
+    }
+    if (recapText(text) !== null || isRowMarker(text) || !isReasoningLine(line)) {
+      break;
+    }
+    parts.push(text.trim());
+    index += 1;
+  }
+  return { text: joinWrapped(parts), end: index };
 }
 
 /* -------------------------------------------------------------- user band */
@@ -1049,12 +1097,12 @@ function buildBlocks(lines: Line[], groups: Map<number, BoxGroup>): Block[] {
         continue;
       }
     }
-    const recap = recapText(text);
+    const recap = readRecap(lines, index);
     if (recap !== null) {
       flushAnswer();
       flushThought();
-      blocks.push({ kind: "recap", text: recap });
-      index += 1;
+      blocks.push({ kind: "recap", text: recap.text });
+      index = recap.end;
       continue;
     }
     if (isReasoningLine(line)) {

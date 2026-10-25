@@ -190,6 +190,9 @@ test("client furniture under the answer never becomes prose", () => {
     ink("resumes this session · devin -r lists recent sessions"),
     // A separator drawn on the user-turn fill, with the subject baked into it.
     band("──────────────── 深度分析当前项目 ────────"),
+    // omp's input box: a handoff hint and the model/permission footer.
+    dim("🤝 HNDF: Add zerostack agent kind support"),
+    dim("pi > [max] DeepSeek V4.1"),
   ]);
   const conversation = deriveConversation(text);
   assert.equal(conversation.turns.length, 1);
@@ -486,6 +489,35 @@ test("a unicode border and a diff gutter are box body too", () => {
   );
   assert.equal(conversation.turns.filter((turn) => turn.user !== null).length, 0);
   assert.equal(conversation.turns[0].work[0].detail.length, 3);
+});
+
+/* ---------------------------------------------------------------- recap */
+
+test("a recap keeps the rows it wraps onto", () => {
+  // omp wraps `※ recap:` at the pane width; half a sentence is not a recap.
+  const conversation = deriveConversation(
+    snapshot([
+      ink("改完了。"),
+      dim("※ recap: Goal is zerostack support; the shared ledger, pipeline roles,"),
+      dim("merge queue, and orchestrator are committed and tested."),
+    ]),
+  );
+  const turn = conversation.turns[0];
+  assert.equal(
+    turn.recap,
+    "Goal is zerostack support; the shared ledger, pipeline roles, merge queue, and orchestrator are committed and tested.",
+  );
+  assert.equal(turn.answer, "改完了。");
+  assert.deepEqual(turn.thoughts, []);
+});
+
+test("a recap stops at prose that follows it", () => {
+  const conversation = deriveConversation(
+    snapshot([dim("※ recap: 文档已同步"), ink("下一条消息。")]),
+  );
+  const turn = conversation.turns[0];
+  assert.equal(turn.recap, "文档已同步");
+  assert.equal(turn.answer, "下一条消息。");
 });
 
 /* ---------------------------------------------------------------- status */
