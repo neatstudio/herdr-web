@@ -61,6 +61,9 @@ func NewNATS(url, bucket, stream string) (*NATS, error) {
 	} else if user := strings.TrimSpace(os.Getenv("HERDR_WEB_NATS_USER")); user != "" {
 		options = append(options, nats.UserInfo(user, os.Getenv("HERDR_WEB_NATS_PASSWORD")))
 	}
+	if ca := strings.TrimSpace(os.Getenv("HERDR_WEB_NATS_CA")); ca != "" {
+		options = append(options, nats.RootCAs(ca))
+	}
 	conn, err := nats.Connect(strings.Join(urls, ","), options...)
 	if err != nil {
 		return nil, err
