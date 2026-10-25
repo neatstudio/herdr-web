@@ -281,6 +281,14 @@ export const COMPOSER_MAX_ROWS = 8;
  */
 export const COMPOSER_VIEWPORT_SHARE = 0.4;
 
+/**
+ * Rows the box shows before the operator has typed anything. A one-line slit
+ * reads as a field and invites a one-line question; the work arriving in a
+ * pane is rarely one line, and a phone has no room to grow the box *while*
+ * typing. Two lines is the smallest box that looks like a draft.
+ */
+export const COMPOSER_MIN_ROWS = 2;
+
 /** What one measurement of the textarea says about the box it needs. */
 export type ComposerMetrics = {
   /** `scrollHeight` measured with the height left to the content; includes padding. */
@@ -293,14 +301,16 @@ export type ComposerMetrics = {
   viewport: number;
   /** Rows before the box scrolls instead of growing. */
   maxRows: number;
+  /** Rows the box keeps even when empty. Defaults to 1. */
+  minRows?: number;
 };
 
 /** The height the box gets and whether the rest of the text scrolls. */
 export type ComposerFit = { height: number; scrolls: boolean };
 
 /**
- * Size the composer to its text: one line when empty, eight lines at most, then
- * the box stops growing and the text scrolls instead.
+ * Size the composer to its text: `minRows` lines when empty, eight lines at
+ * most, then the box stops growing and the text scrolls instead.
  *
  * Two roundings matter more than they look.
  *
@@ -317,19 +327,21 @@ export type ComposerFit = { height: number; scrolls: boolean };
  * rounding it away.
  */
 export function fitComposer(metrics: ComposerMetrics): ComposerFit {
-  const oneLine = metrics.line + metrics.padding;
+  const minRows = Math.max(1, Math.min(metrics.minRows ?? 1, metrics.maxRows));
+  const floorRows = metrics.line * minRows + metrics.padding;
   const byRows = metrics.line * metrics.maxRows + metrics.padding;
   const byViewport = metrics.viewport * COMPOSER_VIEWPORT_SHARE;
-  const room = Math.max(oneLine, Math.min(byRows, byViewport));
-  // One line is always allowed, even in a viewport too short for it.
-  const rows = Math.max(1, Math.floor((room - metrics.padding) / metrics.line + 1e-6));
+  const room = Math.max(floorRows, Math.min(byRows, byViewport));
+  // The floor is always allowed, even in a viewport too short for it: an empty
+  // box that scrolls is a box the operator cannot read.
+  const rows = Math.max(minRows, Math.floor((room - metrics.padding) / metrics.line + 1e-6));
   const cap = metrics.padding + rows * metrics.line;
-  const wanted = Math.max(metrics.content, oneLine);
+  const wanted = Math.max(metrics.content, floorRows);
   const scrolls = wanted > cap + 0.5;
   // At the cap the height stays a whole number of lines: no half line at either
   // edge. Below it the box is its own content, rounded up. A viewport too short
   // to hold even two lines gets one whole line and scrolls the rest.
-  const height = !scrolls ? Math.ceil(wanted) : rows > 1 ? cap : Math.ceil(oneLine);
+  const height = !scrolls ? Math.ceil(wanted) : rows > minRows ? cap : Math.ceil(floorRows);
   return { height, scrolls };
 }
 

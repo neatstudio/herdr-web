@@ -246,6 +246,34 @@ test("an empty composer is exactly one line tall, never shorter", () => {
   assert.equal(fit(22).height, Math.ceil(LINE + PAD));
 });
 
+test("a floor of rows holds the box open while the draft is shorter", () => {
+  // The draft card reserves two rows so the first line does not sit alone in a
+  // box that grows the moment the writer wraps.
+  const floor = Math.ceil(LINE * 2 + PAD);
+  const two = fitComposer({ content: 0, line: LINE, padding: PAD, viewport: 844, maxRows: COMPOSER_MAX_ROWS, minRows: 2 });
+  assert.deepEqual(two, { height: floor, scrolls: false });
+  assert.deepEqual(
+    fitComposer({ content: LINE + PAD, line: LINE, padding: PAD, viewport: 844, maxRows: COMPOSER_MAX_ROWS, minRows: 2 }),
+    { height: floor, scrolls: false },
+  );
+  // Past the floor it behaves like any other box.
+  assert.equal(
+    fitComposer({ content: LINE * 3 + PAD, line: LINE, padding: PAD, viewport: 844, maxRows: COMPOSER_MAX_ROWS, minRows: 2 }).height,
+    Math.ceil(LINE * 3 + PAD),
+  );
+});
+
+test("the floor wins over a viewport too short to hold it, and loses to the row cap", () => {
+  // A keyboard-open phone frame can leave less room than the floor: showing the
+  // floor and scrolling is better than collapsing the draft to one line.
+  const floor = Math.ceil(LINE * 2 + PAD);
+  const squeezed = fitComposer({ content: 10_000, line: LINE, padding: PAD, viewport: 20, maxRows: COMPOSER_MAX_ROWS, minRows: 2 });
+  assert.deepEqual(squeezed, { height: floor, scrolls: true });
+  // A floor larger than the cap is clamped to the cap, never past it.
+  const capped = fitComposer({ content: 0, line: LINE, padding: PAD, viewport: 844, maxRows: 3, minRows: 9 });
+  assert.equal(capped.height, Math.ceil(LINE * 3 + PAD));
+});
+
 test("the composer grows with its lines and only scrolls past the cap", () => {
   assert.deepEqual(fit(36), { height: 37, scrolls: false });
   const three = Math.ceil(LINE * 3 + PAD);

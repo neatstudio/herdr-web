@@ -28,6 +28,7 @@ import {
 import {
   APP_ACTIONS,
   COMPOSER_MAX_ROWS,
+  COMPOSER_MIN_ROWS,
   applyCompletion,
   fitComposer,
   mentionItems,
@@ -147,6 +148,8 @@ export function PromptBar({
   const historyIndex = useRef(-1);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  /** Same picker, narrowed to images: the camera roll opens straight to photos. */
+  const imageRef = useRef<HTMLInputElement | null>(null);
   const promptRef = useRef<HTMLDivElement | null>(null);
   /** Tiles as they are now, for cleanup that must not re-run on every render. */
   const attachmentsRef = useRef<Attachment[]>([]);
@@ -398,6 +401,7 @@ export function PromptBar({
         padding,
         viewport,
         maxRows: COMPOSER_MAX_ROWS,
+        minRows: COMPOSER_MIN_ROWS,
       });
       box.style.height = `${height}px`;
       // Scrolling is off below the cap, where nothing should ever scroll, and on
@@ -663,6 +667,30 @@ export function PromptBar({
     inputRef.current?.focus();
   }
 
+  /**
+   * The "/" control, and the only thing a button may do here: type a slash at
+   * the caret and let the palette that already exists take over. It never has
+   * its own idea of the command list, so the six app actions stay in one place.
+   * On a phone the text box is the whole input layer; a command the operator
+   * cannot see the syntax of is a command they will not use.
+   */
+  function openCommands(): void {
+    const box = inputRef.current;
+    const at = box?.selectionStart ?? value.length;
+    const before = value.slice(0, at);
+    // A command is a line of its own: on a draft it starts under the text
+    // instead of joining the sentence the operator was writing.
+    const lead = before === "" || before.endsWith("\n") ? "" : "\n";
+    const head = `${before}${lead}/`;
+    const text = head + value.slice(at);
+    pendingCaret.current = { at: head.length, length: text.length };
+    setValue(text);
+    setCaret(head.length);
+    setMenuClosed(false);
+    setActive(0);
+    box?.focus();
+  }
+
   function onRawKey(event: React.KeyboardEvent<HTMLTextAreaElement>): void {
     // Escape belongs to the pane: it cancels a menu, leaves insert mode, closes
     // a dialog. Taking it to leave raw mode is what made "/model" impossible to
@@ -895,48 +923,144 @@ export function PromptBar({
           </button>
         </div>
       )}
-      <span className="prompt__glyph" aria-hidden>
-        {raw ? "⌨" : "❯"}
-      </span>
-      <textarea
-        ref={inputRef}
-        id={PROMPT_ID}
-        className="prompt__input"
-        rows={1}
-        autoComplete="off"
-        autoCapitalize="off"
-        spellCheck={false}
-        placeholder={raw ? `keys go to ${paneId} — esc leaves raw mode` : `send to ${paneId}`}
-        aria-label={`Send input to ${paneId}`}
-        value={raw ? "" : value}
-        disabled={busy}
-        readOnly={raw}
-        onChange={(event) => {
-          setValue(event.target.value);
-          setCaret(event.target.selectionStart ?? event.target.value.length);
-          setMenuClosed(false);
-        }}
-        onSelect={(event) => setCaret(event.currentTarget.selectionStart ?? 0)}
-        onClick={(event) => setCaret(event.currentTarget.selectionStart ?? 0)}
-        onKeyDown={onKeyDown}
-        onPaste={(event) => {
-          // An image on the clipboard arrives as a file with no name of its
-          // own, so give it one that says what it is.
-          const files = Array.from(event.clipboardData.files);
-          if (files.length === 0) {
-            return;
+      <div className="prompt__field">
+        <textarea
+          ref={inputRef}
+          id={PROMPT_ID}
+          className="prompt__input"
+          rows={COMPOSER_MIN_ROWS}
+          autoComplete="off"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          enterKeyHint="send"
+          placeholder={
+            raw ? `keys go to ${paneId} — esc leaves raw mode` : `send to ${paneId}`
           }
-          event.preventDefault();
-          attach(
-            files.map((file) =>
-              file.name === ""
-                ? new File([file], "pasted.png", { type: file.type })
-                : file,
-            ),
-          );
-        }}
-      />
-      <div className="prompt__actions">
+          aria-label={`Send input to ${paneId}`}
+          value={raw ? "" : value}
+          disabled={busy}
+          readOnly={raw}
+          onChange={(event) => {
+            setValue(event.target.value);
+            setCaret(event.target.selectionStart ?? event.target.value.length);
+            setMenuClosed(false);
+          }}
+          onSelect={(event) => setCaret(event.currentTarget.selectionStart ?? 0)}
+          onClick={(event) => setCaret(event.currentTarget.selectionStart ?? 0)}
+          onKeyDown={onKeyDown}
+          onPaste={(event) => {
+            // An image on the clipboard arrives as a file with no name of its
+            // own, so give it one that says what it is.
+            const files = Array.from(event.clipboardData.files);
+            if (files.length === 0) {
+              return;
+            }
+            event.preventDefault();
+            attach(
+              files.map((file) =>
+                file.name === ""
+                  ? new File([file], "pasted.png", { type: file.type })
+                  : file,
+              ),
+            );
+          }}
+        />
+        {/* One pad, four controls, bottom right: sending is the same thumb
+            travel as attaching, and the draft keeps the whole left side. The
+            soft keyboard covers the bottom of the screen while typing, so the
+            pad is laid out to stay reachable with the keyboard up: two columns
+            on a phone, one line on a frame with room to spare. */}
+        <div className="prompt__pad">
+          <input
+            ref={fileRef}
+            id="herdr-attach"
+            className="prompt__file"
+            type="file"
+            multiple
+            tabIndex={-1}
+            aria-hidden
+            onChange={(event) => {
+              if (event.target.files !== null) {
+                attach(event.target.files);
+              }
+              event.target.value = "";
+            }}
+          />
+          <input
+            ref={imageRef}
+            id="herdr-image"
+            className="prompt__file"
+            type="file"
+            accept="image/*"
+            multiple
+            tabIndex={-1}
+            aria-hidden
+            onChange={(event) => {
+              if (event.target.files !== null) {
+                attach(event.target.files);
+              }
+              event.target.value = "";
+            }}
+          />
+          <button
+            type="button"
+            id="herdr-attach-button"
+            className="prompt__act prompt__act--file"
+            title="attach a file by path"
+            aria-label="Attach a file"
+            onClick={() => fileRef.current?.click()}
+          >
+            <PlusIcon />
+          </button>
+          <button
+            type="button"
+            id="herdr-image-button"
+            className="prompt__act prompt__act--image"
+            title="attach an image from the camera or the library"
+            aria-label="Attach an image"
+            onClick={() => imageRef.current?.click()}
+          >
+            <ImageIcon />
+          </button>
+          <button
+            type="button"
+            id="herdr-command-button"
+            className="prompt__act prompt__act--system"
+            title="commands: chat, terminal, files, upload, workspace, stop"
+            aria-label="Open commands"
+            aria-expanded={menu !== null}
+            onClick={openCommands}
+          >
+            <span aria-hidden>/</span>
+          </button>
+          <button
+            type="button"
+            id="herdr-send"
+            className={stopMode ? "prompt__send prompt__stop" : "prompt__send"}
+            title={stopMode ? "interrupt the agent (ctrl+c)" : "send to the pane (enter)"}
+            aria-label={stopMode ? "Interrupt the agent" : "Send to the pane"}
+            disabled={stopMode ? stopping : busy || raw || value.trim() === ""}
+            onClick={() => {
+              if (stopMode) {
+                void interrupt("ctrl+c");
+                return;
+              }
+              void send(value);
+            }}
+          >
+            <span className="prompt__send-glyph" aria-hidden>
+              {stopMode ? <StopIcon /> : <ArrowUpIcon />}
+            </span>
+          </button>
+        </div>
+      </div>
+      {/* The footer carries state, not controls: that a draft was kept from a
+          previous visit, and the keyboard combinations worth teaching. Those
+          hints are for a hardware keyboard only — a soft keyboard has no
+          Shift+Tab and no room for a fifth line — so the footer collapses to
+          nothing on touch. */}
+      <div className="prompt__foot">
         {raw && (
           <button
             type="button"
@@ -951,37 +1075,13 @@ export function PromptBar({
             keys on · ⇧esc
           </button>
         )}
-        <input
-          ref={fileRef}
-          id="herdr-attach"
-          className="prompt__file"
-          type="file"
-          multiple
-          tabIndex={-1}
-          aria-hidden
-          onChange={(event) => {
-            if (event.target.files !== null) {
-              attach(event.target.files);
-            }
-            event.target.value = "";
-          }}
-        />
-        <button
-          type="button"
-          id="herdr-attach-button"
-          className="prompt__attach"
-          title="attach a file or image by path"
-          aria-label="Attach a file or image"
-          onClick={() => fileRef.current?.click()}
-        >
-          <PlusIcon />
-        </button>
         {restored && value.trim() !== "" && (
           <span className="prompt__draft" title="draft kept for this pane">
             draft
           </span>
         )}
-        <div className="prompt__hints" aria-hidden>
+        {keyboardIsPrimary() && (
+          <div className="prompt__hints" aria-hidden>
           {raw ? (
             <span>
               <kbd>⇧esc</kbd> back
@@ -989,44 +1089,26 @@ export function PromptBar({
           ) : (
             <>
               <span>
-                <kbd>⇥</kbd> complete
-              </span>
-              <span>
-                <kbd>^c</kbd> interrupt
+                <kbd>⏎</kbd> send
               </span>
               <span>
                 <kbd>⇧⏎</kbd> newline
+              </span>
+              <span>
+                <kbd>⇥</kbd> complete
+              </span>
+              <span>
+                <kbd>/</kbd> commands
               </span>
               {working && (
                 <span>
                   <kbd>⇧esc</kbd> stop
                 </span>
               )}
-            </>
-          )}
-        </div>
-        <button
-          type="button"
-          id="herdr-send"
-          className={stopMode ? "prompt__send prompt__stop" : "prompt__send"}
-          title={stopMode ? "interrupt the agent (ctrl+c)" : "send to the pane (enter)"}
-          aria-label={stopMode ? "Interrupt the agent" : "Send to the pane"}
-          disabled={stopMode ? stopping : busy || raw || value.trim() === ""}
-          onClick={() => {
-            if (stopMode) {
-              void interrupt("ctrl+c");
-              return;
-            }
-            void send(value);
-          }}
-        >
-          <span className="prompt__send-word" aria-hidden>
-            {stopMode ? "stop" : "send"}
-          </span>
-          <span className="prompt__send-glyph" aria-hidden>
-            {stopMode ? <StopIcon /> : <ArrowUpIcon />}
-          </span>
-        </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1084,6 +1166,25 @@ function PlusIcon() {
     >
       <path d="M12 5v14" />
       <path d="M5 12h14" />
+    </svg>
+  );
+}
+
+function ImageIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      focusable="false"
+    >
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <circle cx="8.5" cy="9.5" r="1.5" />
+      <path d="m21 16-4.5-4.5L6 21" />
     </svg>
   );
 }

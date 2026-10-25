@@ -1262,41 +1262,44 @@ body::before {
 
 /* ---------------------------------------------------------------- prompt */
 
+/* The composer is a card, not a bar. A draft, four controls and one line of
+   state are one object; stretching it to the edge of a 1400px frame puts the
+   end of a sentence an eye-movement away from its start, so it is centred at a
+   reading width instead. */
 .prompt {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  /* The text starts at the top of the bar and the actions sit on the last line.
-     Anchored to the bottom instead, a tall draft leaves the chevron and the
-     control row floating beside a block of empty space. */
-  align-items: start;
-  gap: 10px;
-  padding: 12px var(--pad) 11px;
-  border-top: var(--rule-w) solid var(--rule-strong);
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: none;
+  align-self: center;
+  width: min(calc(100% - 2 * var(--pad)), 56rem);
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: var(--rule-w) solid var(--rule-strong);
+  border-radius: 14px;
   background: var(--surface);
-  transition: border-color 0.12s ease-out;
+  transition:
+    border-color 0.12s ease-out,
+    box-shadow 0.12s ease-out;
 }
 
-/* Focus shows on the rule the bar already has: a ring around half the console
-   to say "you can type here now" is louder than the one line of state needs. */
+/* Focus shows on the card's own border plus a halo: the whole object is the
+   input, so the whole object answers "you can type here now". */
 .prompt:focus-within {
-  border-top-color: color-mix(in srgb, var(--accent) 60%, var(--rule-strong));
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--rule-strong));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
-.prompt__glyph {
-  align-self: start;
-  /* One line of the input is 1.4em of 12.5px body text. The chevron gets that
-     same box and is centred inside it: a hand-tuned pixel nudge drifts as soon
-     as the type or the line height changes, and it was what held the caret and
-     the leading mark off each other's baseline. */
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: calc(var(--step-body) * 1.44);
-  font-family: var(--font-label);
-  font-size: 13px;
-  line-height: 1;
-  color: color-mix(in srgb, var(--accent) 78%, var(--ink-faint));
-  user-select: none;
+/* Draft left, controls right, bottom edges aligned: the box takes every pixel
+   the four buttons do not, and the pad sits on the last line of text, not
+   beside the first. */
+.prompt__field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
 }
 
 .prompt__input {
@@ -1308,23 +1311,24 @@ body::before {
      the last line reaching the edge already says the box is full. */
   resize: none;
   overflow-y: hidden;
-  /* No scrollbar on any engine: at the row cap the box scrolls, and the cut on
-     a whole line already says more text is there. */
   scrollbar-width: none;
   -ms-overflow-style: none;
   caret-color: var(--accent);
-  /* No vertical padding of its own: the bar's padding stays put while the text
+  /* No padding of its own: the card's padding stays put while the text
      scrolls, so a row-quantised height means the cut at the top edge lands
      between lines instead of through one. */
   padding: 0;
   background: none;
   border: 0;
   outline: none;
-  font-family: var(--font-mono);
-  font-size: var(--step-body);
-  /* 18px at the 12.5px body size: a whole-pixel line box, so the caret is
-     exactly one row tall instead of straddling two. */
-  line-height: 1.44;
+  /* Prose, not protocol. The console it feeds is monospaced, but the thing
+     written here is a sentence for a person; the input face says so. */
+  font-family: var(--font-prose);
+  font-size: 14px;
+  /* Whole pixels, so the caret is exactly one row tall and the two-row floor
+     is 44px instead of 44.8. */
+  line-height: 22px;
+  color: var(--ink);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -1335,10 +1339,15 @@ body::before {
   height: 0;
 }
 
-/* Raw mode turns the composer into a keyboard for the pane: no text is colleted
-   there, so the caret is not wanted and the bar says which pane receives keys. */
+.prompt__input::placeholder {
+  color: var(--ink-faint);
+}
+
+/* Raw mode turns the composer into a keyboard for the pane: no text is
+   collected there, so the caret is not wanted and the card says which pane
+   receives keys. */
 .prompt[data-raw="on"] {
-  border-top-color: var(--accent);
+  border-color: var(--accent);
 }
 
 .prompt[data-raw="on"] .prompt__input {
@@ -1360,36 +1369,62 @@ body::before {
   color: var(--paper);
 }
 
-.prompt__input::placeholder {
-  color: var(--ink-faint);
-}
-
-/* Dropping a file anywhere on the prompt bar attaches it. */
+/* Dropping a file anywhere on the card attaches it. */
 .prompt[data-drop="on"] {
   outline: 2px dashed var(--accent);
   outline-offset: -3px;
 }
 
-.prompt__actions {
+/* Four controls in one pad, bottom right: sending is the same thumb travel as
+   attaching, and the whole left side stays draft. The phone rules in
+   composer.css fold it into two columns so it still fits beside a keyboard. */
+.prompt__pad {
   display: flex;
   align-items: center;
-  align-self: end;
-  gap: 10px;
+  gap: 2px;
 }
 
-.prompt__attach {
+.prompt__act {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 8px;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
   color: var(--ink-dim);
+  font-family: var(--font-label);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background-color 0.12s ease-out,
+    color 0.12s ease-out;
 }
 
-.prompt__attach:hover:not(:disabled) {
+.prompt__act svg {
+  display: block;
+  width: 17px;
+  height: 17px;
+}
+
+.prompt__act:hover:not(:disabled) {
+  background: var(--raised);
   color: var(--ink);
 }
 
-/* The real picker is an input, but the button above is what is shown. */
+.prompt__act:disabled {
+  color: var(--ink-faint);
+  cursor: not-allowed;
+}
+
+.prompt__act--system {
+  font-size: 16px;
+}
+
+/* The real picker is an input, but the buttons above are what is shown. */
 .prompt__file {
   position: absolute;
   width: 1px;
@@ -1405,14 +1440,26 @@ body::before {
   color: var(--blocked);
 }
 
-.prompt__hints {
+/* State under the box, never controls: an empty card shows nothing here, so
+   the composer is a box and four buttons and nothing else. */
+.prompt__foot {
   display: flex;
-  gap: 9px;
+  align-items: center;
+  gap: 10px;
   font-family: var(--font-label);
   font-size: var(--step-micro);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-faint);
+}
+
+.prompt__foot:empty {
+  display: none;
+}
+
+.prompt__hints {
+  display: flex;
+  gap: 9px;
   white-space: nowrap;
 }
 
@@ -1421,31 +1468,52 @@ body::before {
   color: var(--ink-dim);
 }
 
+/* Send is the one filled control: the accent says what Enter does. Same size
+   and same place as the three ghost buttons beside it, so the pad reads as a
+   row of one kind of thing rather than a row with an exception in it. */
 .prompt__send {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 6px 12px;
-  border: var(--rule-w) solid var(--rule-strong);
-  font-family: var(--font-label);
-  font-size: var(--step-micro);
-  font-weight: 500;
-  line-height: 1.4;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--ink);
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  cursor: pointer;
+  transition:
+    background-color 0.12s ease-out,
+    color 0.12s ease-out;
+}
+
+.prompt__send svg {
+  display: block;
+  width: 17px;
+  height: 17px;
 }
 
 .prompt__send:hover:not(:disabled) {
-  background: var(--ink);
-  color: var(--paper);
-  border-color: var(--ink);
+  background: color-mix(in srgb, var(--accent) 84%, var(--ink));
 }
 
 .prompt__send:disabled {
+  background: var(--rule);
   color: var(--ink-faint);
-  border-color: var(--rule);
   cursor: not-allowed;
+}
+
+/* A working pane turns the same control into a stop: same place, same shape, a
+   colour that says this press interrupts something. */
+.prompt__stop,
+.prompt__stop:disabled {
+  background: var(--blocked);
+  color: var(--accent-ink);
+}
+
+.prompt__stop:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--blocked) 84%, var(--ink));
 }
 
 /* ------------------------------------------------------------ statusline */
@@ -2347,10 +2415,6 @@ body::before {
     margin-top: 12px;
     padding: 12px 6px;
     box-shadow: 0 -1px 0 var(--rule);
-  }
-
-  .prompt__hints {
-    display: none;
   }
 
   .viewer {

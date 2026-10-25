@@ -1,23 +1,11 @@
 /* --------------------------------------------------------- the composer */
-/* The input layer of a session: one bar that carries a draft, a palette and
-   a send/stop control. It is imported after session.css, so it may lean on the
-   --ui-* aliases; every one of them still falls back to the console token it
-   aliases, so the bar renders correctly in a build that has no session shell.
-
-   Desktop is not restyled here: the only rules outside a phone query are the
-   ones the menu and the stop state need in order to exist at all. */
-
-.prompt {
-  /* The palette is anchored to the bar, not to the window. */
-  position: relative;
-  z-index: 3;
-  flex: none;
-  /* A phone has a home indicator over the bottom edge; the bar pads for it. */
-  padding-bottom: max(8px, env(safe-area-inset-bottom));
-  /* Half a step up from the panel: the bar reads as the surface text lands on
-     without turning into a floating card. The phone rules below do the card. */
-  background: color-mix(in srgb, var(--ui-panel, var(--surface)) 55%, var(--ui-elev, var(--raised)));
-}
+/* The input layer of a session: one card that carries a draft, four controls,
+   a palette and one line of state. The card itself is styled in index.css,
+   because it is the same object on every width; this file owns what only a
+   menu, an attachment or a touch screen needs. It is imported after
+   session.css, so it may lean on the --ui-* aliases; every one of them still
+   falls back to the console token it aliases, so the card renders correctly in
+   a build that has no session shell. */
 
 /* ---------------------------------------------------------------- palettes */
 /* One list, two sources: "/" commands and "@" mentions share the rows and the
@@ -263,75 +251,38 @@
   color: var(--ui-text, var(--ink));
 }
 
-/* The send button doubles as stop while the pane is working and the box is
-   empty. Same element, same place, one glyph changed: a second button would
-   split the operator's target on the one control they press blind. */
-.prompt__stop {
-  border-color: var(--ui-working, var(--accent));
-  color: var(--ui-working, var(--accent));
-}
-
-.prompt__stop:hover:not(:disabled) {
-  border-color: var(--ui-working, var(--accent));
-  background: var(--ui-working, var(--accent));
-  color: var(--ui-bg, var(--paper));
-}
-
-.prompt__stop:disabled {
-  border-color: var(--ui-border, var(--rule));
-  color: var(--ui-faint, var(--ink-faint));
-}
-
-/* Desktop keeps the word — "send" while idle, "stop" while the pane is busy.
-   The glyph is the phone's job, where the control is a round button in the
-   thumb corner. */
-.prompt__send-glyph {
-  display: none;
-}
+/* The send button doubles as stop while the pane is working: same element,
+   same place, one glyph changed. A second button would split the operator's
+   target on the one control they press blind. The colours live in index.css
+   with the rest of the card. */
 
 /* Drawn icons, not typed glyphs. A character carries its own side and vertical
    bearings, so `↑` inside a circle sits high and left however the box is
    centred; an SVG has a box we set, and the flex rules centre that. */
-.prompt__send-glyph svg,
-.prompt__attach svg {
-  display: block;
-  width: 18px;
-  height: 18px;
+.prompt__send-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
 }
 
 
 /* ------------------------------------------------------------------ touch */
-/* Coarse pointers and narrow frames get the mobile input layer: 44px targets,
-   no iOS zoom on focus, no hint row stealing the width the text needs. The
-   .is-narrow hook covers the same case for a desktop browser squeezed down. */
+/* Coarse pointers and narrow frames get the mobile arrangement of the same
+   card: a 2x2 pad of 36px controls beside the draft, 16px text so iOS does not
+   zoom on focus, and the card inset from the edge. The .is-narrow hook covers
+   the same case for a desktop browser squeezed down. */
 
 @media (pointer: coarse), (max-width: 900px) {
-  /* The phone composer is a card, not a strip: an inset radius lifts it off the
-     transcript and gives the thumb row a boundary the eye can find without a
-     full-width rule cutting the screen in half. */
+  /* The phone composer is the same card, inset from the edge: the radius lifts
+     it off the transcript and gives the pad a boundary the eye can find without
+     a full-width rule cutting the screen in half. */
   .prompt {
-    margin: 0 8px max(8px, env(safe-area-inset-bottom));
-    padding: 10px 12px;
-    /* Two rows: the draft gets the full width of the card, and the controls get
-       a row of their own under it — a 36px circle wedged beside a five-line
-       message shrinks the text and drifts out of thumb reach. The card's own
-       boundary says where the message begins, so the leading chevron is
-       dropped: alone on a card it reads as a stray mark. */
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas:
-      "files"
-      "note"
-      "input"
-      "actions";
-    /* The draft sits on its action row rather than floating above it: the
-       controls are already mostly whitespace, and a gap of their own made the
-       card read as a tall empty box with two dots at the bottom. */
-    row-gap: 2px;
-    border: var(--rule-w) solid var(--ui-border, var(--rule));
+    width: calc(100% - 16px);
+    margin: 0 0 max(8px, env(safe-area-inset-bottom));
     border-radius: 20px;
     background: var(--ui-elev, var(--raised));
     box-shadow: 0 8px 24px rgb(0 0 0 / 0.08);
-    transition: border-color 0.12s ease-out, box-shadow 0.12s ease-out;
   }
 
   /* With the keyboard open the shell has already given back its height, so the
@@ -344,23 +295,17 @@
   /* Focus is a soft accent edge, not a second border: the card is one surface
      and a heavier outline around it would fight the sheet behind. */
   .prompt:focus-within {
-    border-color: color-mix(in srgb, var(--ui-accent, var(--accent)) 40%, var(--ui-border, var(--rule)));
+    border-color: color-mix(
+      in srgb,
+      var(--ui-accent, var(--accent)) 40%,
+      var(--ui-border, var(--rule))
+    );
     box-shadow:
       0 8px 24px rgb(0 0 0 / 0.12),
       0 0 0 3px color-mix(in srgb, var(--ui-accent, var(--accent)) 10%, transparent);
   }
 
-  .prompt__files {
-    grid-area: files;
-  }
-
-  .prompt__problem {
-    grid-area: note;
-  }
-
   .prompt__input {
-    grid-area: input;
-    padding: 0;
     /* The draft is prose. This is the one field on the console a person writes
        a sentence into, so it gets the proportional face; everything the pane
        prints back stays mono. */
@@ -378,91 +323,39 @@
     color: var(--ui-faint, var(--ink-faint));
   }
 
-  .prompt__actions {
-    grid-area: actions;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    min-height: 36px;
+  /* Four controls in a 2×2 pad on the right of a two-row box, not a row under
+     it: a row cost a whole line of the phone screen and put send at the far
+     edge of a one-handed grip. Two columns keep the pad inside the thumb arc of
+     the hand holding the phone, and every control keeps a 36px face. */
+  .prompt__pad {
+    display: grid;
+    grid-template-columns: repeat(2, 36px);
+    grid-auto-rows: 36px;
+    gap: 2px;
+    justify-items: center;
+    align-content: end;
   }
 
-  .prompt__glyph {
-    display: none;
-  }
-
-  /* 36px controls with 44px of finger through an invisible halo: the shape
-     Ovis settled on. The old 44px buttons plus a 48px halo made a control row
-     taller than the text it belonged to, and on a phone with the keyboard up
-     that row was the difference between a usable card and a sliver. */
-  .prompt__send,
-  .prompt__stop,
-  .prompt__attach,
-  .prompt__keys {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 36px;
-    min-height: 36px;
-    padding: 0;
-  }
-
-  .prompt__send::before,
-  .prompt__stop::before,
-  .prompt__attach::before,
-  .prompt__keys::before {
-    content: "";
-    position: absolute;
-    inset: -4px;
-    border-radius: inherit;
-  }
-
-  /* The raw-mode toggle is the one control on this row with words on it. */
-  .prompt__keys {
-    padding: 0 8px;
-  }
-
-  .prompt__send,
-  .prompt__stop {
-    box-sizing: border-box;
+  .prompt__act,
+  .prompt__send {
     width: 36px;
-    min-width: 36px;
     height: 36px;
-    min-height: 36px;
-    padding: 0;
-    border-radius: 50%;
-    letter-spacing: 0;
-    text-transform: none;
   }
 
-  .prompt__send-word {
-    display: none;
+  .prompt__act svg,
+  .prompt__send svg {
+    width: 18px;
+    height: 18px;
   }
 
-  /* A 18px box in a 36px circle, centred by flex on both axes: the arrow's
-     stroke ends land on the circle's centre line instead of a character's
-     bearing. line-height 0 keeps the inline box from adding leading. */
-  .prompt__send-glyph {
+  /* The raw-mode toggle is the one control with words on it, and on a phone it
+     lives in the footer where there is no pad slot for it. */
+  .prompt__keys {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    line-height: 0;
-  }
-
-  .prompt__send:not(:disabled) {
-    border-color: var(--ui-accent, var(--accent));
-    background: var(--ui-accent, var(--accent));
-    color: var(--ui-bg, var(--paper));
-  }
-
-  .prompt__stop:not(:disabled) {
-    border-color: var(--ui-working, var(--accent));
-    background: var(--ui-working, var(--accent));
-    color: var(--ui-bg, var(--paper));
-  }
-
-  .prompt__attach {
-    color: var(--ui-dim, var(--ink-dim));
+    min-height: 36px;
+    padding: 0 8px;
   }
 
   /* The tile strip scrolls sideways instead of wrapping: a second row of tiles
@@ -484,10 +377,6 @@
 
   .prompt__note-act {
     padding: 6px 2px;
-  }
-
-  .prompt__hints {
-    display: none;
   }
 
   .prompt__palette {
