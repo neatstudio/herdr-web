@@ -118,14 +118,24 @@ test("the visible row is the six keys a thumb needs, and it fits a phone", () =>
   for (const key of BAR_KEYS) {
     assert.ok(KEY_BAR_KEYS.includes(key), `${key.id} is not a bar key`);
   }
-  // 36px per key, 4px gaps and the 36px menu button: 6*36 + 6*4 + 36 = 276,
-  // which is under 320px even before the bar's 16px of padding.
-  assert.ok(BAR_KEYS.length * 36 + BAR_KEYS.length * 4 + 36 + 16 <= 320);
+  // Seven controls (six keys plus the menu button) at the 34px floor with 4px
+  // gaps and 12px of row padding: 7*34 + 6*4 + 12 = 274, under 320px, so the
+  // row never scrolls on the narrowest phone we support.
+  const rowControls = BAR_KEYS.length + 1;
+  const rowFloor = rowControls * 34 + (rowControls - 1) * 4 + 12;
+  assert.ok(rowFloor <= 320, `${rowFloor}px does not fit a 320px row`);
+  // And the 44px cap is what keeps a 390px phone from inflating the row.
+  const rowCap = rowControls * 44 + (rowControls - 1) * 4 + 12;
+  assert.ok(rowCap > 320);
 });
 
-test("the menu holds the whole vocabulary, four to a row", () => {
+test("the menu holds the whole vocabulary, two rows of eight", () => {
   assert.equal(KEY_MENU_KEYS.length, 16);
-  assert.equal(KEY_MENU_KEYS.length % KEY_MENU_COLUMNS, 0);
+  assert.equal(KEY_MENU_KEYS.length / KEY_MENU_COLUMNS, 2);
+  // The grid has 8px of panel padding either side and 4px between keys; at
+  // 320px that still leaves each cell 34px, enough for `PgDn` at 10.5px mono.
+  const cell = (320 - 16 - (KEY_MENU_COLUMNS - 1) * 4) / KEY_MENU_COLUMNS;
+  assert.ok(cell >= 32, `grid cell is ${cell}px wide`);
   assert.deepEqual(
     KEY_MENU_KEYS.map((key) => key.id),
     [

@@ -192,8 +192,9 @@ function pick(ids: readonly string[]): readonly KeyBarKey[] {
  * The always-visible row, left to right: leave a TUI, Tab, Ctrl (every arrow
  * chord needs it), interrupt, the key that recalls the last prompt, confirm.
  *
- * Six 36px keys plus the menu button fit a 320px phone without scrolling,
- * which is why the rest of the vocabulary moved behind the button.
+ * Six keys and the menu button share the row's width, 34–44px each, which fits
+ * a 320px phone without scrolling — the rest of the vocabulary moved behind the
+ * button for that reason, and because a thumb should not have to hunt.
  */
 export const BAR_KEYS: readonly KeyBarKey[] = pick([
   "esc",
@@ -205,12 +206,13 @@ export const BAR_KEYS: readonly KeyBarKey[] = pick([
 ]);
 
 /** How many keys the menu lays out per row; its CSS grid mirrors this. */
-export const KEY_MENU_COLUMNS = 4;
+export const KEY_MENU_COLUMNS = 8;
 
 /**
- * The menu's grid, four per row: fix the line, then the modifiers, then the
- * arrows, then navigation. Grouping beats frequency here: a key is found by
- * where it sits, and the four blocks are the four things one does to a TUI.
+ * The menu's grid, eight per row: the top row fixes the line and holds the
+ * modifiers, the bottom row is the arrows and navigation. Grouping beats
+ * frequency here — a key is found by where it sits — and two rows are all a
+ * phone needs, so the panel stays short enough for a keyboard-open screen.
  */
 export const KEY_MENU_KEYS: readonly KeyBarKey[] = pick([
   "esc",

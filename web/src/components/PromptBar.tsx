@@ -476,21 +476,30 @@ export function PromptBar({
   }, [paletteKind, workspaces]);
 
   // The on-screen keyboard shrinks the visual viewport instead of the window on
-  // iOS, which would leave the send button underneath it. Lift the composer by
-  // what the keyboard covers, and never by more than a phone screenful.
+  // iOS, which would leave the send button — and the key strip above it —
+  // underneath the keyboard. Publish what it covers, and let the shell give that
+  // height back (`.shell` in `index.css`): the grid reflows, the fit addon
+  // resizes the terminal, and the strip and the composer stay on screen.
   useEffect(() => {
-    const target = promptRef.current;
     const viewport = window.visualViewport;
-    if (target === null || viewport === null) {
+    if (viewport === null) {
       return;
     }
-    const box: HTMLDivElement = target;
     const view: VisualViewport = viewport;
+    const root = document.documentElement;
     function apply(): void {
-      const hidden = Math.max(0, Math.round(window.innerHeight - view.height));
-      const lift =
-        hidden > 0 ? Math.min(hidden, Math.round(window.innerHeight * LIFT_MAX_RATIO)) : 0;
-      box.style.transform = lift > 0 ? `translateY(-${lift}px)` : "";
+      const covered = Math.max(0, Math.round(window.innerHeight - view.height));
+      // Never give up more than the screen can spare: a browser that reports a
+      // half-collapsed viewport must not fold the console away.
+      const hidden =
+        covered > 0 ? Math.min(covered, Math.round(window.innerHeight * LIFT_MAX_RATIO)) : 0;
+      if (hidden === 0) {
+        root.style.removeProperty("--kb-inset");
+        root.classList.remove("has-keyboard");
+        return;
+      }
+      root.style.setProperty("--kb-inset", `${hidden}px`);
+      root.classList.add("has-keyboard");
     }
     apply();
     view.addEventListener("resize", apply);
@@ -498,7 +507,8 @@ export function PromptBar({
     return () => {
       view.removeEventListener("resize", apply);
       view.removeEventListener("scroll", apply);
-      box.style.transform = "";
+      root.style.removeProperty("--kb-inset");
+      root.classList.remove("has-keyboard");
     };
   }, []);
 

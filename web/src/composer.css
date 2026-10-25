@@ -334,6 +334,13 @@
     transition: border-color 0.12s ease-out, box-shadow 0.12s ease-out;
   }
 
+  /* With the keyboard open the shell has already given back its height, so the
+     home-indicator inset the card was padding for is behind the keyboard: the
+     card sits right on it instead of floating a finger's width above. */
+  .has-keyboard .prompt {
+    margin-bottom: 8px;
+  }
+
   /* Focus is a soft accent edge, not a second border: the card is one surface
      and a heavier outline around it would fight the sheet behind. */
   .prompt:focus-within {
