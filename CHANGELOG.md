@@ -57,7 +57,9 @@
 
 - 任务新增 `testCommand`；repo 可配置测试命令，orchestrator 的 test 角色变成 `kind=command` 的命令 job（打印 `__HERDR_JOB_DONE__` 退出码），不再只依赖 agent 自述。
 - review/test/audit 仍要求独立节点；merge 失败从无限重试改为 `FailMerge`：保留 `audit_approved` 重试，3 次后进入 `merge_blocked`。
-- NATS 适配器支持逗号/空白分隔的集群 URL、自动重连、token/用户名密码、JetStream stream/KV 副本数（`HERDR_WEB_NATS_REPLICAS`）。
+- NATS 适配器支持逗号/空白分隔的集群 URL、自动重连、token/用户名密码、`HERDR_WEB_NATS_CA` 私有 CA、JetStream stream/KV 副本数（`HERDR_WEB_NATS_REPLICAS`）；启动时在集群选主期间重试 90 秒，避免崩溃循环。
+- 实际部署三节点 JetStream（m9、m8s、laptop），集群路由和远程客户端走 TLS；m9/m8s 的客户端使用 `tls://` + CA，laptop 只在 loopback 使用明文监听（macOS 平台验证器拒绝私有 CA），其集群路由仍为 TLS。
+- 发布 bundle 关闭 source map（`vite.config.ts`），`release-archives` 发现 `web/dist/*.map` 直接失败；Linux 二进制从 12M 降到 9.6M，桌面二进制 9.1M。
 
 ### 验证
 

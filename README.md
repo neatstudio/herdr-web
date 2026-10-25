@@ -336,7 +336,9 @@ restart (herdr keeps the workspaces).
 The shared task ledger is the other cross-machine state. Wire it with
 `HERDR_WEB_LEDGER_NATS` (one URL, or a comma-separated cluster list) and the same
 `HERDR_WEB_NATS_TOKEN` on every console; `HERDR_WEB_NATS_REPLICAS` sets the
-JetStream replica count (default: number of URLs, capped at three). Each console
+JetStream replica count (default: number of URLs, capped at three). For TLS use
+`tls://` URLs and point `HERDR_WEB_NATS_CA` at the private CA; every address a
+client uses must be in the server certificate's SAN list. Each console
 signs its attestations with an ed25519 key at
 `~/.local/share/herdr-web/jobs/node.key` (override with `HERDR_WEB_NODE_KEY`);
 the node id is the public key, and the ledger rejects an unsigned, forged, or
