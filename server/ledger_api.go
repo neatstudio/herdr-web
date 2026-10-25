@@ -88,6 +88,23 @@ func (s *Server) handleLedgerTaskAction(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "task": task})
+	case "pr":
+		var request struct {
+			Number int `json:"number"`
+		}
+		if !decodeBody(w, r, &request) {
+			return
+		}
+		if request.Number <= 0 {
+			writeError(w, http.StatusBadRequest, "invalid_request", "pull number is required")
+			return
+		}
+		task, err := s.sharedLedger.LinkPR(r.Context(), id, request.Number)
+		if err != nil {
+			writeLedgerError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "task": task})
 	case "attest":
 		var request struct {
 			Role      string `json:"role"`

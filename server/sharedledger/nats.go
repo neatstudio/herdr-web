@@ -284,6 +284,24 @@ func (n *NATS) Attest(ctx context.Context, id string, role Role, node, commit, d
 	return cloneTask(task), nil
 }
 
+func (n *NATS) LinkPR(ctx context.Context, id string, number int) (Task, error) {
+	task, entry, err := n.getRaw(ctx, id)
+	if err != nil {
+		return Task{}, err
+	}
+	if number <= 0 {
+		return Task{}, ErrInvalidState
+	}
+	task.PR = number
+	task.Version++
+	task.UpdatedAt = time.Now()
+	if err := n.update(ctx, task, entry); err != nil {
+		return Task{}, err
+	}
+	n.publish(ctx, task, "linked", "", "")
+	return cloneTask(task), nil
+}
+
 func (n *NATS) Release(ctx context.Context, id string, role Role, node, reason string) (Task, error) {
 	task, entry, err := n.getRaw(ctx, id)
 	if err != nil {

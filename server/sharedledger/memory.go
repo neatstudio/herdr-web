@@ -212,6 +212,24 @@ func (m *Memory) Attest(_ context.Context, id string, role Role, node, commit, d
 	return cloneTask(task), nil
 }
 
+func (m *Memory) LinkPR(_ context.Context, id string, number int) (Task, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	task, ok := m.tasks[id]
+	if !ok {
+		return Task{}, ErrNotFound
+	}
+	if number <= 0 {
+		return Task{}, ErrInvalidState
+	}
+	task.PR = number
+	task.Version++
+	task.UpdatedAt = m.clock()
+	m.tasks[id] = task
+	m.eventLocked(task, "linked", "", "")
+	return cloneTask(task), nil
+}
+
 func (m *Memory) Release(_ context.Context, id string, role Role, node, reason string) (Task, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -1,10 +1,13 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"herdr-web/server/sharedledger"
 )
 
 func TestRepoPullAndMergeAPI(t *testing.T) {
@@ -45,9 +48,12 @@ func TestRepoPullAndMergeAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	handler := console.Handler()
+	if _, err := console.sharedLedger.Create(t.Context(), sharedledger.Task{ID: "t1"}); err != nil {
+		t.Fatal(err)
+	}
 
 	create := do(t, handler, http.MethodPost, "/api/v1/repos/"+repo.ID+"/pull",
-		`{"head":"job/issue-7","title":"Fix"}`)
+		`{"head":"job/issue-7","title":"Fix","taskId":"t1"}`)
 	if create.Code != http.StatusCreated {
 		t.Fatalf("pull = %d: %s", create.Code, create.Body.String())
 	}
@@ -59,6 +65,13 @@ func TestRepoPullAndMergeAPI(t *testing.T) {
 	}
 	if pullAnswer.Pull.Number != 9 {
 		t.Fatalf("pull = %+v", pullAnswer.Pull)
+	}
+	task, err := console.sharedLedger.Get(context.Background(), "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.PR != 9 {
+		t.Fatalf("task PR = %d", task.PR)
 	}
 
 	merge := do(t, handler, http.MethodPost, "/api/v1/repos/"+repo.ID+"/merge",

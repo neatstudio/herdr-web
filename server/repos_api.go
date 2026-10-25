@@ -155,10 +155,11 @@ func (s *Server) handleRepoAction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var request struct {
-			Head  string `json:"head"`
-			Base  string `json:"base"`
-			Title string `json:"title"`
-			Body  string `json:"body"`
+			Head   string `json:"head"`
+			Base   string `json:"base"`
+			Title  string `json:"title"`
+			Body   string `json:"body"`
+			TaskID string `json:"taskId"`
 		}
 		if !decodeBody(w, r, &request) {
 			return
@@ -181,6 +182,12 @@ func (s *Server) handleRepoAction(w http.ResponseWriter, r *http.Request) {
 			writeBadGateway(w, "repo_failed", err)
 			return
 		}
+		if request.TaskID != "" {
+			if _, err := s.sharedLedger.LinkPR(r.Context(), request.TaskID, pull.Number); err != nil {
+				writeLedgerError(w, err)
+				return
+			}
+		}
 		writeJSON(w, http.StatusCreated, map[string]any{"ok": true, "pull": pull})
 	case "merge":
 		if r.Method != http.MethodPost {
@@ -190,6 +197,7 @@ func (s *Server) handleRepoAction(w http.ResponseWriter, r *http.Request) {
 		var request struct {
 			Number int    `json:"number"`
 			Method string `json:"method"`
+			TaskID string `json:"taskId"`
 		}
 		if !decodeBody(w, r, &request) {
 			return
@@ -206,6 +214,12 @@ func (s *Server) handleRepoAction(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			writeBadGateway(w, "repo_failed", err)
 			return
+		}
+		if request.TaskID != "" {
+			if _, err := s.sharedLedger.LinkPR(r.Context(), request.TaskID, pull.Number); err != nil {
+				writeLedgerError(w, err)
+				return
+			}
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "pull": pull})
 	default:

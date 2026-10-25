@@ -55,6 +55,7 @@ type Task struct {
 	Weight  string `json:"weight,omitempty"`
 	Repo    string `json:"repo,omitempty"`
 	Issue   int    `json:"issue,omitempty"`
+	PR      int    `json:"pr,omitempty"`
 	State   State  `json:"state"`
 	Version uint64 `json:"version"`
 	Role    Role   `json:"role,omitempty"`
@@ -139,6 +140,7 @@ type Ledger interface {
 	// Attest records a signed result and advances the state. expectedVersion is
 	// the version read before the attest.
 	Attest(ctx context.Context, id string, role Role, node, commit, digest, signature string, expectedVersion uint64) (Task, error)
+	LinkPR(ctx context.Context, id string, number int) (Task, error)
 	Release(ctx context.Context, id string, role Role, node, reason string) (Task, error)
 	Cancel(ctx context.Context, id string, node, reason string) (Task, error)
 
