@@ -403,6 +403,11 @@ func independent(task Task, node string) bool {
 	return true
 }
 
+// Independent reports whether node may take a review/test/audit lease.
+func Independent(task Task, node string) bool {
+	return independent(task, node)
+}
+
 func cloneTask(task Task) Task {
 	out := task
 	out.Attestations = append([]Attestation(nil), task.Attestations...)

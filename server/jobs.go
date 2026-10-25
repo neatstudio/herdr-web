@@ -328,6 +328,9 @@ func (s *Server) handleJobOffer(w http.ResponseWriter, r *http.Request) {
 			accepted, reason = false, "shared ledger unavailable"
 		case err == nil && !roleReady(task, role):
 			accepted, reason = false, "task is not ready for this role"
+		case err == nil && (role == sharedledger.RoleReview || role == sharedledger.RoleTest || role == sharedledger.RoleAudit) &&
+			!sharedledger.Independent(task, localNodeID()):
+			accepted, reason = false, "review/test/audit require an independent node"
 		}
 	}
 	if !agentAvailable(kind) {
