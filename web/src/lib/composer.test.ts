@@ -9,6 +9,7 @@ import {
   clearDraft,
   draftKey,
   fitComposer,
+  imeEnter,
   mentionItems,
   mentionQuery,
   readDraft,
@@ -227,6 +228,18 @@ test("APP_ACTIONS covers the six app actions and filters by their labels", () =>
   assert.deepEqual(scoreMatches("st", APP_ACTIONS).map((item) => item.action), ["stop"]);
   assert.deepEqual(scoreMatches("file", APP_ACTIONS).map((item) => item.action), ["files", "upload"]);
   assert.deepEqual(scoreMatches("zzz", APP_ACTIONS), []);
+});
+
+/* --------------------------------------------------- enter key */
+
+test("an IME keeps its Enter", () => {
+  // The composing Enter picks a candidate; only a plain Enter sends.
+  assert.equal(imeEnter({}), false);
+  assert.equal(imeEnter({ isComposing: false, keyCode: 13 }), false);
+  assert.equal(imeEnter({ isComposing: true, keyCode: 13 }), true);
+  // WebKit reports the commit as 229 after compositionend has already cleared
+  // isComposing, so the legacy code has to be enough on its own.
+  assert.equal(imeEnter({ isComposing: false, keyCode: 229 }), true);
 });
 
 /* ------------------------------------------------------- box sizing */

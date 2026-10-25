@@ -31,6 +31,7 @@ import {
   COMPOSER_MIN_ROWS,
   applyCompletion,
   fitComposer,
+  imeEnter,
   mentionItems,
   mentionQuery,
   readDraft,
@@ -602,6 +603,7 @@ export function PromptBar({
       setValue((current) => (current === text ? "" : current));
     } finally {
       setBusy(false);
+      inputRef.current?.focus();
     }
   }
 
@@ -766,6 +768,9 @@ export function PromptBar({
       }
     }
     if (event.key === "Enter" && !event.shiftKey) {
+      if (imeEnter(event.nativeEvent)) {
+        return;
+      }
       event.preventDefault();
       void send(value);
       return;
@@ -939,7 +944,6 @@ export function PromptBar({
           }
           aria-label={`Send input to ${paneId}`}
           value={raw ? "" : value}
-          disabled={busy}
           readOnly={raw}
           onChange={(event) => {
             setValue(event.target.value);
@@ -1040,6 +1044,9 @@ export function PromptBar({
             className={stopMode ? "prompt__send prompt__stop" : "prompt__send"}
             title={stopMode ? "interrupt the agent (ctrl+c)" : "send to the pane (enter)"}
             aria-label={stopMode ? "Interrupt the agent" : "Send to the pane"}
+            // Say nothing to the pointer: the tap must not blur the box, or the
+            // soft keyboard drops for the next line.
+            onPointerDown={(event) => event.preventDefault()}
             disabled={stopMode ? stopping : busy || raw || value.trim() === ""}
             onClick={() => {
               if (stopMode) {

@@ -269,6 +269,19 @@ export function clearDraft(store: DraftStore | null, paneId: string): void {
   }
 }
 
+/* ----------------------------------------------------------- key handling */
+
+/**
+ * True when an Enter belongs to an IME and not to the draft.
+ *
+ * The first Enter commits a candidate: sending there posts half a word. WebKit
+ * adds a second trap — the Enter that *ends* composition can arrive after
+ * `compositionend`, flagged only by the legacy key code 229.
+ */
+export function imeEnter(event: { isComposing?: boolean; keyCode?: number }): boolean {
+  return event.isComposing === true || event.keyCode === 229;
+}
+
 /* ------------------------------------------------------------- box sizing */
 
 /** How many lines the composer may grow to before it scrolls instead. */
