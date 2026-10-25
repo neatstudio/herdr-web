@@ -2219,7 +2219,15 @@ body::before {
     scroll-padding-right: 44px;
   }
 
+  /* Two tabs on a 390px phone overran the strip, and a tab overrun scrolls
+     behind the pinned "+" — the next tab was sheared mid-glyph, which reads as
+     a broken letter rather than as "there is more to the right". Tabs give up
+     width before the strip scrolls, so their names end in an ellipsis instead.
+     The floor keeps four tabs' worth of index and status legible; past that
+     the strip does scroll, which the left fade already announces. */
   .tab {
+    flex: 0 1 auto;
+    min-width: 5.5rem;
     max-width: 66vw;
   }
 }
