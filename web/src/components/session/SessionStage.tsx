@@ -25,10 +25,12 @@ import { TerminalLens } from "./TerminalLens";
  *     resets and the next snapshot repaints the screen, and the transcript is
  *     re-derived from that same snapshot.
  *
- * The 720px `narrow` gate that puts this stage on screen is App's, and it is
+ * The `narrow` gate that puts this stage on screen is App's, and it is
  * narrower than Ovis's 768px on purpose: herdr-web's own breakpoints already
  * switch the shell to one column at 900px and stack the tiles at 720px, so the
- * lens has to be available before the desktop mirror disappears.
+ * lens has to be available before the desktop mirror disappears. It also
+ * widens to 900px on a coarse pointer, because a landscape phone is exactly
+ * that width and needs the lens more than a mouse-driven window does.
  */
 export type SessionStageProps = {
   paneId: string;

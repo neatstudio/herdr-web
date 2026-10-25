@@ -283,9 +283,15 @@ export function App() {
     };
   }, [paneId, paneKnown]);
 
-  // Side by side needs width; below this the panes stack instead.
+  // Side by side needs width; below this the panes stack instead. A touch
+  // screen is compact up to 900px — the stylesheet folds the sidebar and grows
+  // the controls there — so the lens gate has to agree with it, or a phone held
+  // sideways (844x390) is handed the desktop tab strip, the AUTO/WRAP/EXACT/FIT
+  // bar and a ~130px terminal between them instead of a readable lens.
   useEffect(() => {
-    const query = window.matchMedia("(max-width: 720px)");
+    const query = window.matchMedia(
+      "(max-width: 720px), (pointer: coarse) and (max-width: 900px)",
+    );
     const apply = (): void => setNarrow(query.matches);
     apply();
     query.addEventListener("change", apply);

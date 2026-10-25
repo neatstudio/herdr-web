@@ -2474,6 +2474,24 @@ body::before {
   }
 }
 
+/* A phone held sideways is the shortest screen herdr-web runs on: 390px of
+   height, 128px of it masthead, session head and tab strip, 96px of composer,
+   22px of footer — the transcript got 132px. Typing mode already proves the
+   masthead can step aside without the session collapsing, so the same trade is
+   made here, permanently for this posture: the strip keeps the tab, agent and
+   state, the head keeps the workspace and the lens switch, and the masthead's
+   brand and theme controls return when the phone is turned back upright. */
+@media (pointer: coarse) and (max-height: 480px) {
+  .shell.is-narrow {
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .shell.is-narrow > .masthead,
+  .shell.is-narrow > .statusline {
+    display: none;
+  }
+}
+
 /* Narrower than any current phone, and the masthead's five items stop fitting
    at the phone gap. Tighten the row rather than drop a control from it. */
 @media (max-width: 359px) {
