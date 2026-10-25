@@ -25,7 +25,9 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       target: "es2022",
-      sourcemap: true,
+      // The bundle is a release artifact: source maps add ~2.3 MB to
+      // every embedded binary and are not served. Keep them out.
+      sourcemap: false,
     },
   };
 });
