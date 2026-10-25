@@ -360,6 +360,97 @@
   max-height: 60vh;
 }
 
+/* A changed file, as the terminal drew it: one row per source line, tinted by
+   side. The rows scroll horizontally together, so a long line never wraps into
+   the next one and the column of sigils stays a column. */
+.work__diff {
+  display: flex;
+  flex-direction: column;
+  max-height: 280px;
+  border-radius: 8px;
+  background: var(--ui-panel);
+  font-family: var(--ui-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow: hidden;
+}
+
+.work__diff-stat {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--ui-border);
+  font-size: var(--ui-meta);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Green and red, not the status hues: `--ui-done` is blue and `--ui-blocked` is
+   amber, and a diff is the one place the terminal's own ANSI colours are the
+   right vocabulary. */
+.work__diff-stat span[data-kind="add"] {
+  color: var(--ansi-2);
+}
+
+.work__diff-stat span[data-kind="del"] {
+  color: var(--ansi-1);
+}
+
+.work__diff-body {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.work__diff-line {
+  display: flex;
+  min-width: max-content;
+  color: var(--ui-dim);
+}
+
+.work__diff-sign {
+  flex: none;
+  width: 1.6em;
+  color: var(--ui-faint);
+  text-align: center;
+  user-select: none;
+}
+
+.work__diff-text {
+  flex: 1 1 auto;
+  padding-right: 12px;
+  white-space: pre;
+  tab-size: 4;
+}
+
+.work__diff-line[data-kind="add"] {
+  background: color-mix(in srgb, var(--ansi-2) 12%, transparent);
+}
+
+.work__diff-line[data-kind="add"] .work__diff-sign,
+.work__diff-line[data-kind="add"] .work__diff-text {
+  color: var(--ansi-2);
+}
+
+.work__diff-line[data-kind="del"] {
+  background: color-mix(in srgb, var(--ansi-1) 12%, transparent);
+}
+
+.work__diff-line[data-kind="del"] .work__diff-sign,
+.work__diff-line[data-kind="del"] .work__diff-text {
+  color: var(--ansi-1);
+}
+
+.work__diff-line[data-kind="hunk"] .work__diff-text {
+  color: var(--ui-faint);
+}
+
+.work__diff-gap {
+  padding-left: 1.6em;
+  color: var(--ui-faint);
+  user-select: none;
+}
+
 /* ---------------------------------------------------------------- markdown */
 
 .markdown {

@@ -2,6 +2,7 @@ import { useId, useState } from "react";
 
 import type { WorkRow } from "@/lib/conversation";
 import { countWork, formatDuration, summariseWork, totalWork } from "@/lib/chatFormat";
+import { diffLines, diffStat, looksLikeDiff, type DiffLine, type DiffLineKind } from "@/lib/diffLines";
 
 /**
  * Everything an agent did between two user messages, folded into one line.
@@ -13,8 +14,21 @@ import { countWork, formatDuration, summariseWork, totalWork } from "@/lib/chatF
  * an individual row only appears when that row itself is opened.
  *
  * There is no colour per kind. The row label carries the meaning (`Edit`,
- * `Read`, `Ran`) and the fold is quiet by design.
+ * `Read`, `Ran`) and the fold is quiet by design. The one exception is a
+ * changed file: an edit body is a diff the terminal drew, and painting it grey
+ * is what makes a six-line edit read as a wall, so it gets the two tints the
+ * TUI itself used (`see lib/diffLines.ts`).
  */
+
+/** The sigil column a diff line prints before its text. */
+const SIGN: Record<DiffLineKind, string> = {
+  add: "+",
+  del: "−",
+  context: "",
+  gap: "",
+  hunk: "",
+  plain: "",
+};
 
 const KIND_LABEL: Record<WorkRow["kind"], string> = {
   edit: "Edit",
@@ -28,6 +42,37 @@ function rowLabel(row: WorkRow): string {
   return row.title.startsWith(`${label} `) || row.title === label
     ? row.title
     : `${label} ${row.title}`;
+}
+
+/** A file edit, rendered as the diff the TUI printed. */
+function DiffBody({ lines }: { lines: readonly DiffLine[] }) {
+  const stat = diffStat(lines);
+  return (
+    <div className="work__diff">
+      {(stat.add > 0 || stat.del > 0) && (
+        <div className="work__diff-stat">
+          {stat.add > 0 && <span data-kind="add">+{stat.add}</span>}
+          {stat.del > 0 && <span data-kind="del">−{stat.del}</span>}
+        </div>
+      )}
+      <div className="work__diff-body">
+        {lines.map((line, index) =>
+          line.kind === "gap" ? (
+            <div className="work__diff-gap" key={index} aria-hidden="true">
+              ⋯
+            </div>
+          ) : (
+            <div className="work__diff-line" data-kind={line.kind} key={index}>
+              <span className="work__diff-sign" aria-hidden="true">
+                {SIGN[line.kind]}
+              </span>
+              <span className="work__diff-text">{line.text === "" ? " " : line.text}</span>
+            </div>
+          ),
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function WorkBlock({
@@ -89,6 +134,7 @@ export function WorkBlock({
           {rows.map((row, index) => {
             const hasDetail = row.detail.length > 0;
             const isOpen = openRow === index;
+            const diff = isOpen && hasDetail && looksLikeDiff(row.detail) ? diffLines(row.detail) : null;
             return (
               <div
                 className={`work__row work__row--${row.kind}`}
@@ -104,7 +150,11 @@ export function WorkBlock({
                 )}
                 {isOpen && hasDetail && (
                   <div className="work__detail">
-                    <pre className="work__detail-body">{row.detail.join("\n")}</pre>
+                    {diff === null ? (
+                      <pre className="work__detail-body">{row.detail.join("\n")}</pre>
+                    ) : (
+                      <DiffBody lines={diff} />
+                    )}
                   </div>
                 )}
               </div>
