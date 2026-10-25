@@ -10,6 +10,7 @@
 > **Phase 6 已落地（2026-10-24）**：GitHub/Gitea 仓库注册（token 仅从环境变量读取）、issue 列表（过滤 PR）、从 issue 创建共享任务；任务记录 `repo`/`issue`；测试覆盖。
 > **Phase 6b 已落地（2026-10-25）**：pull request 创建/合并 API、GitHub/Gitea webhook（HMAC 校验、issue opened 建任务、重放幂等）、任务 `pr` 关联；测试覆盖。
 > **Phase 6c 已落地（2026-10-25）**：orchestrator 对 `audit_approved` 任务自动开 PR（无 PR 时）并通过 provider 合并、attest `merged`；provider 失败释放 merge lease 供重试；测试覆盖。
+> **Phase 7 已落地（2026-10-25）**：SSE pane 流（每 pane 单 poller、snapshot/delta/reset、心跳、慢客户端重置）、fleet peer 同源代理 `/api/v1/remote/<host>/...`（白名单、SSE/WS 不缓冲）、PR merged webhook 回写 `merged`、`dev_done` 自动开 PR；测试覆盖。
 > 上位约束：[SPECS](../SPECS.md) 的不变量与安全边界仍然有效；本规格只扩展“任务状态与入口”，不改变“仅本人受控设备”的前提。
 > 本文的目标是防止跑偏：先定契约，再写代码；每个阶段都有可执行验收。
 
