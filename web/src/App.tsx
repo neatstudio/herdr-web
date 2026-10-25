@@ -565,6 +565,7 @@ export function App() {
             <PromptBar
               key={`prompt-${activePane.id}`}
               paneId={activePane.id}
+              panes={panes}
               onAction={handleComposerAction}
             />
           )}

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  fetchAllPanes,
   fetchWorkspaces,
   quotePath,
   sendPaneKeys,
@@ -45,8 +44,6 @@ const HISTORY_MAX = 50;
 const TYPE_LIMIT = 400;
 /** The box grows to this many lines, then scrolls. */
 const MAX_ROWS = 8;
-/** How often pane status is re-read, and only while the tab is visible. */
-const STATUS_POLL_MS = 5000;
 /** A keyboard may cover at most this share of the viewport before lifting stops. */
 const LIFT_MAX_RATIO = 0.6;
 
@@ -118,9 +115,17 @@ function draftStore(): DraftStore | null {
  */
 export function PromptBar({
   paneId,
+  panes,
   onAction,
 }: {
   paneId: string;
+  /**
+   * The fleet as the app last polled it. The composer reads one pane's status
+   * from here instead of polling the fleet a second time: a phone should not
+   * pay two requests per interval to learn the same thing, and the app's poll
+   * is the fresher of the two anyway.
+   */
+  panes: HerdrPane[];
   onAction?: (action: ComposerAction) => void;
 }) {
   const [store] = useState<DraftStore | null>(draftStore);
@@ -132,7 +137,6 @@ export function PromptBar({
   const [active, setActive] = useState(0);
   const [busy, setBusy] = useState(false);
   const [raw, setRaw] = useState(false);
-  const [panes, setPanes] = useState<HerdrPane[]>([]);
   const [workspaces, setWorkspaces] = useState<HerdrWorkspace[] | null>(null);
   const [uploaded, setUploaded] = useState<string[]>([]);
   const [stopping, setStopping] = useState(false);
@@ -403,30 +407,6 @@ export function PromptBar({
       setRestored(false);
     }
   }, [value]);
-
-  // Whether the pane is working decides which keys the composer owns. The app
-  // polls the fleet on its own; this poll is the composer's view of one pane,
-  // and it costs nothing while the tab is hidden.
-  useEffect(() => {
-    let alive = true;
-    async function refresh(): Promise<void> {
-      if (document.visibilityState !== "visible") {
-        return;
-      }
-      const next = await fetchAllPanes();
-      if (alive && next !== null) {
-        setPanes(next);
-      }
-    }
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), STATUS_POLL_MS);
-    document.addEventListener("visibilitychange", refresh);
-    return () => {
-      alive = false;
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", refresh);
-    };
-  }, []);
 
   // Workspaces are only needed once a mention menu is open; fetch them then.
   const paletteKind = menu === null ? null : menu.kind;
