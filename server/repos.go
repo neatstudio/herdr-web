@@ -18,14 +18,15 @@ import (
 // turn into tasks. The token is never stored: TokenEnv names an environment
 // variable the process already has.
 type Repo struct {
-	ID            string `json:"id"`
-	Provider      string `json:"provider"` // github | gitea
-	BaseURL       string `json:"baseUrl"`
-	Owner         string `json:"owner"`
-	Name          string `json:"name"`
-	DefaultBranch string `json:"defaultBranch"`
-	Checkout      string `json:"checkout"`
-	TokenEnv      string `json:"tokenEnv"`
+	ID               string `json:"id"`
+	Provider         string `json:"provider"` // github | gitea
+	BaseURL          string `json:"baseUrl"`
+	Owner            string `json:"owner"`
+	Name             string `json:"name"`
+	DefaultBranch    string `json:"defaultBranch"`
+	Checkout         string `json:"checkout"`
+	TokenEnv         string `json:"tokenEnv"`
+	WebhookSecretEnv string `json:"webhookSecretEnv"`
 }
 
 type repoRegistry struct {
@@ -141,6 +142,7 @@ func normalizeRepo(repo Repo) (Repo, error) {
 	repo.DefaultBranch = strings.TrimSpace(repo.DefaultBranch)
 	repo.Checkout = strings.TrimSpace(repo.Checkout)
 	repo.TokenEnv = strings.TrimSpace(repo.TokenEnv)
+	repo.WebhookSecretEnv = strings.TrimSpace(repo.WebhookSecretEnv)
 	if repo.Provider != "github" && repo.Provider != "gitea" {
 		return Repo{}, errors.New("provider must be github or gitea")
 	}
@@ -159,6 +161,13 @@ func normalizeRepo(repo Repo) (Repo, error) {
 			repo.TokenEnv = "GITHUB_TOKEN"
 		} else {
 			repo.TokenEnv = "GITEA_TOKEN"
+		}
+	}
+	if repo.WebhookSecretEnv == "" {
+		if repo.Provider == "github" {
+			repo.WebhookSecretEnv = "GITHUB_WEBHOOK_SECRET"
+		} else {
+			repo.WebhookSecretEnv = "GITEA_WEBHOOK_SECRET"
 		}
 	}
 	if repo.DefaultBranch == "" {

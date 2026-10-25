@@ -821,6 +821,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/v1/ledger/tasks/", s.handleLedgerTaskAction)
 	mux.HandleFunc("/api/v1/repos", s.handleRepos)
 	mux.HandleFunc("/api/v1/repos/", s.handleRepoAction)
+	mux.HandleFunc("/api/v1/webhooks/", s.handleWebhook)
 
 	mux.HandleFunc("/api/v1/herdr/workspaces", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
