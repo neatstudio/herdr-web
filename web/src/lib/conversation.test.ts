@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { deriveConversation } from "./conversation.ts";
+import { deriveConversation, statusWord } from "./conversation.ts";
 
 /* ------------------------------------------------------------------ ansi */
 
@@ -401,4 +401,19 @@ test("a unicode border and a diff gutter are box body too", () => {
   );
   assert.equal(conversation.turns.filter((turn) => turn.user !== null).length, 0);
   assert.equal(conversation.turns[0].work[0].detail.length, 3);
+});
+
+/* ---------------------------------------------------------------- status */
+
+test("a blocked agent is called blocked, not running", () => {
+  // "running" next to a parked prompt reads as a stall that never ends.
+  assert.equal(statusWord("blocked"), "blocked");
+  assert.equal(statusWord("working"), "running");
+  assert.equal(statusWord("idle"), "idle");
+  assert.equal(statusWord("done"), "done");
+});
+
+test("a status nobody reported is called unknown", () => {
+  assert.equal(statusWord(null), "unknown");
+  assert.equal(statusWord(""), "unknown");
 });

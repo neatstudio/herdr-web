@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-import type { ChatTurn } from "@/lib/conversation";
+import { statusWord, type ChatTurn } from "@/lib/conversation";
 import { Markdown } from "./Markdown";
 import { WorkBlock } from "./WorkBlock";
 
@@ -34,6 +34,9 @@ function clock(at: number): string {
   return `${hours}:${minutes}`;
 }
 
+/** How long the copy button says "copied" before it goes back to being a button. */
+const COPY_ACK_MS = 1500;
+
 function turnText(turn: ChatTurn): string {
   const parts: string[] = [];
   if (turn.user !== null) {
@@ -53,6 +56,16 @@ export function TurnList({ turns, status, at, truncated, seconds }: TurnListProp
   const lastIndex = turns.length - 1;
   const stamp = clock(at);
   const live = status ?? "unknown";
+  const label = statusWord(status);
+
+  // "copied" is an answer to one click, not a state the button should keep.
+  useEffect(() => {
+    if (copied === null) {
+      return;
+    }
+    const timer = setTimeout(() => setCopied(null), COPY_ACK_MS);
+    return () => clearTimeout(timer);
+  }, [copied]);
 
   const copy = (turn: ChatTurn) => {
     const text = turnText(turn);
@@ -97,13 +110,15 @@ export function TurnList({ turns, status, at, truncated, seconds }: TurnListProp
             {isLast && (
               <div className="chat__meta" data-status={live}>
                 <span className="chat__live" data-status={live} aria-hidden="true" />
-                <span>{active ? "running" : live}</span>
+                <span>{label}</span>
                 {stamp !== "" && <span>{stamp}</span>}
-                {isLast && (
-                  <button type="button" onClick={() => copy(turn)}>
-                    {copied === turn.id ? "copied" : "copy"}
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => copy(turn)}
+                  aria-label={`copy this turn as text`}
+                >
+                  {copied === turn.id ? "copied" : "copy"}
+                </button>
                 {truncated && <span>earlier lines dropped</span>}
               </div>
             )}

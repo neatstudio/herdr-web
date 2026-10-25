@@ -1077,6 +1077,23 @@ function plainConversation(text: string): Conversation {
  * Never throws: a snapshot it cannot read degrades to the stripped text as a
  * single answer, because losing structure is better than losing the words.
  */
+/**
+ * The word beside the dot on the live turn.
+ *
+ * herdr reports the agent's state; the transcript shows it. Only one word needs
+ * translating: a blocked agent is not working, it is waiting for the operator,
+ * and calling that "running" reads as a stall that will never end.
+ */
+export function statusWord(status: string | null): string {
+  if (status === null || status === "") {
+    return "unknown";
+  }
+  if (status === "blocked") {
+    return "blocked";
+  }
+  return status === "working" ? "running" : status;
+}
+
 export function deriveConversation(text: string): Conversation {
   if (text === "") {
     return { turns: [], lines: 0 };
