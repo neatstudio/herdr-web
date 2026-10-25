@@ -509,6 +509,9 @@ func selfFetchText(ctx context.Context, url string) (string, error) {
 			return "", err
 		}
 		request.Header.Set("User-Agent", "herdr-web")
+		if strings.Contains(url, "/api/v1/herdr-web/release") || strings.Contains(url, "/release/") {
+			addConsoleToken(request)
+		}
 		response, err := selfClient.Do(request)
 		if err != nil {
 			last = &selfFetchError{url: url, err: err}
@@ -556,6 +559,9 @@ func selfDownload(ctx context.Context, url string, dest io.Writer) error {
 			return err
 		}
 		request.Header.Set("User-Agent", "herdr-web")
+		if strings.Contains(url, "/api/v1/herdr-web/release") || strings.Contains(url, "/release/") {
+			addConsoleToken(request)
+		}
 		response, err := selfClient.Do(request)
 		if err != nil {
 			last = &selfFetchError{url: url, err: err}

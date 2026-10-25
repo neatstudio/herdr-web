@@ -206,6 +206,7 @@ func discoverTailnetPeers(ctx context.Context) []selfCandidate {
 			if err != nil {
 				return
 			}
+			addConsoleToken(request)
 			response, err := selfClient.Do(request)
 			if err != nil {
 				return

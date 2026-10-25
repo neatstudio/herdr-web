@@ -70,28 +70,53 @@ func NewNATS(url, bucket, stream string) (*NATS, error) {
 		conn.Close()
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// A three-node cluster elects a JetStream metadata leader and creates the
+	// stream with three replicas. A console that starts during that window used
+	// to exit after ten seconds and restart in a loop; retry until the cluster
+	// can serve the request.
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	if _, err := js.Stream(ctx, stream); err != nil {
-		if _, err := js.CreateStream(ctx, jetstream.StreamConfig{
-			Name:      stream,
-			Subjects:  []string{"task.>"},
-			Retention: jetstream.LimitsPolicy,
-			Storage:   jetstream.FileStorage,
-			MaxAge:    30 * 24 * time.Hour,
-			Replicas:  replicas,
-		}); err != nil {
-			conn.Close()
-			return nil, err
-		}
+	streamConfig := jetstream.StreamConfig{
+		Name:      stream,
+		Subjects:  []string{"task.>"},
+		Retention: jetstream.LimitsPolicy,
+		Storage:   jetstream.FileStorage,
+		MaxAge:    30 * 24 * time.Hour,
+		Replicas:  replicas,
 	}
-	kv, err := js.KeyValue(ctx, bucket)
-	if err != nil {
-		kv, err = js.CreateKeyValue(ctx, jetstream.KeyValueConfig{Bucket: bucket, History: 10, Replicas: replicas})
-		if err != nil {
-			conn.Close()
-			return nil, err
+	for {
+		current, err := js.Stream(ctx, stream)
+		if err == nil {
+			if current.CachedInfo().Config.Replicas < replicas {
+				_, _ = js.UpdateStream(ctx, streamConfig)
+			}
+			break
 		}
+		if _, err := js.CreateStream(ctx, streamConfig); err == nil {
+			break
+		}
+		if ctx.Err() != nil {
+			conn.Close()
+			return nil, ctx.Err()
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	var kv jetstream.KeyValue
+	for {
+		var err error
+		kv, err = js.KeyValue(ctx, bucket)
+		if err == nil {
+			break
+		}
+		kv, err = js.CreateKeyValue(ctx, jetstream.KeyValueConfig{Bucket: bucket, History: 10, Replicas: replicas})
+		if err == nil {
+			break
+		}
+		if ctx.Err() != nil {
+			conn.Close()
+			return nil, ctx.Err()
+		}
+		time.Sleep(500 * time.Millisecond)
 	}
 	return &NATS{conn: conn, js: js, kv: kv, stream: stream}, nil
 }
