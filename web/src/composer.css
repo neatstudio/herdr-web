@@ -14,7 +14,9 @@
   flex: none;
   /* A phone has a home indicator over the bottom edge; the bar pads for it. */
   padding-bottom: max(8px, env(safe-area-inset-bottom));
-  background: var(--ui-panel, var(--surface));
+  /* Half a step up from the panel: the bar reads as the surface text lands on
+     without turning into a floating card. The phone rules below do the card. */
+  background: color-mix(in srgb, var(--ui-panel, var(--surface)) 55%, var(--ui-elev, var(--raised)));
 }
 
 /* ---------------------------------------------------------------- palettes */
@@ -307,15 +309,52 @@
      full-width rule cutting the screen in half. */
   .prompt {
     margin: 0 8px max(8px, env(safe-area-inset-bottom));
-    padding: 8px 12px;
-    /* The card's own boundary says where the message begins, so the leading
-       chevron is dropped: alone on a card it reads as a stray mark, and the
-       text moves left to give the thumb row more of the width. */
-    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 12px 12px 10px;
+    /* Two rows: the draft gets the full width of the card, and the controls get
+       a row of their own under it — a 36px circle wedged beside a five-line
+       message shrinks the text and drifts out of thumb reach. The card's own
+       boundary says where the message begins, so the leading chevron is
+       dropped: alone on a card it reads as a stray mark. */
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "files"
+      "note"
+      "input"
+      "actions";
+    row-gap: 4px;
     border: var(--rule-w) solid var(--ui-border, var(--rule));
     border-radius: 22px;
     background: var(--ui-elev, var(--raised));
     box-shadow: 0 8px 24px rgb(0 0 0 / 0.08);
+    transition: border-color 0.12s ease-out, box-shadow 0.12s ease-out;
+  }
+
+  /* Focus is a soft accent edge, not a second border: the card is one surface
+     and a heavier outline around it would fight the sheet behind. */
+  .prompt:focus-within {
+    border-color: color-mix(in srgb, var(--ui-accent, var(--accent)) 40%, var(--ui-border, var(--rule)));
+    box-shadow:
+      0 8px 24px rgb(0 0 0 / 0.12),
+      0 0 0 3px color-mix(in srgb, var(--ui-accent, var(--accent)) 10%, transparent);
+  }
+
+  .prompt__files {
+    grid-area: files;
+  }
+
+  .prompt__problem {
+    grid-area: note;
+  }
+
+  .prompt__input {
+    grid-area: input;
+    padding: 0 2px;
+  }
+
+  .prompt__actions {
+    grid-area: actions;
+    justify-content: space-between;
+    gap: 8px;
   }
 
   .prompt__glyph {

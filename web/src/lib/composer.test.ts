@@ -248,21 +248,35 @@ test("an empty composer is exactly one line tall, never shorter", () => {
 
 test("the composer grows with its lines and only scrolls past the cap", () => {
   assert.deepEqual(fit(36), { height: 37, scrolls: false });
-  assert.deepEqual(fit(Math.ceil(LINE * 3 + PAD)), { height: Math.ceil(LINE * 3 + PAD), scrolls: false });
-  const cap = Math.ceil(LINE * COMPOSER_MAX_ROWS + PAD);
-  assert.deepEqual(fit(cap), { height: cap, scrolls: false });
+  const three = Math.ceil(LINE * 3 + PAD);
+  assert.deepEqual(fit(three), { height: three, scrolls: false });
+  const cap = PAD + LINE * COMPOSER_MAX_ROWS;
+  assert.deepEqual(fit(cap), { height: Math.ceil(cap), scrolls: false });
   assert.deepEqual(fit(cap + 1), { height: cap, scrolls: true });
 });
 
-test("a short viewport caps the box before the row limit does", () => {
+test("a short viewport caps the box before the row limit does, at a whole line", () => {
   const viewport = 300;
-  const byViewport = Math.ceil(viewport * COMPOSER_VIEWPORT_SHARE);
+  const byViewport = viewport * COMPOSER_VIEWPORT_SHARE;
   assert.ok(byViewport < LINE * COMPOSER_MAX_ROWS + PAD);
-  assert.deepEqual(fitComposer({ content: 10_000, line: LINE, padding: PAD, viewport, maxRows: COMPOSER_MAX_ROWS }), {
-    height: byViewport,
-    scrolls: true,
-  });
-  assert.equal(fit(10_000, viewport).height, byViewport);
+  const fitted = fitComposer({ content: 10_000, line: LINE, padding: PAD, viewport, maxRows: COMPOSER_MAX_ROWS });
+  assert.equal(fitted.scrolls, true);
+  assert.ok(fitted.height <= byViewport);
+  assert.ok(Math.abs((fitted.height - PAD) % LINE) < 1e-6);
+});
+
+test("a box that scrolls is a whole number of lines tall, so no line is cut", () => {
+  // The bug this guards: a box scrolled to its last line stops at
+  // `content - height`. Unless that is a whole number of line boxes the draft
+  // shows a half-glyph slice along the top edge instead of a clean cut.
+  for (const content of [LINE * 9 + PAD, LINE * 20 + PAD, LINE * 120 + PAD]) {
+    const fitted = fit(content);
+    assert.equal(fitted.scrolls, true);
+    assert.ok(Math.abs((fitted.height - PAD) % LINE) < 1e-6, `height ${fitted.height}`);
+    // Setup: the scroll offset the browser will settle on is whole lines too.
+    const offset = Math.max(0, content - fitted.height);
+    assert.ok(Math.abs(offset % LINE) < 1e-6, `content ${content}`);
+  }
 });
 
 test("a viewport smaller than one line still keeps the box one line tall", () => {

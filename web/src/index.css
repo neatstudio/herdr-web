@@ -1252,17 +1252,31 @@ body::before {
 .prompt {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: end;
+  /* The text starts at the top of the bar and the actions sit on the last line.
+     Anchored to the bottom instead, a tall draft leaves the chevron and the
+     control row floating beside a block of empty space. */
+  align-items: start;
   gap: 10px;
-  padding: 8px var(--pad);
+  padding: 12px var(--pad) 11px;
   border-top: var(--rule-w) solid var(--rule-strong);
   background: var(--surface);
+  transition: border-color 0.12s ease-out;
+}
+
+/* Focus shows on the rule the bar already has: a ring around half the console
+   to say "you can type here now" is louder than the one line of state needs. */
+.prompt:focus-within {
+  border-top-color: color-mix(in srgb, var(--accent) 60%, var(--rule-strong));
 }
 
 .prompt__glyph {
+  align-self: start;
+  /* One line of the input is 1.4em of 12.5px body text; the chevron is a 13px
+     label glyph, so a nudge down is what puts the two on the same line. */
+  padding-top: 2px;
   font-family: var(--font-label);
   font-size: 13px;
-  color: var(--accent);
+  color: color-mix(in srgb, var(--accent) 78%, var(--ink-faint));
   user-select: none;
 }
 
@@ -1275,8 +1289,15 @@ body::before {
      the last line reaching the edge already says the box is full. */
   resize: none;
   overflow-y: hidden;
+  /* No scrollbar on any engine: at the row cap the box scrolls, and the cut on
+     a whole line already says more text is there. */
   scrollbar-width: none;
-  padding: 7px 0;
+  -ms-overflow-style: none;
+  caret-color: var(--accent);
+  /* No vertical padding of its own: the bar's padding stays put while the text
+     scrolls, so a row-quantised height means the cut at the top edge lands
+     between lines instead of through one. */
+  padding: 0;
   background: none;
   border: 0;
   outline: none;
@@ -1288,6 +1309,7 @@ body::before {
 }
 
 .prompt__input::-webkit-scrollbar {
+  display: none;
   width: 0;
   height: 0;
 }
@@ -1330,6 +1352,7 @@ body::before {
 .prompt__actions {
   display: flex;
   align-items: center;
+  align-self: end;
   gap: 10px;
 }
 

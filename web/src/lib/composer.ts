@@ -302,20 +302,35 @@ export type ComposerFit = { height: number; scrolls: boolean };
  * Size the composer to its text: one line when empty, eight lines at most, then
  * the box stops growing and the text scrolls instead.
  *
- * The rounding matters more than it looks. `scrollHeight` is an integer while
- * `line-height` is not (16px × 1.4 = 22.4px), so a box set to the measured
- * height can still be a fraction short — and a textarea that is even one pixel
- * short of its content grows a native scrollbar over what looks like an empty
- * box. Rounding up and never going below one line + padding keeps it exact.
+ * Two roundings matter more than they look.
+ *
+ * Upwards, never short: `scrollHeight` is an integer while `line-height` is not
+ * (16px × 1.4 = 22.4px), so a box set to the measured height can still be a
+ * fraction short, and a textarea one pixel short of its content grows a native
+ * scrollbar over what looks like an empty box.
+ *
+ * Down to whole lines, at the cap: a box scrolled to the last line sits at
+ * `content - height`, so unless that difference is a whole number of line boxes
+ * the box stops mid-glyph — the half-line slice at the top of a long draft is
+ * the same defect as the stray scrollbar, seen from the other end. `line` is
+ * fractional and CSS accepts it, so the cap keeps the fraction instead of
+ * rounding it away.
  */
 export function fitComposer(metrics: ComposerMetrics): ComposerFit {
   const oneLine = metrics.line + metrics.padding;
   const byRows = metrics.line * metrics.maxRows + metrics.padding;
   const byViewport = metrics.viewport * COMPOSER_VIEWPORT_SHARE;
-  const cap = Math.max(oneLine, Math.min(byRows, byViewport));
+  const room = Math.max(oneLine, Math.min(byRows, byViewport));
+  // One line is always allowed, even in a viewport too short for it.
+  const rows = Math.max(1, Math.floor((room - metrics.padding) / metrics.line + 1e-6));
+  const cap = metrics.padding + rows * metrics.line;
   const wanted = Math.max(metrics.content, oneLine);
-  const height = Math.ceil(Math.min(wanted, cap));
-  return { height, scrolls: wanted > height + 0.5 };
+  const scrolls = wanted > cap + 0.5;
+  // At the cap the height stays a whole number of lines: no half line at either
+  // edge. Below it the box is its own content, rounded up. A viewport too short
+  // to hold even two lines gets one whole line and scrolls the rest.
+  const height = !scrolls ? Math.ceil(wanted) : rows > 1 ? cap : Math.ceil(oneLine);
+  return { height, scrolls };
 }
 
 /* -------------------------------------------------------------- actions */
