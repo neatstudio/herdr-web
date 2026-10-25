@@ -8,6 +8,7 @@
 > **Phase 5b 已落地（2026-10-24）**：job/dispatch 增加 `role`（dev/review/test/audit/merge），offer 检查共享任务是否到达该角色；本地 ledger 记录角色；review 角色端到端测试通过。
 > **Phase 5c 已落地（2026-10-24）**：orchestrator 每 10s 从共享账本自动启动下一角色（dev_done→review→test→audit→merge），`HERDR_WEB_ORCHESTRATOR=off` 可关闭；offer 增加独立节点检查；测试通过。
 > **Phase 6 已落地（2026-10-24）**：GitHub/Gitea 仓库注册（token 仅从环境变量读取）、issue 列表（过滤 PR）、从 issue 创建共享任务；任务记录 `repo`/`issue`；测试覆盖。
+> **Phase 6b 已落地（2026-10-25）**：pull request 创建/合并 API、GitHub/Gitea webhook（HMAC 校验、issue opened 建任务、重放幂等）、任务 `pr` 关联；测试覆盖。
 > 上位约束：[SPECS](../SPECS.md) 的不变量与安全边界仍然有效；本规格只扩展“任务状态与入口”，不改变“仅本人受控设备”的前提。
 > 本文的目标是防止跑偏：先定契约，再写代码；每个阶段都有可执行验收。
 
