@@ -129,6 +129,7 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 
 | `7cb89b9` | 平板竖着也不该掉进手机框：`compactFrame` 原来只看宽度，于是 iPad 竖放（744×1133、820×1180、768×1024）落进透镜、横放却拿到桌面舞台——转一下屏整个控制台重建。宽度本来就说不清这件事：手机之所以是手机看的是短边，而短边不随摆放改变。判据改成「宽度 ≤720」，否则「粗指针且短边 ≤500」；500 落在横放手机（≤480）与 iPad mini 短边（744）之间，`TOUCH_WIDTH`（900）整条删掉。900px 的 CSS 折叠不动：平板现在留着舞台，折掉它的侧栏在这个宽度上本来就对。测试钉住手机/平板分界，并断言六种摆放里 `f(w,h) === f(h,w)`。实测 820×1180 / 744×1133 触摸：8 格 205px/186px 的 tile、草稿 70px、页脚 26px、溢出 0/0；390×844、320×568、844×390、932×430 与 1280×800、1024×768 逐位不变 |
 | `4bfd5f1` | 触屏 tile 上的 AUTO/WRAP/EXACT/FIT 被切成半截：它是四列等分的 grid，可 grid 项不会缩到自身 min-content 以下，格子于是被四个词撑成 223px，而 8 格 tab 在 744px 平板上给每格 186px——最后一个词 `FI` 被 tile 的 `overflow: hidden` 剪掉，820px 平板剪掉 18px、1024px 剪掉 11px。它还在读 `--step-fine`，这个 token 样式表从头到尾没定义过，字号于是继承祖先（约 15px）。格子改 `minmax(44px, 1fr)`（每格仍是一指宽，四格均分 tile），字改 `--step-label`、内边距 4px+`min-width: 0`，最宽的词 EXACT（41px）正好装进最窄的格（46px）。实测 744/820/1024 的末格右沿刚好落在 tile 右沿、溢出 0、格宽 47–53px；鼠标桌面的浮层条仍是 [183,20]、格宽 46/45/53/38 一点没动 |
+| `b013330` | 细字一直在假装自己存在：`--step-fine` 被 20 处声明引用（面板、弹窗、任务板、peek 预览），却在两个仓库里都没有定义过（`git log -S` 查空），声明全部落到 computed-value 阶段失效、字号继承正文 12.5px——面板因此只剩颜色一层层级。在 `:root` 定成 11px（标签 10.5 < 细字 11 < 正文 12.5）。连带两件：`.newws__submit` 高度是 padding + 行盒，细字一缩手机上 44→42px，coarse 下钉 `min-height: 44px`（桌面仍 30px，副产品是弹窗里的 create 在粗指针下 32→44px）；任务板条目的那行 prompt 是唯一识别信息，留在正文 12.5px，其余元信息才用细字。390×844/844×390/1440×900 明暗实测 20 处全 11px/17.6，旧 tmux、peek、dispatch 条目、commits、collect 这批原本量不到的补 fixture 后也一致 |
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
 `resolveLens` 的三例）；
@@ -418,6 +419,46 @@ AUTO/WRAP/EXACT/FIT 是个四列等分的分段控件，在粗指针下高 45px�
 
 `/tmp/probe-renderbar.mjs` 打印每格的 `w/scroll/right` 与「末格 right − tile right」；
 改后三档粗指针全是 0，两档鼠标仍是 −14。
+
+### 4.5 一个不存在的 token 撑了很多年（`b013330`）
+
+`--step-fine` 在 `web/src/` 里被 20 处声明引用：`/` 菜单的快捷键、弹窗字段说明、
+task board 的 id 与元信息、collect 命令、peek 预览的 `<pre>`。它没有定义。CSS 自定义
+属性在 computed-value 阶段才替换，未定义就整条 `font-size` 失效，字号于是一路继承到
+正文的 12.5px——这些“小字”和正文一样大，面板里的层级只剩颜色和字重。
+
+这不是某一处的笔误：`--step-micro: 9.5px`、`--step-label: 10.5px`、
+`--step-body: 12.5px` 都在，中间这个位置空着，`git log -S"--step-fine:"` 在 herdr-web
+与隔壁 tmux 仓库都是空结果——它从来没有过值，所以也没有“原来的值”可恢复。
+
+定成 11px 而不是别的数：它要落在 label 之上、body 之下（10.5 / 11 / 12.5），
+panel 才从“两档”变“三档”；而 `.hostpanel__body button` 已经在用 `--step-micro`，
+不该被这轮改动带歪。
+
+| 站点 | 改前 | 改后 |
+| --- | --- | --- |
+| `.newws__field` 字段说明 | 12.5px | 11px，盒高 92 不变 |
+| `.hostpanel__fleet-head` / fleet 行 | 12.5px | 11px，行高 20 → 18 |
+| `.dispatch__targets label` | 12.5px | 11px，19px |
+| `.hostpanel__legacy` / peek `<pre>` | 12.5px | 11px（补 tmux fixture 后才量到） |
+| `.dispatch__entry header` / `li` / `pre` / commits / collect | 12.5px | 11px（补 dispatch fixture 后才量到） |
+| `.newws__submit` | 12.5px，手机 44px | 11px，手机被压到 42 → 钉回 44 |
+
+`--step-fine` 变小会让靠行盒撑高的按钮缩水：`.newws__submit` 是
+`padding: 6px` + 11px 行盒 ⇒ 42px，低于拇指下限。修法不是把 padding 加胖
+（那会让桌面也变厚），而是在 `(pointer: coarse)` 下钉 `min-height: 44px`，
+桌面仍是 30px。弹窗里的 create 按钮顺带从 32 变 44（它原本就只在触屏上有这个机会）。
+
+只有一处故意不跟：任务板条目的 `.dispatch__prompt`。它是“这条任务是什么”的唯一
+一行，11px 会把任务板读成一片元信息，所以它留在 `--step-body` 12.5px——板子因此
+读作“一行活 + 一块事实 + 一个状态”。
+
+探针补了两种 fixture 才覆盖到最后 6 处：`GET /api/v1/herdr/tmux`（会话列表，使其
+渲染 legacy 折叠）+ `/tmux/output`（`{output}` 字段，点 `[data-peek]` 才画出 `<pre>`）；
+以及 `GET /api/v1/fleet/jobs` 里带一条 `dispatches`（含 `commits`/`changed`/`output`/
+`checkoutPath`/`diffReady` 与一个 stopped job），并把 `<details>` 全部展开后截图。
+截图 `fine-{phone390,land844,desk1440,desk1440l}-{host,fleet,newws}.png`，另加
+`-board` / `-legacy` 两张滚到底的尾部；`test:unit` 324 例全过。
 
 ## 5. 给服务端的一页需求（若要继续逼近 Ovis）
 
