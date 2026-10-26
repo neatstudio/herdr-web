@@ -154,6 +154,7 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `c4b8254` | 六条回答的菜单是 1169px 芯片挤在 390px 行里，第三颗被屏幕边缘切在字中间，读起来像一个坏掉的盒子而不是「还有」；同一行的目标也不到 44px——`padding: 6px 12px 2px` 把芯片的命中裙摆裁成 40px，手指落在芯片下沿按到的是底下的 esc，而芯片自己 1px 描边让 `inset: -6px` 只够到 42px（实测 346→388.5）、键条又从下面探上来 4px 裙摆吃掉剩下那点。行改成 `padding: 6px 12px`（6+32+6=44）、裙摆 `calc(-6px - var(--rule-w))` 精确贴到行边（346→390）、行 `position: relative; z-index: 1` 赢下边界；边缘按有无内容淡出（右 34px、左 20px，`mask-image`），滚到端点即收；`scroll-padding-inline: 12px` 让吸附不吞掉首颗的 12px 留白，静止时 `scrollLeft 0`、不点左淡出；`ResizeObserver` 同时盯行与每颗芯片（行盒不变而菜单变宽的情形）。代价是轨道多付 4px：390×844 无键盘 515、kb=336 时 309、320×568 kb=260 时 109px，仍够两行事实。新增 `web/tests/pick-row.spec.ts` 四例 |
 | `a264c84` | 键盘一弹，头一藏，唯一能换镜头的开关也跟着走了——偏偏拇指最想换镜头的时候就是打字打到一半、正看着一份读不懂的 TUI 的时候。放回头里就是 34px：320×568 加 336px 键盘只剩 197px 轨道的一半左右，所以头不改 DOM 位置、改成脱离文档流浮在 tab 条上：36px 高、透明、`pointer-events: none`，只有 `.stage__lenswrap`收 `auto`，底下的 tab 照样能划；条在尾端留出 96px+内边距给开关，钉住的 `+` 让位（37px 的条里 96+44 再加间隙是 160px，320px 宽只塞得下一个 44px 控件，打字时有用的是开关），关掉键盘 `+` 立刻回来；开关的裙摆长到 34px，正好填满条的内带、碰不到下面的转录和终端镜头的查找钮；点一下换镜头不 blur，键盘和光标原位不动。只在 `(pointer: coarse) and (min-height: 500px)` 里成立：`.stage--lens` 本来就只在 ≤720px 的帧出现，横屏手机（<500px）照旧藏头。新增 `web/tests/lens-typing.spec.ts` 五例 |
 | `f6adf48` | 320×568 配 260px 键盘再打一份五行草稿，键条底部 11px 被草稿卡盖住：舞台只剩 ~300px（37 条 + 44 回答行 + 44 键行 + 最高 120px 的草稿卡），唯一能让的是轨道，而轨道的**内边距本身也在地板里**——`.chat__lane` 上下 20/28px 共 48px，48+44+44=136 的硬地板撞上舞台只剩 125px 的行，溢出 11px（实测 `keys.bottom` 173 vs `prompt.top` 162.5），`.lens` 的 `overflow: hidden` 正好把它裁在草稿卡边上。改的是空气不是转录：`html.has-keyboard` 下轨道上下各 8px（地板 16），键盘一收立刻回 20/28；实测 320 变成 37..74 / 74..118 / 118..162 / 162..300 首尾相接，120px 的草稿卡仍 `overflow-y: auto` 能滚到第 6 行，390×844 kb=336 逐项未动。**先修的是量尺**：老用例只手设 `--kb-inset`，`visualViewport.height` 还是整窗，`fitComposer` 的 40% 上限就按 568 算成 227px（8 行），量出来的溢出比真机更狠、也永远量不准真机；改成只谎报 visual viewport 高度并派发 `resize`，让 `PromptBar` 自己发布 inset 与 class。新增第六例钉住夹击（`keys.bottom <= prompt.top`、三行首尾相接、草稿卡 ≤120px 且滚动、轨道 padding 8/8、收键盘回 20），把修复撤掉该例以 11px 溢出失败 |
+| `059ba3c` | 横过来打字时，换镜头的开关跟着头一起没了：`(pointer: coarse) and (max-height: 499px)` 把头整行藏掉（4.20），键条用它换来的那 44px 里没有开关的位置——而这块屏**默认就是终端镜头**（宽而粗指针的帧默认 `terminal`），于是「想读成转录」这个动作在打字时彻底不可达。开关改在 `.lens` 里脱离文档流，落在键条居中之后空出来的右翼：844×390 配 210px 键盘实测 `lens` 844×106、`head` 与 `.lens__switch` 都是 0×0，pill `735,69` 99×28（行 `y62 h44`，末键右沿 564，剩下 171px 空档），`document.elementFromPoint(839, 101)` 命中 `button.flip__opt`、往左 1px 命中 `div.keys`，**高度代价 0px**；568×320 配 160px 键盘 pill 落在 `459,49`。门是粗指针 + `max-height: 499` + `min-width: 560` + `has-keyboard` + `:has(.keys)`，桌面/竖屏/没有待选菜单的聊天镜头一概不画。26px 的面上用 `::after` 撑到 38px，`pointerdown` 取消掉，点它不 blur、键盘不掉、光标不动。**回归是测试自己抓到的**：`keymenu-space` 的横屏例点不动 `hide`——`<button class="flip__opt" aria-pressed="true" title="the session's real terminal">term</button> … intercepts pointer events`。键菜单展开时它自己就是那一行，`hide` 正好在同一条右翼上，于是加 `:not(:has(.keymenu__panel))`：面板一开 pill 让位，收起即回。新增 `web/tests/lens-flip.spec.ts` 六例 |
 
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
@@ -1357,3 +1358,71 @@ window.visualViewport.dispatchEvent(new Event("resize"));
 只留 20px 以上且 `padding` 读出来是 8/8，最后收键盘断言 padding 回到 20。把 chat.css 那条
 规则临时撤掉重跑，该例以 `Expected: <= 162.5, Received: 173` 失败——失败信息就是那 11px。
 六例全绿用时 9.2s，`tsc --noEmit` 干净。
+
+### 4.28 横过来打字，开关得自己在键条的空档里（`059ba3c`）
+
+4.26 把竖屏的开关找回来了（浮在 tab 条上），4.20 又把横屏的头整行让给了键条。两件事凑在
+一起留下一个洞：`(pointer: coarse) and (max-height: 499px)` 的帧里，`.lens__switch` 与
+`.strip` 一起 `display: none`，而这块屏恰恰是**宽而矮的粗指针**——按 4.19 定的规则，
+宽帧默认镜头是 `terminal`。也就是说：手机横过来、点开草稿开始打字，想读成转录的人
+在整段打字过程中没有任何入口。
+
+不能放回头里，那 36px 是从键条手里抢回来的；不能塞进键条，7 颗键在 844px 上居中的两侧
+本来就是空档。实测 844×390 配 210px 键盘：
+
+| 盒子 | 量到 |
+| --- | --- |
+| `.lens` | `0,0` 844×106 |
+| `.strip` / `.lens__switch` | `0×0`（`display: none` 的祖先） |
+| `.keys` | `y 62..106`，高 44 |
+| 末键 `.keys__key` | 右沿 **564** |
+| `.flip` | `735,69` 99×28 |
+
+右翼从 564 到 844 有 280px 空着，pill 占 99px，还剩 171px。所以它是 `.lens` 的绝对子元素，
+`right: 10px; bottom: 9px`，26px 高的面居中在 44px 行的中线上（`69 + 28/2 = 83`，
+行中线 `62 + 22 = 84`，差 1px 是 1px 的描边）：**垂直方向不花一分钱**，转录、回答行、
+键条、草稿卡四段全不动。
+
+命中测出来是干净的：`elementFromPoint(839, 101)`（pill 的右下角内）→
+`button.flip__opt`；往左 1px `838` 仍是 pill，`731` 则是 `div.keys`，说明它没有盖住键条
+可点的区域，也没被键条的裙摆吃掉。`pointerdown` 上 `preventDefault()`，所以点它
+聚焦不会离开 `#herdr-input`、`has-keyboard` 不消失、光标原位——否则点一下换镜头
+等于自己把键盘收了、把 pill 收了。
+
+文案故意用 `chat` / `term` 两个词，不用图标：9.5px 的字在真实终端背景上必须靠反色块才读得
+出「当前是哪个」，`aria-pressed` 决定谁反色（`--ink` 底、`--paper` 字，是两套主题唯一都定义
+过的对比对）。
+
+**边界是三条，每条都是「不要画」比「画了但没用」更对：**
+
+- 桌面（1280/1440，细指针）整块 `.lens` 都不存在，`.flip` 自然不画；
+- 竖屏 390×844：头的浮层在（4.26），`.lens__switch` 可见，pill 不画；
+- 聊天镜头没有待选菜单（`:has(.keys)` 不成立）时键条不存在，pill 也不画。
+
+**第三条边界被测试自己推翻了一次。** `keymenu-space` 的横屏例在回归里挂掉：
+
+```
+<button type="button" class="flip__opt" aria-pressed="true"
+        title="the session's real terminal">term</button>
+from <div class="flip" role="group" aria-label="session view">…</div>
+subtree intercepts pointer events
+```
+
+键菜单展开时（4.23、4.24 改的那个折叠态）它自己就是那一行，`hide` 正好落在同一个右翼。
+pill 的 `z-index: 3` 压住了它——用户打开的菜单关不掉，而菜单里唯一的出口就是那颗 `hide`。
+门补一个 `:not(:has(.keymenu__panel))`：面板收起时 `hide` 不在 DOM，pill 立刻回来；面板
+展开时让位，两边都是唯一入口，谁在干活谁拿那块地方。
+
+```css
+.has-keyboard .lens:has(.keys):not(:has(.keymenu__panel)) > .flip { … }
+```
+
+`web/tests/lens-flip.spec.ts` 六例（844×390 横屏四例、390×844 竖屏一例、1280 桌面一例）：
+几何（pill 底沿 = 键条底沿、pill 完整落在键条这条带子里、中心差 ≤4px、与末键夹角 >8px、
+页面 `scrollHeight` 仍是 390）、点 `term` 换镜头且 `data-lens` 与 `aria-pressed` 同步、
+`#herdr-input` 仍聚焦、`has-keyboard` 仍在、再点回 `chat`、键菜单展开时 pill 隐藏且
+`hide` 可点、菜单收起 pill 回来，以及三条不画的边界。键盘的模拟沿用 4.27 的量尺——
+只谎报 `visualViewport.height`，让 `PromptBar` 自己发 `--kb-inset` 与 `has-keyboard`；
+横屏帧的默认镜头是 `terminal`，所以用例在 `addInitScript` 里钉住 `herdr:lens:w2:p1`
+才量得到聊天镜头。六例与 `keymenu-space` 四例同跑 10 例 9.9s 全绿，回归子集 31 例全绿，
+`tsc --noEmit` 干净。
