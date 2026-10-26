@@ -20,6 +20,34 @@ test("toneOf treats unknown and empty statuses as idle", () => {
   assert.equal(fleet.toneOf(null), "idle");
 });
 
+test("statusLabel prints the status, never folding an unknown one into idle", () => {
+  assert.equal(fleet.statusLabel("blocked"), "needs input");
+  assert.equal(fleet.statusLabel("running"), "working");
+  assert.equal(fleet.statusLabel("finished"), "finished");
+  assert.equal(fleet.statusLabel("idle"), "idle");
+  assert.equal(fleet.statusLabel(""), "idle");
+  assert.equal(fleet.statusLabel(undefined), "idle");
+  // Statuses herdr has not taught the UI about keep their own word, because
+  // the tone they fall into is a colour choice, not a status.
+  assert.equal(fleet.statusLabel("error"), "error");
+  assert.equal(fleet.statusLabel("Paused"), "paused");
+  assert.equal(fleet.statusLabel("reviewing tests"), "reviewing tests");
+  assert.equal(fleet.isKnownStatus("error"), false);
+  assert.equal(fleet.isKnownStatus(" Needs   Input "), true);
+});
+
+test("statusLabel and statusChip clip a status that is a whole sentence", () => {
+  const long = "waiting for the operator to approve this step";
+  // The cut lands on a word boundary, never in the middle of a word.
+  assert.equal(fleet.statusLabel(long), "waiting for the…");
+  assert.equal(fleet.statusChip(long), "waiting…");
+  // One long word has no boundary to land on, so it is cut where the budget ends.
+  assert.equal(fleet.statusChip("reconfiguring"), "reconfiguri…");
+  // A known word is never clipped, however long the tone label is.
+  assert.equal(fleet.statusChip("needs input"), "blocked");
+  assert.equal(fleet.statusLabel("needs input"), "needs input");
+});
+
 test("groupByTone puts blocked first and drops empty groups", () => {
   const items = [
     { id: "a", status: "idle" },

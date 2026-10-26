@@ -32,9 +32,9 @@ import {
 } from "@/lib/herdr";
 import { arrangeTiles, tabsOf, type PaneLayout } from "@/lib/layout";
 import {
-  TONE_LABEL,
   mostUrgentPane,
   paneAgent,
+  statusLabel,
   toneOf,
   type AgentPane,
   type PageTheme,
@@ -566,9 +566,9 @@ export function App() {
               </span>
             )}
             {paneTone !== null && (
-              <span className="stage__status">
+              <span className="stage__status" title={activePane?.agentStatus ?? undefined}>
                 <span className="signal" data-tone={paneTone} aria-hidden />
-                {TONE_LABEL[paneTone]}
+                <span className="stage__status-word">{statusLabel(activePane?.agentStatus)}</span>
               </span>
             )}
           </div>

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { AgentPane } from "@/lib/fleet";
-import { orderByTone, paneAgent, paneListName, paneRowName, toneOf } from "@/lib/fleet";
+import { orderByTone, paneAgent, paneListName, paneRowName, statusNote, toneOf } from "@/lib/fleet";
 import type { HerdrWorkspace } from "@/lib/herdr";
 import { longPressHandlers } from "@/lib/press";
 
@@ -164,6 +164,7 @@ function Agents({ panes, workspaces, selectedPaneId, onPane, onPaneMenu }: Props
             const workspaceName = names.get(pane.workspaceId) ?? pane.workspaceId;
             const agent = paneAgent(pane);
             const active = pane.id === selectedPaneId;
+            const note = statusNote(pane.agentStatus);
             return (
               <button
                 key={pane.id}
@@ -172,7 +173,9 @@ function Agents({ panes, workspaces, selectedPaneId, onPane, onPaneMenu }: Props
                 data-pane-id={pane.id}
                 data-tone={toneOf(pane.agentStatus)}
                 aria-current={active ? "true" : undefined}
-                title={`${paneListName(pane, workspaceName)} — ${pane.id} (${workspaceName})`}
+                title={`${paneListName(pane, workspaceName)} — ${pane.id} (${workspaceName})${
+                  note === undefined ? "" : ` · ${note}`
+                }`}
                 onClick={() => onPane(pane)}
                 onContextMenu={(event) => {
                   event.preventDefault();

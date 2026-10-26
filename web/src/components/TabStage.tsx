@@ -5,6 +5,7 @@ import {
   paneListName,
   paneOwnHasName,
   shortPaneId,
+  statusChip,
   toneOf,
 } from "@/lib/fleet";
 import type { HerdrWorkspace } from "@/lib/herdr";
@@ -178,7 +179,9 @@ export function TabStage({
                 </span>
               )}
               <span className="tile__spacer" />
-              <span className="tile__status">{toneOf(pane.agentStatus)}</span>
+              <span className="tile__status" title={pane.agentStatus ?? undefined}>
+                {statusChip(pane.agentStatus)}
+              </span>
               {/* Closing is per pane, so it belongs on the pane's own header.
                   A single-pane tab has no header; the menu covers that case. */}
               <button

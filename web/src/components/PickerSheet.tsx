@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { AgentPane } from "@/lib/fleet";
-import { orderByTone, paneAgent, paneListName, paneRowName, toneOf } from "@/lib/fleet";
+import { orderByTone, paneAgent, paneListName, paneRowName, statusNote, toneOf } from "@/lib/fleet";
 import type { HerdrWorkspace } from "@/lib/herdr";
 
 type Props = {
@@ -155,6 +155,7 @@ export function PickerSheet({
           {view === "agents" &&
             agents.map((pane) => {
               const workspaceName = names.get(pane.workspaceId) ?? pane.workspaceId;
+              const note = statusNote(pane.agentStatus);
               return (
                 <button
                   key={pane.id}
@@ -163,6 +164,7 @@ export function PickerSheet({
                   data-pane-id={pane.id}
                   data-tone={toneOf(pane.agentStatus)}
                   aria-current={pane.id === selectedPaneId ? "true" : undefined}
+                  title={note}
                   onClick={() => onPane(pane)}
                 >
                   <span className="srow__agent">{paneAgent(pane) || "shell"}</span>

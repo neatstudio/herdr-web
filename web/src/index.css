@@ -816,6 +816,16 @@ body::before {
   color: var(--ink-dim);
 }
 
+/* The daemon may send a status the UI has never seen; it is printed as sent, so
+   give it a ceiling rather than letting one strange word push the title away. */
+.stage__status-word {
+  min-width: 0;
+  max-width: 30ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .stage__cwd {
   max-width: 34ch;
   overflow: hidden;
@@ -1146,6 +1156,16 @@ body::before {
 .tile__status {
   font-family: var(--font-label);
   color: var(--ink-faint);
+}
+
+/* A tile header is a fixed strip; an unrecognised status is clipped, not
+   allowed to widen the header. */
+.tile__status {
+  min-width: 0;
+  max-width: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* The split edge. herdr moves it in its own large steps and clamps at a

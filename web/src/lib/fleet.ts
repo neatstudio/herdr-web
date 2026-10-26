@@ -37,6 +37,77 @@ export function toneOf(status: string | undefined | null): Tone {
   return "idle";
 }
 
+/**
+ * The words `toneOf` maps on purpose. Everything else the daemon might send is
+ * a status the UI has never seen, and is printed as sent rather than folded
+ * into a tone: "error" and "paused" are not "idle", and a header that calls
+ * them idle is telling the operator something untrue.
+ */
+const KNOWN_STATUS: Record<string, true> = {
+  "": true,
+  idle: true,
+  blocked: true,
+  "needs input": true,
+  waiting: true,
+  working: true,
+  running: true,
+  busy: true,
+  done: true,
+  finished: true,
+  complete: true,
+};
+
+/** The status as one lowercased word run, the form the maps are keyed on. */
+function statusWords(status: string | null | undefined): string {
+  return (status ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+export function isKnownStatus(status: string | null | undefined): boolean {
+  return KNOWN_STATUS[statusWords(status)] === true;
+}
+
+/**
+ * Clip a status to `max` characters. A status is a phrase, so the cut lands on
+ * a word boundary rather than in the middle of one, as long as that does not
+ * throw most of the budget away.
+ */
+function clip(word: string, max: number): string {
+  if (word.length <= max) {
+    return word;
+  }
+  const cut = word.slice(0, max - 1);
+  const space = cut.lastIndexOf(" ");
+  const kept = space >= Math.floor(max / 2) ? cut.slice(0, space) : cut;
+  return `${kept.trimEnd()}…`;
+}
+
+/**
+ * The status printed in prose, beside the stage title. Known words get their
+ * canonical label; anything else is passed through so an unrecognised status
+ * still reads as itself. Clipped, because it shares a flex row with the title
+ * and the working directory.
+ */
+export function statusLabel(status: string | null | undefined): string {
+  const word = statusWords(status);
+  return isKnownStatus(word) ? TONE_LABEL[toneOf(word)] : clip(word, 24);
+}
+
+/** The same status, short enough to sit in a tile header. */
+export function statusChip(status: string | null | undefined): string {
+  const word = statusWords(status);
+  return isKnownStatus(word) ? toneOf(word) : clip(word, 12);
+}
+
+/**
+ * The raw status, but only when it is one the UI does not understand. Lists
+ * that show status as a colour alone use this for the tooltip, so a status the
+ * colour cannot express is still reachable.
+ */
+export function statusNote(status: string | null | undefined): string | undefined {
+  const word = statusWords(status);
+  return word === "" || isKnownStatus(word) ? undefined : word;
+}
+
 export type Grouped<T> = { tone: Tone; items: T[] };
 
 /** Bucket items by tone, preserving TONE_ORDER and dropping empty groups. */
