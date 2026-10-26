@@ -153,6 +153,7 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `baec5c2` | 面板一开，键条把自己又铺了一遍：网格是常驻键条的严格超集（16 ⊇ 6），可面板打开时键条仍原样待在下面，于是同一批键买了两份。竖屏 390×844 kb=336 时菜单要吃掉 151+44=195px，host 353→202；而面板本身只要 151，剩下的 44 是重复的那一行。折叠态（844×390 kb=210）更明显：那一行抢走 844px 里的 46px，网格盒 832→786。改成 `html.has-keyboard` 下用兄弟选择器 `.keymenu__panel ~ .keys:not(.keys--grid)` 藏掉键条，面板的 `keys` 开关就是把它叫回来的那颗键；面板关闭时 6 键原样都在（上一版把常驻键条整条降级过一次，键盘一弹就一个键都不剩，这个回归一并删掉）。顺手修折叠态关闭时键条挤在左侧（844px 行里只有 284px 宽、起点 x=6）：补 `flex: 1 1 auto`，现在 `rowBox {x:6,w:832,h:44}` 居中。`hide` 在所有竖屏规则够不着的头里仍是 26×20 的字，可它是面板唯一的出口：给伪元素负 inset 撑到命中 44px 高，网格在重叠处仍赢（不抢 ^C），实测只压到 pane 底沿 ~3px |
 | `c4b8254` | 六条回答的菜单是 1169px 芯片挤在 390px 行里，第三颗被屏幕边缘切在字中间，读起来像一个坏掉的盒子而不是「还有」；同一行的目标也不到 44px——`padding: 6px 12px 2px` 把芯片的命中裙摆裁成 40px，手指落在芯片下沿按到的是底下的 esc，而芯片自己 1px 描边让 `inset: -6px` 只够到 42px（实测 346→388.5）、键条又从下面探上来 4px 裙摆吃掉剩下那点。行改成 `padding: 6px 12px`（6+32+6=44）、裙摆 `calc(-6px - var(--rule-w))` 精确贴到行边（346→390）、行 `position: relative; z-index: 1` 赢下边界；边缘按有无内容淡出（右 34px、左 20px，`mask-image`），滚到端点即收；`scroll-padding-inline: 12px` 让吸附不吞掉首颗的 12px 留白，静止时 `scrollLeft 0`、不点左淡出；`ResizeObserver` 同时盯行与每颗芯片（行盒不变而菜单变宽的情形）。代价是轨道多付 4px：390×844 无键盘 515、kb=336 时 309、320×568 kb=260 时 109px，仍够两行事实。新增 `web/tests/pick-row.spec.ts` 四例 |
 | `a264c84` | 键盘一弹，头一藏，唯一能换镜头的开关也跟着走了——偏偏拇指最想换镜头的时候就是打字打到一半、正看着一份读不懂的 TUI 的时候。放回头里就是 34px：320×568 加 336px 键盘只剩 197px 轨道的一半左右，所以头不改 DOM 位置、改成脱离文档流浮在 tab 条上：36px 高、透明、`pointer-events: none`，只有 `.stage__lenswrap`收 `auto`，底下的 tab 照样能划；条在尾端留出 96px+内边距给开关，钉住的 `+` 让位（37px 的条里 96+44 再加间隙是 160px，320px 宽只塞得下一个 44px 控件，打字时有用的是开关），关掉键盘 `+` 立刻回来；开关的裙摆长到 34px，正好填满条的内带、碰不到下面的转录和终端镜头的查找钮；点一下换镜头不 blur，键盘和光标原位不动。只在 `(pointer: coarse) and (min-height: 500px)` 里成立：`.stage--lens` 本来就只在 ≤720px 的帧出现，横屏手机（<500px）照旧藏头。新增 `web/tests/lens-typing.spec.ts` 五例 |
+| `f6adf48` | 320×568 配 260px 键盘再打一份五行草稿，键条底部 11px 被草稿卡盖住：舞台只剩 ~300px（37 条 + 44 回答行 + 44 键行 + 最高 120px 的草稿卡），唯一能让的是轨道，而轨道的**内边距本身也在地板里**——`.chat__lane` 上下 20/28px 共 48px，48+44+44=136 的硬地板撞上舞台只剩 125px 的行，溢出 11px（实测 `keys.bottom` 173 vs `prompt.top` 162.5），`.lens` 的 `overflow: hidden` 正好把它裁在草稿卡边上。改的是空气不是转录：`html.has-keyboard` 下轨道上下各 8px（地板 16），键盘一收立刻回 20/28；实测 320 变成 37..74 / 74..118 / 118..162 / 162..300 首尾相接，120px 的草稿卡仍 `overflow-y: auto` 能滚到第 6 行，390×844 kb=336 逐项未动。**先修的是量尺**：老用例只手设 `--kb-inset`，`visualViewport.height` 还是整窗，`fitComposer` 的 40% 上限就按 568 算成 227px（8 行），量出来的溢出比真机更狠、也永远量不准真机；改成只谎报 visual viewport 高度并派发 `resize`，让 `PromptBar` 自己发布 inset 与 class。新增第六例钉住夹击（`keys.bottom <= prompt.top`、三行首尾相接、草稿卡 ≤120px 且滚动、轨道 padding 8/8、收键盘回 20），把修复撤掉该例以 11px 溢出失败 |
 
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
@@ -1289,3 +1290,70 @@ stub）、320×568 kb=260 的轨道 ≥100px。同批 `keymenu-space` / `touch-t
 键盘后头回到行里且 `padding-right` 归零、320×568 / kb=260 开关仍不越界。同批
 `pick-row` / `keymenu-space` / `touch-targets` / `landscape-keyboard` / `palette-fit` /
 `prompt-send` 24 例全绿，`tsc --noEmit` 干净。
+
+### 4.27 键盘弹起时，先让步的是内饰不是正文（`f6adf48`）
+
+4.26 把开关找回来了，代价是键盘弹起时舞台格局固定成四段：37px 的条、44px 的回答行、
+44px 的键条、然后是草稿卡。前三段都不该动——条报身份、回答行是菜单的读法、键条是软键盘
+给不了的 Esc/方向键。真正会长的只有草稿卡：`fitComposer` 的上限是可视高度的 40%，320×568
+配 260px 键盘时可视高 308px，上限 123px，取整到五行 120px。
+
+把量到的段高加起来：条 37 + 回答行 44 + 键条 44 + 草稿卡 138（120 的输入框 + 上下边）= 263，
+舞台可用约 300px，正好余 37px 给轨道。看起来够，实际装不下。
+
+关键在于**内边距也算地板**。`.chat__lane` 写了 `min-height: 0`，可以缩到 0，但它自己的
+`padding: 20px 0 28px` 缩不掉：48px 的内饰是它不可让的部分，而它能拿到的只有 37px——少
+11px。这 11px 没有凭空消失，它把下面的三行整体往下推：`keys.bottom = 173` 压进
+`prompt.top = 162.5`，而 `.lens` 是 `overflow: hidden`，被裁的正好是键条下沿那一排字母。
+
+**修法是让内饰先让。** 键盘弹起时轨道上下各收 8px（地板 16），键盘一放立刻回 `20/28`：
+
+```css
+.has-keyboard .chat__lane {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+```
+
+改完之后的五段地板，只有轨道那条是软的：
+
+| 行 | 盒子 | 地板从哪来 |
+| --- | --- | --- |
+| 条 | `0 → 37` | 36px 的行 + 1px 线，固定 |
+| 轨道 | `37 → 74`（37px，刚好一行） | `min-height: 0`，但 `padding: 20px 0 28px` 缩不掉 |
+| 回答行 | `74 → 118` | `6 + 32 + 6`，芯片自己的 32px |
+| 键条 | `118 → 162` | `min-height: 44px` |
+| 草稿卡 | `162 → 300` | 5 行 × 24 + 边距，`fitComposer` 算出来的 |
+
+改完的 320×568 / kb=260 是首尾相接的四段：轨道 `37..74`、回答行 `74..118`、键条
+`118..162`、草稿卡 `162..300`，`keys.bottom === prompt.top`，无重叠也无空隙；草稿卡仍是
+120px、`overflow-y: auto`，第 6 行靠滚动可达。390×844 / kb=336 的轨道本来就富余，逐项不变。
+代价说清楚：五行草稿时转录只剩 37px（一行 + 8px 空气）。这个交换是刻意选的——人正在打字，
+草稿和键条比历史重要；草稿一收，转录立刻回满。
+
+**这一条真正的教训在量尺上。** 之前所有键盘用例（含 4.23、4.26 那批）模拟键盘的方式是
+直接给 `<html>` 设 `--kb-inset` 再加 `has-keyboard`，但 `visualViewport.height` 仍是整窗。
+`PromptBar` 里有两个消费者：一个按 `innerHeight - view.height` 发布 inset，另一个
+`fitComposer` 用 `view.height` 算 40% 上限。只改 CSS 变量等于骗过第一个、骗不过第二个：
+上限按 568 × 0.4 = 227px 算，草稿卡长到 8 行 192px，量出的溢出比真机狠得多，而且无论怎么
+调参数都量不到真机的那个 11px。所以先把辅助函数改成**只谎报可视高度**：
+
+```js
+Object.defineProperty(window.visualViewport, "height", {
+  configurable: true,
+  get: () => window.innerHeight - px,
+});
+window.visualViewport.dispatchEvent(new Event("resize"));
+```
+
+一条谎话，剩下的全走产品代码：inset 是 `keyboardInset()` 钳出来的、`has-keyboard` 是
+`PromptBar` 自己加的、网格重排和草稿重算都是真的。收键盘就是把这条 defineProperty 删掉
+再派发一次 `resize`。改完前五例仍全绿（它们断言的是头的浮层几何，不受这条影响），
+第六例才第一次能看见真机的夹击。
+
+`web/tests/lens-typing.spec.ts` 第六例：320×568 / kb=260 打六行草稿后，`overflow-y` 必须是
+`auto`、草稿卡 ≤120px、轨道底沿 = 回答行顶沿、回答行底沿 = 键条顶沿、
+`keys.bottom <= prompt.top`、草稿卡底沿不越过可视高度、`.shell` 底沿贴可视高度、轨道实际
+只留 20px 以上且 `padding` 读出来是 8/8，最后收键盘断言 padding 回到 20。把 chat.css 那条
+规则临时撤掉重跑，该例以 `Expected: <= 162.5, Received: 173` 失败——失败信息就是那 11px。
+六例全绿用时 9.2s，`tsc --noEmit` 干净。
