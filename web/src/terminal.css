@@ -451,7 +451,7 @@
 }
 
 /* A thumb needs a bigger face than a mouse pointer, and the whole bar grows with
-   it: 48px keeps three 36px buttons on one line without clipping the field. */
+   it: 48px keeps three 44px buttons on one line without clipping the field. */
 @media (pointer: coarse) {
   .term__find {
     top: 6px;
@@ -464,13 +464,57 @@
   .term__find-open {
     top: 6px;
     right: 6px;
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
   }
 
   .term__find-step,
   .term__find-close {
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* The key strip is 44px tall with 2px of padding, so a 40px face uses the whole
+   strip instead of floating a 32px chip in the middle of it. Height only: the
+   row's 34px floor and 44px cap on *width* are what `lib/keybar.test.ts` pins,
+   and a taller chip does not touch them. */
+@media (pointer: coarse) {
+  .keys__key,
+  .keys__more {
+    height: 40px;
+  }
+
+  /* A 40px face, 2px of padding each side and the 1px rule would be one pixel
+     more than the 44px strip the grid above was sized against, so the padding
+     gives that pixel back instead of the face. `min-height` still holds the
+     strip at 44px; the face just sits 2px lower inside it. */
+  .keys:not(.keys--grid) {
+    padding-top: 1px;
+    padding-bottom: calc(1px + max(0px, env(safe-area-inset-bottom) - 8px));
+  }
+}
+
+/* Portrait-and-taller only. The keys menu is in flow, so every pixel of it is a
+   pixel the grid does not get; a 480px-tall landscape phone has none to spare,
+   which is why its grid stays at 32px rows. Held upright there is room, and the
+   menu gets the same thumb scale as the rest of the console: two 40px rows of
+   keys and a 44px head, where `hide` stops being a 26x20 text link and becomes
+   a real target. */
+@media (pointer: coarse) and (min-height: 500px) {
+  .keymenu__head {
+    min-height: 44px;
+  }
+
+  .keymenu__hide {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 4px;
+    margin-right: -4px;
+  }
+
+  .keys--grid .keys__key {
+    height: 40px;
   }
 }
