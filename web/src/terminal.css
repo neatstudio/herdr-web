@@ -9,8 +9,11 @@
    from --ansi-0..15 by the component and handed to xterm as a theme, because
    xterm paints its own cells and cannot use a custom property per cell. */
 
-/* The lens is a column: the grid takes the height, the key bar keeps its own. */
+/* The lens is a column: the grid takes the height, the key bar keeps its own.
+   `position` is for the magnifier, which is a sibling of the host so that a
+   touch frame can dock it in the key strip — see `.term__find-open` below. */
 .term {
+  position: relative;
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
@@ -359,9 +362,9 @@
 /* Search the local scrollback (2000 lines, `@xterm/addon-search`).
 
    Two entrances, because the halves of the product have different keyboards:
-   ⌘F when the grid has focus, and the magnifier in the top-right corner for a
-   phone, where no chord exists. Ctrl+F is *not* a third: every TUI behind this
-   grid binds it to "forward one character", so it stays a pane key.
+   ⌘F when the grid has focus, and a magnifier button for a phone, where no chord
+   exists. Ctrl+F is *not* a third: every TUI behind this grid binds it to
+   "forward one character", so it stays a pane key.
 
    The bar floats over the grid instead of taking a row. A row would resize the
    box, and the fit addon answers a resize by resetting and repainting the whole
@@ -507,6 +510,78 @@
   .term__find-close {
     width: 44px;
     height: 44px;
+  }
+}
+
+/* -------------------------------------- the magnifier joins the key strip */
+/* On a touch frame the magnifier is not a badge on the corner of the text, it is
+   a key — bottom-right in portrait, bottom-left on a phone held sideways.
+   `TerminalLens` renders it beside `.term__host` so that it can be docked here.
+
+   Why it had to move: the corner badge sat on the grid's own top-right, which is
+   where a TUI keeps its status line. At 390x844 it cut the tail of two
+   paragraphs, and on a 844x390 frame with the keyboard up the grid is four rows
+   tall while the badge is 44px, so it hid three of them.
+
+   The strip is the row that already belongs to the phone, and its flanks are the
+   only empty pixels on a landscape frame. Portrait has none: seven faces at 44px
+   plus gaps are 332px, and a 390px strip has 378px of content box, so the strip
+   buys the disc a bay out of its own padding and the faces land on exactly 44px
+   again. Below 362px the faces would drop under their 40px fingertip size, so
+   those phones keep the corner badge — the disc is not worth a 34px `ctrl`.
+
+   40px tall, not 44: it is docked beside 40px faces in a 44px strip, and a 44px
+   disc would poke 4px into the grid it exists to stop covering. `bottom` is the
+   strip's own padding expression plus the 1px that centres a 40px face in it, so
+   the disc rides above the home indicator with the faces. */
+@media (pointer: coarse) and (min-width: 362px),
+  (min-width: 362px) and (max-width: 720px) {
+  .term__find-open {
+    top: auto;
+    right: 2px;
+    bottom: calc(2px + max(0px, env(safe-area-inset-bottom) - 8px));
+    width: 44px;
+    height: 40px;
+    border-radius: 12px;
+  }
+
+  .lens[data-lens="terminal"] .keys:not(.keys--grid) {
+    padding-right: 52px;
+  }
+
+  /* The keys menu replaces the strip with its own eight-column panel and fills
+     the width (`.keymenu__panel ~ .keys` hides the row): no bay, no disc. It
+     comes back with the row when the panel closes. */
+  .term:has(.keymenu__panel) .term__find-open {
+    display: none;
+  }
+}
+
+/* Held sideways the strip is centred in 500-plus pixels, so both flanks are
+   empty and the disc takes the left one: the right one is where `index.css`
+   parks the lens switch while the keyboard is up, and on a four-row grid that
+   switch is the thing worth the pixels. The bay moves with it, so the keys stay
+   centred in what is left instead of starting under the disc. */
+@media (pointer: coarse) and (min-width: 362px) and (max-height: 499px),
+  (min-width: 362px) and (max-width: 720px) and (max-height: 499px) {
+  .term__find-open {
+    left: 2px;
+    right: auto;
+  }
+
+  .lens[data-lens="terminal"] .keys:not(.keys--grid) {
+    padding-right: 6px;
+    padding-left: 52px;
+  }
+}
+
+/* On a short screen with the keyboard up the keys menu folds flat and its 3px
+   padding moves from the strip to `.keymenu` — which then owns the bottom of
+   the lens. The disc is anchored to `.term`, so it gives those 3px back; without
+   this it hung 3px below the last key face on an 844x390 frame. */
+@media (pointer: coarse) and (max-height: 700px) {
+  html.has-keyboard .term__find-open {
+    bottom: calc(3px + max(0px, env(safe-area-inset-bottom) - 8px));
   }
 }
 

@@ -521,34 +521,7 @@ export function TerminalLens({ paneId, status, theme }: TerminalLensProps) {
               ×
             </button>
           </div>
-        ) : (
-          <button
-            type="button"
-            className="term__find-open"
-            aria-label="Find in the terminal"
-            title="Find (⌘F)"
-            onPointerDown={(event) => {
-              event.stopPropagation();
-            }}
-            onClick={() => {
-              setFinding(true);
-            }}
-          >
-            <svg
-              viewBox="0 0 20 20"
-              width="17"
-              height="17"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              strokeLinecap="round"
-              aria-hidden="true"
-            >
-              <circle cx="8.75" cy="8.75" r="5.25" />
-              <path d="M12.75 12.75 16.5 16.5" />
-            </svg>
-          </button>
-        )}
+        ) : null}
         {failed ? (
           <p>The terminal could not be loaded in this browser. The pane is still running.</p>
         ) : null}
@@ -565,6 +538,44 @@ export function TerminalLens({ paneId, status, theme }: TerminalLensProps) {
           </button>
         ) : null}
       </div>
+      {/* Beside the grid, not on it. The magnifier is a phone affordance — a
+          thumb has no ⌘F — and on a phone it used to float over the grid's
+          top-right corner, the one place a TUI puts its status line. At
+          390×844 that hid the tail of two paragraphs; on a 844×390 frame with
+          the keyboard up the grid is four rows and the 44px disc covered three
+          of them. It is a sibling of `.term__host` now, so `terminal.css` can
+          dock it into the key strip on touch frames (and nowhere else: on a
+          fine pointer the corner it always had is the corner it keeps). The
+          tap cancels the pointerdown default so the composer keeps its focus —
+          and with it the soft keyboard — while the search field takes over. */}
+      {finding ? null : (
+        <button
+          type="button"
+          className="term__find-open"
+          aria-label="Find in the terminal"
+          title="Find (⌘F)"
+          onPointerDown={(event) => {
+            event.preventDefault();
+          }}
+          onClick={() => {
+            setFinding(true);
+          }}
+        >
+          <svg
+            viewBox="0 0 20 20"
+            width="17"
+            height="17"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            aria-hidden="true"
+          >
+            <circle cx="8.75" cy="8.75" r="5.25" />
+            <path d="M12.75 12.75 16.5 16.5" />
+          </svg>
+        </button>
+      )}
       <KeyMenu paneId={paneId} latches={latches} onLatches={setLatches} />
     </div>
   );
