@@ -2344,21 +2344,32 @@ body::before {
     top: 0;
     display: grid;
     grid-auto-flow: column;
-    grid-auto-columns: 1fr;
+    /* Four cells that share the tile, not four labels that push past its edge.
+       An automatic (min-content) minimum used to size the cells by their words,
+       which is fine on a 400px tile and 37px too wide on the 186px tile an
+       8-pane tab gets on a 744px tablet — the last word was cut off by the
+       tile's overflow. Cells stay finger-wide (44px) and shrink from there. */
+    grid-auto-columns: minmax(44px, 1fr);
     opacity: 1;
     background: var(--surface);
     border-bottom: var(--rule-w) solid var(--rule-strong);
   }
 
   .scope__display-button {
+    /* min-width: 0 lets the cell smaller than the word take the word with it
+       instead of widening the track; the type is sized to fit the narrowest
+       cell this bar is drawn in (46px: 186px tile / 4). */
+    min-width: 0;
     min-height: 44px;
-    padding: 0 8px;
+    padding: 0 4px;
     border: 0;
     border-left: var(--rule-w) solid var(--rule);
     background: none;
-    font-size: var(--step-fine);
-    letter-spacing: 0.08em;
+    font-size: var(--step-label);
+    letter-spacing: 0.06em;
     touch-action: manipulation;
+    text-overflow: clip;
+    white-space: nowrap;
   }
 
   .scope__display-button:first-child {
