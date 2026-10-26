@@ -528,3 +528,120 @@
     height: 40px;
   }
 }
+
+/* ------------------------------------------- keys menu above a keyboard */
+/* The panel sits in flow, so every row it adds is a row the terminal loses.
+   Two small screens paid for that with the whole screen: 320x568 with the
+   keyboard up left the grid 2px tall, and 844x390 on its side left it at 0,
+   with the second row of keys clipped away under the composer. Neither is a
+   place to drive a TUI from, and the panel only exists to drive a TUI.
+
+   So while the keyboard is up on a short screen the whole menu folds flat:
+
+   - the grid becomes one sideways-scrolled row of 40px keys — the same gesture
+     as the bar below it, and on an 844px landscape phone all sixteen fit at
+     once with nothing to scroll;
+   - `hide` stays, as one more cell of that row at a full 44px thumb height,
+     instead of a head stacked above it;
+   - the head's `keys` label and the bar's duplicated keys drop out. The bar is
+     `BAR_KEYS`, the grid is `KEY_MENU_KEYS`, which contains all of them; the
+     bar's own `keys` toggle keeps its one job here, closing the menu.
+
+   The row keeps the full 44px of a thumb strip at every width, and everything
+   that was vertical becomes horizontal, which is the axis a phone in landscape
+   actually has. `.keymenu` becomes the row and the panel's box dissolves into
+   it — padding and rule move up to the row — so the components themselves stay
+   untouched. Below 500px tall this is also the only state where `hide` and the
+   grid keys clear the 40px fingertip floor. */
+@media (pointer: coarse) and (max-height: 700px) {
+  html.has-keyboard .keymenu {
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 6px calc(3px + max(0px, env(safe-area-inset-bottom) - 8px));
+    border-top: var(--rule-w) solid var(--ui-border, var(--rule));
+    background: var(--ui-panel, var(--surface));
+  }
+
+  html.has-keyboard .keymenu__panel {
+    flex: 1 1 auto;
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    padding: 0;
+    border-top: 0;
+    background: none;
+  }
+
+  /* Grid first, `hide` last: the exit sits where the eye ends anyway, and the
+     keys get the whole left of the row. */
+  html.has-keyboard .keys--grid {
+    order: 1;
+    flex: 1 1 auto;
+    grid-template-columns: repeat(16, minmax(40px, 1fr));
+    grid-template-rows: 40px;
+    /* The bar centres its keys, and a centred grid whose tracks are wider than
+       itself pushes the first keys past the scroll origin — they are not just
+       offscreen, they are unreachable, because the start edge does not scroll.
+       Start-align so a swipe can reach every key. */
+    justify-content: start;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    touch-action: pan-x;
+  }
+
+  html.has-keyboard .keys--grid::-webkit-scrollbar {
+    display: none;
+  }
+
+  html.has-keyboard .keys--grid .keys__key {
+    height: 40px;
+  }
+
+  html.has-keyboard .keymenu__head {
+    order: 2;
+    flex: none;
+    min-height: 0;
+    padding: 0;
+  }
+
+  html.has-keyboard .keymenu__title {
+    display: none;
+  }
+
+  html.has-keyboard .keymenu__hide {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 8px;
+    margin: 0;
+  }
+
+  /* The bar's six keys are already in the grid, so only its toggle survives. */
+  html.has-keyboard .keymenu > .keys:not(.keys--grid) {
+    flex: none;
+    gap: 0;
+    min-height: 44px;
+    padding: 0;
+    overflow: visible;
+    border-top: 0;
+    background: none;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  html.has-keyboard .keymenu > .keys:not(.keys--grid) > .keys__key {
+    display: none;
+  }
+
+  html.has-keyboard .keymenu > .keys:not(.keys--grid) > .keys__more {
+    flex: none;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+  }
+}
