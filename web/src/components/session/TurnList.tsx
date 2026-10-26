@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { COPY_LABEL, turnCopyText, type CopyFormat } from "@/lib/answerText";
 import { COPY_ACK_MS, copyText } from "@/lib/clipboard";
 import { statusWord, type ChatTurn } from "@/lib/conversation";
 import { Markdown } from "./Markdown";
@@ -35,23 +36,8 @@ function clock(at: number): string {
   return `${hours}:${minutes}`;
 }
 
-
-function turnText(turn: ChatTurn): string {
-  const parts: string[] = [];
-  if (turn.user !== null) {
-    parts.push(turn.user);
-  }
-  if (turn.answer !== "") {
-    parts.push(turn.answer);
-  }
-  if (turn.recap !== null) {
-    parts.push(turn.recap);
-  }
-  return parts.join("\n\n");
-}
-
 export function TurnList({ turns, status, at, truncated, seconds }: TurnListProps) {
-  const [copied, setCopied] = useState<string | null>(null);
+  const [copied, setCopied] = useState<{ id: string; format: CopyFormat } | null>(null);
   const lastIndex = turns.length - 1;
   const stamp = clock(at);
   const live = status ?? "unknown";
@@ -66,14 +52,14 @@ export function TurnList({ turns, status, at, truncated, seconds }: TurnListProp
     return () => clearTimeout(timer);
   }, [copied]);
 
-  const copy = (turn: ChatTurn) => {
-    const text = turnText(turn);
+  const copy = (turn: ChatTurn, format: CopyFormat) => {
+    const text = turnCopyText(turn, format);
     if (text === "") {
       return;
     }
     void copyText(text).then((ok) => {
       if (ok) {
-        setCopied(turn.id);
+        setCopied({ id: turn.id, format });
       }
     });
   };
@@ -107,24 +93,64 @@ export function TurnList({ turns, status, at, truncated, seconds }: TurnListProp
                 <blockquote className="markdown__quote">{turn.recap}</blockquote>
               </div>
             )}
-            {isLast && (
-              <div className="chat__meta" data-status={live}>
-                <span className="chat__live" data-status={live} aria-hidden="true" />
-                <span>{label}</span>
-                {stamp !== "" && <span>{stamp}</span>}
-                <button
-                  type="button"
-                  onClick={() => copy(turn)}
-                  aria-label={`copy this turn as text`}
-                >
-                  {copied === turn.id ? "copied" : "copy"}
-                </button>
-                {truncated && <span>earlier lines dropped</span>}
-              </div>
-            )}
+            <TurnFooter
+              turn={turn}
+              live={live}
+              isLast={isLast}
+              label={label}
+              stamp={stamp}
+              truncated={truncated}
+              copied={copied?.id === turn.id ? copied.format : null}
+              onCopy={copy}
+            />
           </div>
         );
       })}
     </>
+  );
+}
+
+type TurnFooterProps = {
+  turn: ChatTurn;
+  live: string;
+  isLast: boolean;
+  label: string;
+  stamp: string;
+  truncated: boolean;
+  copied: CopyFormat | null;
+  onCopy: (turn: ChatTurn, format: CopyFormat) => void;
+};
+
+/**
+ * The row under a turn: herdr's status when this is the live one, and the two
+ * ways to take the turn away. The buttons are on every turn, not just the last
+ * one — wanting to copy something is not something that only happens at the
+ * bottom of a transcript, and on a phone there is no hover to find them with.
+ */
+function TurnFooter({ turn, live, isLast, label, stamp, truncated, copied, onCopy }: TurnFooterProps) {
+  const formats: CopyFormat[] = ["markdown", "text"];
+  if (turnCopyText(turn, "markdown") === "" && !isLast) {
+    return null;
+  }
+  return (
+    <div className="chat__meta" data-status={isLast ? live : undefined}>
+      {isLast && <span className="chat__live" data-status={live} aria-hidden="true" />}
+      {isLast && <span>{label}</span>}
+      {isLast && stamp !== "" && <span>{stamp}</span>}
+      <span className="chat__acts">
+        {formats.map((format) => (
+          <button
+            type="button"
+            key={format}
+            data-format={format}
+            onClick={() => onCopy(turn, format)}
+            aria-label={`copy this turn as ${format === "text" ? "plain text" : "markdown"}`}
+          >
+            {copied === format ? "copied" : COPY_LABEL[format]}
+          </button>
+        ))}
+      </span>
+      {isLast && truncated && <span>earlier lines dropped</span>}
+    </div>
   );
 }

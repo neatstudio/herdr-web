@@ -224,6 +224,40 @@
   color: var(--ui-dim);
 }
 
+/* The two copies sit at the row's end, away from the status they are not. */
+.chat__acts {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.chat__acts button {
+  position: relative;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+}
+
+/* A mouse has no 44px rule below it: 24px of text needs 20px more to aim at. */
+@media (pointer: fine) {
+  .chat__acts button::after {
+    content: "";
+    position: absolute;
+    inset: -10px -6px;
+  }
+}
+
+/*
+ * A phone has no hover, so the row that carries the copy buttons would never
+ * appear. It stays quiet — the buttons are underlined text, not chrome — but it
+ * is there.
+ */
+@media (pointer: coarse) {
+  .chat__turn .chat__meta {
+    opacity: 1;
+  }
+}
+
 .chat__live {
   flex: none;
   width: 6px;
