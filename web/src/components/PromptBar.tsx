@@ -506,6 +506,47 @@ export function PromptBar({
     };
   }, [paletteKind, workspaces]);
 
+  // A palette floats above the card and grows upward, so on a phone the soft
+  // keyboard leaves it only the rows between the card's top and the top of the
+  // screen — and a 50vh cap can be taller than that. On a 320x568 phone with
+  // the keyboard up the box measured 284px against 226px of room, so its first
+  // rows were painted above the viewport: scrollable, unreachable. The card
+  // publishes the room it actually has, and `composer.css` takes the smaller of
+  // its own cap and this number. Measured, not derived from `--kb-inset`,
+  // because attachment tiles grow the card too.
+  const paletteOpen = menu !== null;
+  useEffect(() => {
+    const card = promptRef.current;
+    if (!paletteOpen || card === null) {
+      return;
+    }
+    function fit(): void {
+      const top = card === null ? 0 : card.getBoundingClientRect().top;
+      // 12px leaves the 4px gap above the card plus 8px of breathing room at
+      // the top of the screen; the palette can never be pushed above it.
+      const room = Math.max(0, Math.round(top) - 12);
+      card?.style.setProperty("--palette-max", `${room}px`);
+    }
+    fit();
+    // A layout change that moves the card — keyboard opening, the shell
+    // shrinking, a tile landing — is not a window resize, so watch the boxes
+    // that decide where the card sits rather than the window.
+    const observer = new ResizeObserver(fit);
+    observer.observe(card);
+    const shell = card.closest(".shell");
+    if (shell !== null) {
+      observer.observe(shell);
+    }
+    window.addEventListener("resize", fit);
+    window.visualViewport?.addEventListener("resize", fit);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", fit);
+      window.visualViewport?.removeEventListener("resize", fit);
+      card.style.removeProperty("--palette-max");
+    };
+  }, [paletteOpen]);
+
   // The on-screen keyboard shrinks the visual viewport instead of the window on
   // iOS, which would leave the send button — and the key strip above it —
   // underneath the keyboard. Publish what it covers, and let the shell give that

@@ -20,7 +20,10 @@
   z-index: 4;
   display: flex;
   flex-direction: column;
-  max-height: min(44vh, 340px);
+  /* Two caps, and the tighter one wins: this one keeps a palette from eating a
+     desktop screen, and `--palette-max` is the room the card measured above
+     itself (set by `PromptBar`), which a soft keyboard can shrink to 90px. */
+  max-height: min(44vh, 340px, var(--palette-max, 100vh));
   overflow-y: auto;
   overscroll-behavior: contain;
   border: var(--rule-w) solid var(--ui-border-strong, var(--rule-strong));
@@ -428,7 +431,9 @@
        the box rather than fused to it. */
     bottom: calc(100% + 8px);
     left: 0;
-    max-height: 50vh;
+    /* A thumb screen keeps the larger palette a thumb can scroll, but not past
+       the room the card measured above itself — see the note on the base rule. */
+    max-height: min(50vh, var(--palette-max, 100vh));
   }
 
   .prompt__opt {
