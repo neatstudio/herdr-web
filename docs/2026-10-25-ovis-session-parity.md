@@ -145,6 +145,8 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `8ca78a4` | herdr 的 zoom 让舞台失去了解释自己的能力：`arrangeTiles` 在 `layout.zoomed` 时只返回一格，`arrangeable` 又同时把排列开关藏掉，而 tile 头的闸门是 `tiles.length > 1`——于是一个装着 4 个 pane 的 tab、屏幕上 1 格、头上没名字、没有关闭入口、也没有一句话说另外 3 格去哪了。闸门改成 `tileHeadVisible(tileCount, tabPaneCount)`（多于一格，或该 tab 的 pane 多于显示的格），`layout.zoomed` 时在头里补一句 `zoom 1/4`（琥珀、无框、`--step-micro`，因为 herdr 没有 unzoom RPC，它只能陈述不是按钮）；显示的格恰好不是输入目标时，空态从 `click to read this pane` 改读 `click to work here — the prompt sends to pD`；顺带触摸平板的头从 28px 长到 37px、× 从悬停才显示改成常显 32×32（手机走透镜不渲染tile，所以只命中 iPad 尺寸的帧） |
 | `3b29472` | 一条非 ASCII（或带换行）的草稿只停在 pane 的输入框里，发不出去：这类文字一个键带不动，走的是粘贴路径，而 `pane.send_text` 会把行尾的 `"\n"` 一起写进 pane；在 raw 模式的 TUI 里那个换行是 LF，行编辑器读成「在草稿里换行」（Ctrl+J），于是文字留在 prompt、永远不提交。隔离会话里用一个只打印收到字节的 pane 量到 herdr 0.9.0：带换行的 `pane.send_text` 到达 `61 0a`，`Enter` 键到达 `0d`。改成粘贴不带换行、紧接一次独立的 `Enter` 键；ASCII 的打字路径本来就以那个键收尾，不动 |
 | `7ee9b35` | 两条请求的发送只有一个「成/不成」的答案：一个键带不动的文字走「粘贴 + 单独一个 Enter」，是两个 HTTP 请求，中间能断——粘贴到了、键丢了，输入框就把 pane 里已经有的那行留着，下一次发送会打两遍；粘贴根本没到，屏幕上却什么也不说。发送结果改成三态 `sent / unreached / unsubmitted`，卡片那行 note 讲清落在哪一半：没到是 `could not reach w2:p1, message kept`（草稿留着、不进历史），到了但键丢了是 `in w2:p1, Enter did not land`（清空输入框，并给一颗只发 Enter 的 `send ⏎`，绝不重打文字）；`handOff` 的 Tab 丢了同样交出文字改走 raw 模式，下一键就能补完。新增 `web/tests/prompt-send.spec.ts` 三条用例，把两半分别打到失败 |
+| `83244a6` | 手机横过来再弹键盘，390px 只剩 180px 可画：tab 条占掉 37px（五分之一屏）只为报当前 pane，而草稿卡的 placeholder 本来就在报（`send to w2:p1`），被它挤下去的那行键条却恰是软键盘给不了的（Esc、Tab、方向键）。粗指针且高度 ≤499px、键盘弹起时让 tab 条隐身：844×390 实测 `.lens` 69→106px、xterm 正文 25→62px（一行变四行），kb=160 时正文 75px；竖屏 390×844 配 336px 键盘仍留 37px 身份行（正文 353px），桌面够不着这条查询。新增 `web/tests/landscape-keyboard.spec.ts` 两例，用 `--kb-inset` + `has-keyboard` 模拟键盘，并把规则临时撤销一帧量出「让位前」的高度，钉住增长量恰等于条高、无溢出、竖屏不被动 |
+
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
 `resolveLens` 的三例）；
@@ -1008,3 +1010,44 @@ export function sendTrouble(outcome: SendOutcome, target: string): SendTrouble |
 `web/tests/app.spec.ts` 80 过、8 条失败（`#herdr-feed-text` 相关）——在干净 `HEAD`
 的临时 worktree 上逐条复现，同样是 8 条失败：那是手机帧把 Scope 换成 `SessionStage`
 的既有遗留，与本次改动无关。
+
+### 4.20 横屏手机上，先让 tab 条走（`83244a6`）
+
+一台手机横过来是 390px 高，iOS 的软键盘要吃掉约 210px，剩下 180px 同时要装
+转录、键条和草稿卡。这三样里只有一样是软的键盘替不了的：Esc、Tab 和方向键——
+打字时最常按的恰好是它们。可此前先被挤掉的是转录：844×390 实测键盘态（kb=210）
+`.lens` 只有 69px、xterm 的正文 **25px**，一行多一点；而它上面还压着 37px 的 tab
+条，一整个第五屏，用来告诉你在哪个 pane——这句话草稿卡的 placeholder 已经说了：
+`send to w2:p1`。
+
+所以规则按「这一行此刻值不值这些像素」来写，而不是按宽度：
+
+```css
+@media (pointer: coarse) and (max-height: 499px) {
+  .has-keyboard .shell.is-narrow .stage--lens > .strip { display: none; }
+}
+```
+
+- **只认短屏**：`max-height: 499px` 是横放手机的上限（横放手机最高 440px，iPad
+  mini 短边 744px），500 落在中间，和 `lib/frame.ts` 的 `TOUCH_SIDE` 同一条线。
+  竖屏的键盘也高，但屏幕更高，390×844 配 336px 键盘后正文还有 353px——那 37px
+  的身份行赚得回来，所以竖屏不动。
+- **只认键盘在场**：`has-keyboard` 由 `PromptBar` 从 `visualViewport` 报告，
+  键盘收起时 tab 条立刻回来。代价是键盘弹出的那一下有一次布局跳动——和
+  masthead 在同一个状态下先让位是同一个决定，跳一次比长期少四行划算。
+- **只让 tab 条走**：键条留下。它 44px，正好是软键盘没有的那几个键；谁都能被
+  替，它不能。
+- **`.stage--lens > .strip` 而不是 `.strip`**：桌面舞台和 tile 视图里条的含义不同，
+  这条只该管透镜。
+
+844×390 实测（`--kb-inset` + `has-keyboard` 模拟）：kb=210 时 `.strip` 隐身、
+`.lens` 69→**106**px、xterm 正文 25→**62**px（16px 行高约四行），`.term__host`
+底边和键条严丝合缝，页面溢出仍 0/0；kb=160 时正文 75px，kb=260 时 12px（此时已
+没有可让的东西，只剩 h 一行的诚实数字）。竖屏 390×844 配 kb=336：条高 37px 原样
+留着，正文 353px。1440×900 桌面不匹配查询，一个像素没动。
+
+`web/tests/landscape-keyboard.spec.ts` 钉住三件事：键盘态下增长量**恰好等于条高**
+（把规则临时用内联 `display:flex` 撤销一帧，量出「没有这条规则」的高度再比，
+差 0.5px 以内才算过）、`.lens` 底边与草稿卡顶边齐平且页面不溢出、收起键盘后条
+回到原高原位；第二条用例守竖屏：同一套键盘模拟下条必须还在、正文 >300px。
+
