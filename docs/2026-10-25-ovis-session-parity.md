@@ -112,6 +112,7 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `c2af03e` | 会话透镜里能搜回滚：桌面宽屏根本没有 xterm（`Scope` 把转录画成 DOM 文本），浏览器自带的查找本来就好用，所以只在透镜里补——xterm 画在 canvas 上，Chromium 的查找对看得见的行也报 0 结果。加一条浮在 `.term__host` 里的 bar 跑 `@xterm/addon-search` 搜本地 2000 行：`⌘F` 开、`Ctrl+F` 仍然下行给 readline/TUI，Esc 关、Enter 下一个、Shift+Enter 上一个，计数直接来 `onDidChangeResults`；浮层不改变栅格、不触发 `refit()`（`refit` 会 `reset()` 重画，闪一下）；高亮色只能是 `#RRGGBB`（装饰不认 `var()`），`lib/find.ts` 的 `findInk()` 按主题给色、翻主题时用新色重跑。手机端 bar 高 48px 且贴顶，软键盘遮不到 |
 | `1f61e56` | agent 名字不再念两遍：herdr 给没改过名的 agent pane 的 `terminal_title` 就是程序名，于是 `paneListName()` 和旁边的 agent 芯片同时打出同一个词——侧栏与选择面板读作 `codex codex herdr-web`，tile 头读作 `omp omp pF`，pane id 反倒被挤掉。新增 `paneNameRepeatsAgent()`（两边 trim 后忽略大小写完全相同才算重复）与 `paneRowName()`：侧栏/面板留着染色芯片、名字列改印短 id（`codex pG herdr-web`），tile 头留着名字、省掉芯片（`omp pF`，id 仍是 `tile__id`）；改过名的 `codex — working`、目录恰好同字的 `app`、没有 agent 的 shell 行照旧 |
 | `63cdfa4` | 不认识的 agent 状态不再被念成 idle：herdr 把 `agent_status` 原样透传，官方之外的 agent 会报 `error`、`paused` 这类词，而 `toneOf()` 让它们全落进 idle——分组和配色这样没错，写成字就是撒谎，一个刚出错的 pane 在标题栏里读作 IDLE。改成「tone 是桶、状态字才是真相」：`statusLabel()` 对四种已知状态印规范词、其余印原词（按词边界截到 24 字），`statusChip()` 在 tile 头里截到 12 字；`data-tone` 照旧吃 `toneOf`，所以侧栏的颜色与排序一字未动，不认识的词挂在行的 tooltip 上。同一个 clip 也顺手把整句状态收进 `.stage__status-word` 30ch 与 `.tile__status` 12ch 的天花板，长词不会把标题挤走 |
+| `503991e` | 手机上的 chrome 与打字盘给手指让路：masthead 三个入口、主题循环、以及手机上唯一的 pane 切换器都是 20–22px 高（切换器只有 28px 宽）——不到半个指尖，点工作区名经常点空。盒子不能直接加高：主题块是带边框的、切换器扛着 head 的左对齐，44px 的框套 10px 的字是另一个设计。于是盒子照旧画，只把「接住那一指」的伪元素撑开（`.lens__opt` 早就在用这招）：masthead 里 `inset: -12px 0` ⇒ 44px 高、仍在 46px 的行内；切换器 `inset: -13px -10px` ⇒ 48×44，文字的 x 位置不动；没有粗指针的桌面一行未改。打字模式四个控件从 32px 回到 36px：草稿自己两行撑起 66px 的卡，这一行不会因 36px 变高，那 4px 是白让的 |
 
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（含 `fitComposer` 两行起底、
 `imeEnter` 各一例，以及 `findLabel` 的 1/4、0/0 与越界夹取）；
@@ -162,6 +163,15 @@ Esc 后 bar 消失、放大镜回来、装饰清零；`700x800` 细指针（`TOU
 `find-kb-ios-dark.png`。
 
 去重这条的验证：`npm --prefix web run typecheck` 干净；`test:unit` 287/287（新增 `paneNameRepeatsAgent` 与 `paneRowName` 各一例）；`/tmp/probe-dup.mjs`（两 pane，`terminalTitle` 故意等于 agent，1440×900 细指针 + 390×844 粗指针，明暗两色）：改前 tile 头 `omp omp pF` / `codex codex pG`、侧栏 `codex codex herdr-web`，改后 tile 头 `omp pF` / `codex pG`、侧栏与选择面板 `codex pG herdr-web` / `omp pF herdr-web`，无一处重复；`probe-fill.mjs` 与 `probe-pc-rich2.mjs` 的几何一字未动；`app.spec.ts` 79 passed / 8 个既有失败（与改前同一批）。
+
+触控目标这条的验证：`npm --prefix web run typecheck` 干净；`test:unit` 289/289；`npm run build` 通过；
+`/tmp/probe-hit.mjs`（390×844 粗指针）用 `elementFromPoint` 打**标签外 10px** 的上下左右四点：
+四个入口全部命中自己，盒子仍是原来的 `135×20` / `54×20` / `49×22` / `28×18`（可见的画一字未动，
+撑开的只有接住手指的那块）；左右两侧被邻居接住的点落在邻居自己的字上，两枚 chip 间隔 10px，
+本来就没有死区。`/tmp/probe-tap.mjs` 明暗两色 × 竖横两向：`scrollHeight - clientHeight` 全 0，
+竖屏打字卡 `[8,434,374,66]`、横屏 `[8,82,828,66]` 与改前相同，行内四个控件 36×36（原 32px）；
+1440×900 与 1920×1080 的 1/2/4/6 pane 几何与改前逐项相同（`/tmp/fill4.json` vs `/tmp/fill2.json`
+0 处差异）。截图 `tap-rest.png`、`tap-phone-{dark,light}.png`、`tap-landscape-{dark,light}.png`。
 
 ## 5. 给服务端的一页需求（若要继续逼近 Ovis）
 
