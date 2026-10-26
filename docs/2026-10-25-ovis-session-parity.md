@@ -131,6 +131,7 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `4bfd5f1` | 触屏 tile 上的 AUTO/WRAP/EXACT/FIT 被切成半截：它是四列等分的 grid，可 grid 项不会缩到自身 min-content 以下，格子于是被四个词撑成 223px，而 8 格 tab 在 744px 平板上给每格 186px——最后一个词 `FI` 被 tile 的 `overflow: hidden` 剪掉，820px 平板剪掉 18px、1024px 剪掉 11px。它还在读 `--step-fine`，这个 token 样式表从头到尾没定义过，字号于是继承祖先（约 15px）。格子改 `minmax(44px, 1fr)`（每格仍是一指宽，四格均分 tile），字改 `--step-label`、内边距 4px+`min-width: 0`，最宽的词 EXACT（41px）正好装进最窄的格（46px）。实测 744/820/1024 的末格右沿刚好落在 tile 右沿、溢出 0、格宽 47–53px；鼠标桌面的浮层条仍是 [183,20]、格宽 46/45/53/38 一点没动 |
 | `b013330` | 细字一直在假装自己存在：`--step-fine` 被 20 处声明引用（面板、弹窗、任务板、peek 预览），却在两个仓库里都没有定义过（`git log -S` 查空），声明全部落到 computed-value 阶段失效、字号继承正文 12.5px——面板因此只剩颜色一层层级。在 `:root` 定成 11px（标签 10.5 < 细字 11 < 正文 12.5）。连带两件：`.newws__submit` 高度是 padding + 行盒，细字一缩手机上 44→42px，coarse 下钉 `min-height: 44px`（桌面仍 30px，副产品是弹窗里的 create 在粗指针下 32→44px）；任务板条目的那行 prompt 是唯一识别信息，留在正文 12.5px，其余元信息才用细字。390×844/844×390/1440×900 明暗实测 20 处全 11px/17.6，旧 tmux、peek、dispatch 条目、commits、collect 这批原本量不到的补 fixture 后也一致 |
 | `dcd8738` | 细字一缩小，面板和表里的控件就全部掉到拇指下面：`--step-fine` 只有 11px，而这些盒子没有 `min-height`，高度全靠自己的行盒加 padding——字段 34、策略切换 23、机器行 19（复选框 13）、两处折叠行 18、stop 19、面板头按钮 22/18、关闭按钮 20×24。桌面无所谓，手上大面积按空。先试了 masthead 那套伪元素扩展，用 `elementFromPoint` 逐点扫发现 button 把生成内容裁进自己的盒子，`::before` 的 inset 只在原盒范围命中，于是改成真实长高：字段（含 fleet 表单的 select）、策略键、机器行（复选框 13→18，行内详情在粗指针下允许换行，手机上一行只剩省略号，而“这台机器装了哪个 agent”正是决定点不点的信息）、`.dispatch__line` 居中与 stop、两处 `summary`、`.hostpanel__act`、面板与表的头部按钮/关闭按钮。整块必须写在样式表末尾：`.sheet--dialog .newws__field input` 的 34px 在 500 行之上、同特异度，写在旁边是静默失效。390×844 粗指针实测 host 9 个控件9 个小 → 0，fleet 25 → 0，844×390 同；1440×900 鼠标 host 仍 9 小、fleet 仍 19 小，逐个高度与改前一致（22/18/19/23/30/34） |
+| `9eaf60c` | 终端镜头里的键条、键盘菜单和查找条仍是鼠标尺寸：44px 的键条里浮着 32px 的键面（上下各 6px 空），菜单的 `hide` 是 26×20 的文本链接、两行网格每行只有 32px，查找条的三枚按钮是 36×36、旁边那颗启动按钮 40×40。键面加到 40px 时整条会从 44 涨到 45（1px 规则 + 2+2 padding），等于白拿终端一行，所以让 padding 从 2 退到 1 把那 1px 还回去，`min-height` 继续钉住 44px——竖屏、横屏、键盘起落四种姿态下终端高度与改前逐项相同（559/429/177/0）。菜单是在流里的，它长多高终端就少多高，于是给小屏横放留了 `min-height: 500px` 的闸：竖着两行网格升到 40px、标题行 44px（`hide` 变成真 34×44），480px 高的横屏手机维持 32px 不变。查找条按钮升到 44px，390 宽仍有 182px 输入框、320 宽 112px，无溢出 |
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
 `resolveLens` 的三例）；
@@ -495,6 +496,44 @@ padding。它们的尺寸不是算出来的，是「小字恰好撑到多高」�
 桌面一个像素都没动：1440×900 鼠标下 host 仍是 9 个小控件、fleet 仍是 19 个，高度
 与改前逐项相同（22/18/19/23/30/34）——这一批只存在于 `@media (pointer: coarse)`。
 截图 `taps-{phone390,land844,desk1440,desk1440l}-{host,fleet-top,fleet-bottom}.png`。
+
+### 4.7 终端镜头的键条、菜单和查找条（`9eaf60c`）
+
+4.6 扫的是面板和表，终端镜头这边还剩三处鼠标尺寸。它们都在
+`terminal.css` 的 `@media (pointer: coarse), (max-width: 720px)` 里，所以
+改之前先把「这个盒子到底归谁撑高」弄清楚：
+
+| 控件 | 改前（390×844 粗指针） | 改后 |
+| --- | --- | --- |
+| `.keys__key` / `.keys__more`（键条） | 44×32 | 44×40 |
+| `.keys--grid .keys__key`（菜单两行网格） | 43×32 | 43×40（仅 `min-height: 500px`） |
+| `.keymenu__head` / `.keymenu__hide` | 20 / 26×20 | 44 / 34×44（仅 `min-height: 500px`） |
+| `.term__find-open` | 40×40 | 44×44 |
+| `.term__find-step` / `.term__find-close` | 36×36 | 44×44 |
+
+三件值得记下来的事：
+
+1. **键面长高会顺手把整条撑高。** 键条是 `padding: 2px 6px` + 顶部 1px 规则 +
+   `min-height: 44px`：40px 的键面算下来是 1+2+40+2 = 45，比 44 多一像素，而
+   这一像素正好从终端里拿。所以 `padding-top: 1px`、
+   `padding-bottom: calc(1px + max(0px, env(safe-area-inset-bottom) - 8px))`，
+   `min-height` 继续钉 44。实测 390×844 竖屏闲时终端 559px、键盘起（260px）429px，
+   844×390 横屏 177px 与 0px，全部与改前一致——只是键面从 32 长到 40。
+2. **同一个 `.keys` 还有一个变体。** 菜单里的网格是 `<div class="keys keys--grid">`，
+   它的 `padding: 0` / `min-height: 0` 写在 300 行附近、同特异度，于是在末尾补
+   `padding-top` 的粗指针块会把菜单面板 111 撑到 113、终端从 66 掉到 64。选择器
+   必须写成 `.keys:not(.keys--grid)`（0,2,0）。**给基类加粗指针覆写，先把变体类
+   排掉。**
+3. **菜单在流里，像素是从终端里借的。** 竖屏键盘起时 shell 只剩 584px，菜单
+   151px（标题 44 + 两行 40×2 + 间隙）会把终端压到 278px；480px 高的横屏手机
+   shell 只有 140px，没有可借的，所以这批尺寸挂在
+   `(pointer: coarse) and (min-height: 500px)` 上，横放继续 111px / 32px。
+   横屏里的退出口不是 `hide`，而是行内那颗已经 40×44 的 `keys`。
+
+桌面一个像素都没动：1440×900 / 1280×800 / 1024×768 / 900×900 四个视口下，
+`.shell`、`.masthead`、`.tab`、`.prompt`、`.term`、`.keys`、`.keymenu` 的盒与
+计算样式逐项 diff 为空（`/tmp/probe-desktop-geo.mjs`，改动前后各采集一次）。
+截图 `keys-{phone390,land844}-kb{0,1}-{menu,find}.png` 与 `keyslight-*`（浅色）。
 
 ## 5. 给服务端的一页需求（若要继续逼近 Ovis）
 
