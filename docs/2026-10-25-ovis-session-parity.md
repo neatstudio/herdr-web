@@ -160,6 +160,7 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `c1d1eef` | 手机上那个查找放大镜一直是**压在正文上**的角标：它 44×44 钉在网格右上角，而网格右上角正是 TUI 摆状态行的地方——390×844 实测盖掉了两段话的尾巴，844×390 配 210px 键盘时网格只剩 55px 高（四行），角标就吃掉三行，`v0.6.14 ta[g]` 这种折行处也被切在字中间。改用「它是键条里的一颗键，不是网格上的一个角标」：`TerminalLens` 把它从 `.term__host` 里移出来做兄弟节点（`.term` 补 `position: relative` 当定位上下文），`terminal.css` 只在触屏帧把它停靠进键条——竖屏停右翼、横屏停左翼（右翼已被 4.28 的镜头开关占掉），别的帧仍是原来那个角标。**键条的翼是从自己的内边距里买的**：390px 宽、`padding: 2px 6px` 的键条内容盒 378px，七面 44px + 六道 4px 间隙正好 332px，皮肤上 46px 无处可让，于是 `padding-right: 52px` 把内容盒收到 326px——(326−24)/7 = **43.1px**，实测仍按 44 上报（`keyFirst w=44`、末键 `more` 右沿 338、放大镜 344..388 落在 696..740 的条里，6px 间隙）；**362px 是门**：内容盒 304px 时脸正好 (304−24)/7 = **40px** 地板，再窄就得掉到 34px 的 `ctrl` 之下，所以 320×568 保留角标（实测 270..314 / 143..187）。横屏 844×390 用 `padding-left: 52px`，内容盒 786px 居中出 332px ⇒ 键 279..611，放大镜 `2..46 / 270..310`，同一行「查找 · 键 · 开关」；键盘弹起（vv 180）时 `.term` 只剩 106px、网格 55px，折叠键菜单把 3px 内边距搬到 `.keymenu` 上，放大镜的 `bottom` 跟着补这 3px（`63..103` 落在条 `59..103` 里），**高度代价 0px**，右翼 `flip` 仍 735..834 互不重叠。40px 高而不是 44：旁边是 44px 条里的 40px 脸，44px 会往回扎进 4px 网格。键菜单展开时它不带面板、键条被 `.keymenu__panel ~ .keys` 藏掉，于是 `:has(.keymenu__panel)` 一并收走。新增 `web/tests/term-find-dock.spec.ts` 六例（竖屏/竖屏键盘/320 角标/横屏/横屏键盘/桌面 1280×800 无镜头），同跑 `keymenu-space` + `lens-typing` 16 例全绿，`test:unit` 330/330、`tsc --noEmit` 干净 |
 | `a387869` | 桌面上的 AUTO/WRAP/EXACT/FIT 是**浮在正文上**的：6px 贴角、静止 35% 不透明，而转录是追着尾巴滚的——1280×800 实测条在 `142..162`、第一条可见行在 `148`，字从脸里透出来。补滚动内边距修不了：`overflow:auto` 会把内容画进 padding 带，而它永远滚着，实测 30px 内边距下仍有行盒落在 `141`。所以细指针 + >900px 给它一行真栅格：条占第一行 `auto`、阻塞提示第二行、滚动盒第三行，静止不透明；代价是 537px 高 tile 里的 24px（一条折行），换来静止与尾巴处都没有字被压。粗指针/窄帧那条 44px 整宽触屏条一位未动 |
 | `49b2aa0` | 手机草稿在卡片里**贴着底**：桌面把 `prompt__field` 对齐到底，好让一行高的按钮压在两行草稿的最后一行上；但手机的 pad 是 2×2（74px），比草稿两行起底（48px）高，于是草稿被顶到底：390×844 实测 field `751..825`、textarea `777..825`，占位文字比它旁边的 attach 按钮低 26px，卡片左上角是一块空洞。窄帧改成 `align-items: start`，草稿首行与 attach/image 齐平（都是 751），空出的那一行读作「可以接着写」；卡片仍是 96px，一行转录都没多花。打字态 pad 折成一行，用**三个类**把它重新居中到草稿上（`.has-keyboard .shell.is-narrow .prompt__field`，66px 卡片）；短横屏的侧折仍居中（70px）；平板 820×1180 与桌面 1280×800 还是 `end` |
+| `ec86308` | 手机上的长代码行原来不是**被裁掉**，是**看不出还能滑**：`.chat__code-body` 与 `.chat__pre` 本来就是 `white-space: pre` + 横向滚动，390×844 实测 `clientW 366 / scrollW 823`（另一块 708），滚得到，但面板边缘正好把字切在中间、又没有滚动条，读起来就是「这一行到此为止」。用 `.chat__pick` 的同一条约定：块自己带 `data-edges="more|back|both"`，CSS 用 `mask-image` 淡出还有字的那一侧（右 36px、左 22px，`-webkit-` 双写）。属性而不是 state——一条轨道里可能有十几个块，各滚各的，一个捕获阶段 `scroll` 监听统一重画；`ResizeObserver(lane)` 管旋转与换帧宽。16px 地板挡住「量出来 2–3px 舍入溢出」就去淡字的情况（横屏 820 的帧 `scrollW 823` 因此保持干净）。实测淡出末段字形亮度 688→53、跨最后 25 CSS px，是真淡出不是空转；滚到中段两侧都淡、滚到底只淡左，`webkitMaskImage` 每个状态都跟 `maskImage` 一致（iOS Safari 覆盖）。新增 `web/tests/code-edge-fade.spec.ts` 四例 |
 
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
@@ -1655,3 +1656,48 @@ AUTO / WRAP / EXACT / FIT 从 4.4 起就是「贴角的小字」：`position: ab
 同跑 `squeeze-rows` / `touch-targets` / `landscape-keyboard` / `desktop-display-row`，共 16 例全过——这三个状态（96 / 66 / 70）都在其中被量过。`tsc --noEmit` 干净，`test:unit` 330/330。
 
 这一条对应目标里「更多的要考虑移动端的交互……只有这一块做好了，移动端才算是真正可用」：软键盘和拇指都到位了，剩下的是**光标该从哪儿开始写**。
+
+### 4.34 长代码行要让人看见「还能滑」（`ec86308`）
+
+上一轮说要修的是「390px 下长代码行被硬裁」，**这个判断是错的**，先纠正：`Markdown.tsx` 里围栏块和逐字块都渲染成 `white-space: pre` + `overflow-x: auto`，一直在滚。用 390×844 量一块 938px 的 TS 行：
+
+| 指标 | 值 |
+| --- | --- |
+| 块宽 / 可见宽 | 366px（`clientWidth`） |
+| 内容宽 | 823px（`scrollWidth`，另一块 708） |
+| 可滚距离 | 457px |
+| 静止时 `scrollLeft` | 0 |
+| 有没有滚动条 | 没有（44px 高的块上一条横条反而碍事） |
+| 页面横向溢出 | 无（`documentElement.scrollWidth === innerWidth`） |
+
+所以字一个都没丢，丢的是**信号**：面板边缘把最后一个字切在笔画中间，读起来就是「这一行到此为止」。真机上想读全得先猜到它能划。
+
+**做法**照抄同屏已经成立的那条约定。回答芯片行（`.chat__pick`）早就在用「有内容的那一侧淡出」，它自己又是从 tab 条借来的；一块代码跟一行芯片是同一类东西——超出盒子的横向内容，没有滚动条，唯一的提示是边缘的渐隐。于是：
+
+- `ChatLens` 在 `read.text` 变化后扫一遍 `.chat__code-body, .chat__pre`，按每个块自己的 `scrollLeft / clientWidth / scrollWidth` 算出 `more`（右有字）、`back`（左有字），写进 `box.dataset.edges`；没有就删掉属性。**是属性不是 React state**：一条轨道里可能同时有十几块，每块偏移都不同，而滚动是浏览器自己处理的，一个捕获阶段的 `scroll` 监听（`scroll` 不冒泡，所以只能捕获）就能统一重画，包括下一次渲染才加进来的块。
+- `ResizeObserver(lane)` 管旋转和换帧宽——块的宽度随轨道变，轨道的盒子又会随每一个块变，所以盯轨道这一只盒子就够了。
+- CSS 侧三对规则（`more` / `back` / `both`），`-webkit-mask-image` 与 `mask-image` 双写。遮罩加在块**自己**身上而不是盖一层渐变：`--ui-panel` 背景归 `.chat__code` 管，遮罩只让字形变淡，块的形状一点不动。
+
+宽度取的是字形量级而不是随手给：块自带 `padding: 10px 12px`，所以右边 36px = 12px 内边距 + 24px 字形（约三个半字符），左边 22px = 12px + 10px（约一个半字符）；一个被切掉一半的字符看起来是「淡出」而不是「坏了」。另外加了 16px 地板：`scrollWidth` 把块自己的 24px 内边距也算进去再取整，一行刚好放得下时也会报 2–3px 溢出（横屏 820 的帧 `clientW 820 / scrollW 823` 就是这样），没有地板就会为了藏 3px 去淡掉本来能读的字。
+
+**实测**（Chromium，`--force-device-scale-factor=2`，取最后 ~50 物理 px 的字形峰值亮度）：
+
+| 状态 | `data-edges` | mask | 末段亮度 |
+| --- | --- | --- | --- |
+| 390×844 静止 | `more` | `linear-gradient(to right, #000 calc(100% - 36px), transparent 100%)` | 688 → 614 → 500 → 376 → 272 → 53 |
+| 390×844 滚到中段 | `both` | 四段：`transparent 0, #000 22px, #000 calc(100% - 36px), transparent 100%` | 两侧都淡 |
+| 390×844 滚到底 | `back` | `transparent 0, #000 22px` | 只淡左 |
+| 390×844 短块（`npm test`） | 无 | `none` | 不动 |
+| 700×800 静止 | `more` | 同上（`clientW 676 / scrollW 823`） | 一样 |
+| 844×390 横屏 3px 溢出 | 无 | `none` | 16px 地板生效 |
+
+每个状态下 `webkitMaskImage` 都与 `maskImage` 相同，iOS Safari 走的是同一份规则。滚动时不改块的宽高和右沿（旋转、滚动都没让块跳一格）。
+
+**用例**：`web/tests/code-edge-fade.spec.ts` 四例，桩和别的移动端用例同一套（`herdr:lens:w2:p1=chat`，只读接口全打桩）。
+
+- 390×844 长行：`data-edges === "more"`、mask 含 `calc(100% - 36px)` 且不含左段、`scrollWidth - clientWidth > 200`（先钉住「它在滚」这个前提）、页面无横向溢出、块右沿不越过视口；
+- 390×844 短行：`scrollWidth === clientWidth`、无属性、`mask === "none"`；
+- 390×844 滚到 `(scrollWidth - clientWidth) / 2` 变 `both`（四段都在），滚到底变 `back`（有 `22px` 没有右段），几何不变，滚回 0 用 `expect.poll` 等回 `more`；
+- 700×800 细指针帧：同样淡出（`scrollWidth - clientWidth > 100`）——窄桌面也是这个盒子，不该只在手机上成立。
+
+`tsc --noEmit` 干净，`test:unit` 330/330，新用例 4/4，同跑 `pick-row` 4/4（芯片的 20 / 34px 淡出没被这次改动碰掉）。这一条补的是「长行读不全」这一类：内容一直在，缺的从来只是让人知道它还在。
