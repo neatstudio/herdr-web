@@ -5,11 +5,13 @@ import {
   APP_ACTIONS,
   COMPOSER_MAX_ROWS,
   COMPOSER_VIEWPORT_SHARE,
+  KEYBOARD_STACK_MIN,
   applyCompletion,
   clearDraft,
   draftKey,
   fitComposer,
   imeEnter,
+  keyboardInset,
   mentionItems,
   mentionQuery,
   readDraft,
@@ -323,4 +325,38 @@ test("a box that scrolls is a whole number of lines tall, so no line is cut", ()
 test("a viewport smaller than one line still keeps the box one line tall", () => {
   const tiny = fitComposer({ content: 10_000, line: LINE, padding: PAD, viewport: 20, maxRows: COMPOSER_MAX_ROWS });
   assert.deepEqual(tiny, { height: Math.ceil(LINE + PAD), scrolls: true });
+});
+
+/* ------------------------------------------------------------ the keyboard */
+
+test("a portrait phone gives the keyboard back in full", () => {
+  // 390x844 iPhone with the software keyboard up: the visual viewport is
+  // 424px tall and nothing else is covered, so the shell loses exactly 420px.
+  assert.equal(keyboardInset(844, 424), 420);
+});
+
+test("a short landscape phone gives back the whole keyboard, not 60% of it", () => {
+  // 844x390 held sideways with a 250px keyboard: a ratio cap stopped at 234px
+  // and left the send row 8px underneath the keyboard. The floor is the
+  // console, not a share of the window, so the lift is the full 250px.
+  assert.equal(keyboardInset(390, 140), 250);
+});
+
+test("no keyboard, or a retracting one, leaves the shell alone", () => {
+  assert.equal(keyboardInset(844, 844), 0);
+  assert.equal(keyboardInset(844, 900), 0);
+});
+
+test("a viewport the browser over-reports stops at the console floor", () => {
+  // A collapsed or pinch-zoomed viewport can claim the whole window; the
+  // console keeps its composer plus strip and a little transcript, so the
+  // lift is the window minus that floor rather than the whole window.
+  assert.equal(keyboardInset(844, 0), 704);
+  assert.equal(844 - keyboardInset(844, 0), KEYBOARD_STACK_MIN);
+  assert.equal(keyboardInset(100, 0), 0);
+});
+
+test("nonsense measurements never move the shell", () => {
+  assert.equal(keyboardInset(Number.NaN, 400), 0);
+  assert.equal(keyboardInset(844, Number.POSITIVE_INFINITY), 0);
 });

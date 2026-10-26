@@ -302,6 +302,42 @@ export const COMPOSER_VIEWPORT_SHARE = 0.4;
  */
 export const COMPOSER_MIN_ROWS = 2;
 
+/* ------------------------------------------------------------- the keyboard */
+
+/**
+ * What the console may never shrink below while the keyboard is open: the
+ * composer card (66px at rest), the 8px that keeps its border off the shell
+ * edge, the key strip above it (37px) and a little of the transcript. Giving
+ * back more than `innerHeight - KEYBOARD_STACK_MIN` would put the box being
+ * typed into somewhere the operator cannot see it.
+ */
+export const KEYBOARD_STACK_MIN = 140;
+
+/**
+ * How much height the shell should give back to an on-screen keyboard.
+ *
+ * A phone keyboard shrinks the visual viewport instead of the window, so the
+ * difference between the two is exactly what the keyboard covers — and exactly
+ * what has to come off the shell, or the send button ends up under it. A guard
+ * is still needed: a browser reporting a collapsed or zoomed viewport can claim
+ * more than the screen can spare, and hiding all of it would fold the console
+ * away. The guard is a floor under the console, not a share of the window: a
+ * ratio is generous on a tall phone and stingy on a phone held sideways, which
+ * is exactly where 60% of the window is less than the keyboard and the composer
+ * was left 8px under it.
+ *
+ * Nothing covered means no lift, so a window resize or a retracting address bar
+ * leaves the layout alone.
+ */
+export function keyboardInset(innerHeight: number, viewportHeight: number): number {
+  if (!Number.isFinite(innerHeight) || !Number.isFinite(viewportHeight)) {
+    return 0;
+  }
+  const covered = Math.max(0, Math.round(innerHeight - viewportHeight));
+  const spare = Math.max(0, Math.round(innerHeight - KEYBOARD_STACK_MIN));
+  return Math.min(covered, spare);
+}
+
 /** What one measurement of the textarea says about the box it needs. */
 export type ComposerMetrics = {
   /** `scrollHeight` measured with the height left to the content; includes padding. */

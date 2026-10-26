@@ -32,6 +32,7 @@ import {
   applyCompletion,
   fitComposer,
   imeEnter,
+  keyboardInset,
   mentionItems,
   mentionQuery,
   readDraft,
@@ -46,8 +47,6 @@ import {
 const HISTORY_MAX = 50;
 /** Longest line that is typed key by key before it becomes a paste. */
 const TYPE_LIMIT = 400;
-/** A keyboard may cover at most this share of the viewport before lifting stops. */
-const LIFT_MAX_RATIO = 0.6;
 
 type PaletteKind = "slash" | "mention";
 
@@ -493,11 +492,9 @@ export function PromptBar({
     const view: VisualViewport = viewport;
     const root = document.documentElement;
     function apply(): void {
-      const covered = Math.max(0, Math.round(window.innerHeight - view.height));
-      // Never give up more than the screen can spare: a browser that reports a
-      // half-collapsed viewport must not fold the console away.
-      const hidden =
-        covered > 0 ? Math.min(covered, Math.round(window.innerHeight * LIFT_MAX_RATIO)) : 0;
+      // What the keyboard covers is what comes off the shell; `keyboardInset`
+      // keeps a floor under the console for a viewport the browser misreports.
+      const hidden = keyboardInset(window.innerHeight, view.height);
       if (hidden === 0) {
         root.style.removeProperty("--kb-inset");
         root.classList.remove("has-keyboard");
