@@ -17,6 +17,8 @@
     <!-- launchd does not inherit the shell PATH. -->
     <key>PATH</key>
     <string>__PATH__</string>
+    <key>HERDR_WEB_SERVICE</key>
+    <string>1</string>
   </dict>
   <key>WorkingDirectory</key>
   <string>__HOME__</string>

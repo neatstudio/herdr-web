@@ -69,3 +69,12 @@
 - `go test ./...` 全部通过（新增签名/重放、token、checkout、push、命令 job、merge 失败有界、NATS URL 规范化用例）。
 - `npm --prefix web run test:unit` 281/281。
 - Playwright 79/87；8 个失败均为已提交 UI 的布局用例，与本次后端改动无关（wrap/phone/split 显示）。
+
+## 2026-10-26（定时自动更新与共享 tailnet 地址）
+
+- 新增独立于 fleet 心跳的自动更新循环：启动后 45 秒首次检查，之后默认每小时；可用 `HERDR_WEB_AUTO_UPDATE=off` 关闭，`HERDR_WEB_AUTO_UPDATE_FIRST_DELAY`/`INTERVAL` 调整。
+- 只自动更新通过安装路径运行的二进制；checkout 里的开发二进制需要 `HERDR_WEB_AUTO_UPDATE=force` 才会被替换。有 job 在运行时跳过本轮，避免 agent 回合被重启打断。
+- 更新后的重启改为 supervisor-aware：systemd/launchd 通过 `--no-block`/`kickstart` 排队重启；无 supervisor 的前台进程用 `syscall.Exec` 替换自己。`POST /api/v1/herdr-web/restart` 可手动触发。
+- 新增 `GET /api/v1/herdr-web/update/status`，返回是否启用/符合条件、上次检查、上次更新、错误、间隔。
+- 新增 `HERDR_WEB_ADVERTISE_ADDR`：共享到另一 tailnet 的机器可绑定自己的 `100.64.x.x`，同时向 fleet 报告共享 `100.89.x.x` 地址；Host guard 自动接受该地址。
+- 安装脚本/plist 设置 `HERDR_WEB_SERVICE=1`，帮助重启逻辑识别 supervisor。

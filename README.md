@@ -310,19 +310,47 @@ tailnet's consoles itself (`93a088d`), so it joins rather than standing alone.
 
 The listener is the switch. A console with a Tailscale bind is a fleet member: it
 discovers peers and may follow a newer build. A console with only loopback binds
-is local-only: it does not run the heartbeat/follow loops, does not probe the
-tailnet for updates, and updates from GitHub or `HERDR_WEB_RELEASE_SOURCE`. A
+is local-only: it does not run the heartbeat or probe the tailnet, but the
+hourly updater still uses GitHub or `HERDR_WEB_RELEASE_SOURCE`. A
 tailnet-facing console accessed through `127.0.0.1` is still the same fleet
 member; for a truly local-only instance bind `-addr 127.0.0.1 -local-addr ''`.
 A one-machine tailnet has no peer source: its update comes from GitHub, an
 explicit source, or a seeded release.
 
-Updates follow the same rule: any console running a strictly newer build is a
-source. A console adopts the newest build it can verify, keeping the build it
-replaced as `herdr-web.previous`; `POST /api/v1/herdr-web/rollback` puts it back,
-which is the answer to a build that starts and then misbehaves. Safe defaults:
-nothing is adopted that is not strictly newer, nothing is adopted that fails its
-checksum, and `HERDR_WEB_FLEET_FOLLOW=off` keeps a console where it is.
+A machine shared into another tailnet has two addresses: the interface it binds
+(its own `100.64.x.x`) and the address peers use (the shared `100.89.x.x`). Set
+`HERDR_WEB_ADVERTISE_ADDR=100.89.0.3:5000` and bind both listeners:
+
+```sh
+herdr-web -addr 100.64.0.8:5000 -local-addr 192.168.1.44:5000
+```
+
+The advertised address is what this console reports in fleet heartbeats, so a
+peer does not keep dialing an address it cannot route. The Host guard also
+accepts it automatically.
+
+Every installed console checks for a newer build **45 seconds after start, then
+hourly**. The check uses the remembered source, GitHub, and reachable consoles;
+it adopts only a strictly newer, checksum-verified build, keeps
+`herdr-web.previous`, and never replaces a checkout binary unless
+`HERDR_WEB_AUTO_UPDATE=force`. A running job suppresses the restart (the check
+may be skipped) so an agent turn is not dropped. After installing, the console
+asks its service manager to restart, or `syscall.Exec`s itself when no supervisor
+exists. Controls:
+
+```text
+HERDR_WEB_AUTO_UPDATE=off|force     disable, or allow a checkout binary
+HERDR_WEB_AUTO_UPDATE_FIRST_DELAY=45s
+HERDR_WEB_AUTO_UPDATE_INTERVAL=1h
+GET  /api/v1/herdr-web/update/status
+POST /api/v1/herdr-web/restart      restart onto the binary on disk
+```
+
+`HERDR_WEB_FLEET_FOLLOW=off` still disables the default updater (use
+`HERDR_WEB_AUTO_UPDATE=on` to override on a machine that wants updates).
+`POST /api/v1/herdr-web/rollback` puts back `herdr-web.previous`; restart after
+it. Safe defaults: nothing is adopted that is not strictly newer, nothing that
+fails its checksum, and a build that cannot name its version is refused.
 
 Each hello also carries what a machine can offer a task: its agents, tools, declared
 models (`HERDR_WEB_MODELS`), and its capacity (`running` out of `maxTasks`).

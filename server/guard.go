@@ -44,7 +44,11 @@ type requestGuard struct {
 
 // GuardRequests wraps the console handler with the browser-boundary checks.
 func GuardRequests(next http.Handler, listeners []net.Listener) http.Handler {
-	guard := newRequestGuard(listeners, os.Getenv(allowedHostsEnv))
+	extraHosts := os.Getenv(allowedHostsEnv)
+	if advertised := strings.TrimSpace(os.Getenv("HERDR_WEB_ADVERTISE_ADDR")); advertised != "" {
+		extraHosts += "," + advertised
+	}
+	guard := newRequestGuard(listeners, extraHosts)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !guard.hostAllowed(r.Host) {
 			writeError(w, http.StatusForbidden, "forbidden_host",
@@ -100,6 +104,7 @@ func newRequestGuard(listeners []net.Listener, extraHosts string) *requestGuard 
 		if item == "" {
 			continue
 		}
+		guard.exact[item] = true
 		guard.names[item] = true
 		if host, _, err := net.SplitHostPort(item); err == nil && host != "" {
 			guard.names[strings.TrimSuffix(host, ".")] = true

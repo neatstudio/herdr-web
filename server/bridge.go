@@ -102,6 +102,8 @@ type Server struct {
 	// tailnetFacing is set from the listeners: a console with no Tailscale bind
 	// is local-only and must not discover or follow the tailnet.
 	tailnetFacing bool
+	// autoUpdate is the hourly self-update scheduler's last result and lock.
+	autoUpdate autoUpdateState
 }
 
 // sharedLedgerOverride lets main wire the NATS adapter before NewServer is
@@ -893,6 +895,8 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("/api/v1/herdr-web/release", handleSelfRelease)
 	mux.HandleFunc("/api/v1/herdr-web/update", handleSelfUpdate)
+	mux.HandleFunc("/api/v1/herdr-web/update/status", s.handleAutoUpdateStatus)
+	mux.HandleFunc("/api/v1/herdr-web/restart", s.handleSelfRestart)
 	mux.HandleFunc("/api/v1/herdr-web/rollback", handleSelfRollback)
 	// The console is also a release source: a host that cannot reach GitHub
 	// installs from a peer that can (or from a bastion).

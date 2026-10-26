@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math/rand"
 	"net"
@@ -35,8 +34,6 @@ import (
 const (
 	// fleetHeartbeatInterval is how often a console exchanges lists with peers.
 	fleetHeartbeatInterval = 30 * time.Second
-	// fleetFollowInterval is how often a console looks for a newer build.
-	fleetFollowInterval = 3 * time.Minute
 	// fleetPeerStaleAfter is when a peer that stopped reporting shows as stale.
 	fleetPeerStaleAfter = 3 * time.Minute
 	// fleetPeerForgetAfter is when a silent peer is dropped from the list. Long,
@@ -148,6 +145,12 @@ var (
 // seed it knows the rest of the fleet by itself.
 func SetFleet(seeds, addr string) {
 	defaultFleetSeeds = parseFleetSeeds(seeds)
+	// A machine shared into another tailnet is reachable at an address that is
+	// not one of its own interfaces. The bind address is what it listens on; the
+	// advertised address is what peers must dial.
+	if advertised := strings.TrimSpace(os.Getenv("HERDR_WEB_ADVERTISE_ADDR")); advertised != "" {
+		addr = advertised
+	}
 	defaultFleetAddr = strings.TrimSpace(addr)
 }
 
@@ -187,17 +190,17 @@ func fleetFollowEnabled() bool {
 	}
 }
 
-// StartFleet begins the exchange and the follow loop. Both stop with ctx.
+// StartFleet begins the exchange and the hourly self-update loop. A console
+// that is shared into another tailnet can be reached by peers even when it cannot
+// reach them; it still needs the updater, so the loop is not tied to the
+// heartbeat.
 func (s *Server) StartFleet(ctx context.Context) {
-	if !s.tailnetFacing {
-		// A loopback-only console is an entry point of one. It updates from the
-		// official source or an explicit source; it does not touch the tailnet.
-		return
-	}
 	s.loadFleet()
-	go s.fleetHeartbeatLoop(ctx)
-	if fleetFollowEnabled() {
-		go s.fleetFollowLoop(ctx)
+	if s.tailnetFacing {
+		go s.fleetHeartbeatLoop(ctx)
+	}
+	if autoUpdateEnabled() {
+		go s.autoUpdateLoop(ctx)
 	}
 }
 
@@ -477,21 +480,6 @@ func (s *Server) fleetPeerCount() int {
 	return len(s.fleet.peers)
 }
 
-func (s *Server) fleetFollowLoop(ctx context.Context) {
-	ticker := time.NewTicker(fleetFollowInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if _, err := s.fleetFollowOnce(ctx); err != nil {
-				fmt.Fprintf(os.Stderr, "herdr-web: fleet follow: %v\n", err)
-			}
-		}
-	}
-}
-
 // fleetSources lists the consoles that might publish a newer build, best first:
 // a peer that already reported a newer version, then the seeds, then the official
 // release. Any console can publish, which is what makes the loss of one of them
@@ -617,30 +605,10 @@ func (s *Server) fleetFollowOnce(ctx context.Context) (bool, error) {
 // starting a service manager.
 var fleetSpawn = spawnDetached
 
-// fleetRestart starts the new binary through the service manager, which is the
-// only thing that can restart the process serving this request.
-//
-// The scope has to match the unit that is actually running: a root console is
-// registered as a system unit, and asking the user manager to restart it fails
-// while the files on disk are already the new build — which is how a fleet ends
-// up reporting one version and running another.
-var fleetRestart = func() error {
-	switch runtime.GOOS {
-	case "linux":
-		if os.Getuid() == 0 {
-			return fleetSpawn("systemctl", []string{"restart", "dev.herdr-web"})
-		}
-		return fleetSpawn("systemctl", []string{"--user", "restart", "dev.herdr-web"})
-	case "darwin":
-		return fleetSpawn("launchctl", []string{"kickstart", "-k", "gui/" + currentUID() + "/dev.herdr-web"})
-	default:
-		return errors.New("no service manager")
-	}
-}
-
-func currentUID() string {
-	return fmt.Sprintf("%d", os.Getuid())
-}
+// fleetRestart is the restart seam used by the auto-update loop and its tests.
+// selfRestart asks the supervisor to start a fresh process, or replaces this
+// process when it runs in a terminal with no supervisor.
+var fleetRestart = selfRestart
 
 // handleFleetHello records a console and answers with this console's own view,
 // so the caller learns machines it has not met. Every console serves this; there

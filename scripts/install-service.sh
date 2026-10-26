@@ -98,6 +98,7 @@ install_systemd() {
     echo "Type=simple"
     echo "WorkingDirectory=$HOME"
     echo "Environment=PATH=$(service_path)"
+    echo "Environment=HERDR_WEB_SERVICE=1"
     echo "ExecStart=$binary$(service_args | sed 's/^/ /' | tr '\n' ' ')"
     echo "Restart=on-failure"
     echo "RestartSec=3"

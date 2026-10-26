@@ -197,6 +197,7 @@ func TestFleetRestartMatchesTheUnitScope(t *testing.T) {
 	// A root console is a system unit; asking the user manager to restart it
 	// leaves the old process running the new file, which is how a fleet came to
 	// report one version and run another.
+	t.Setenv("HERDR_WEB_SERVICE", "1")
 	var args []string
 	previous := fleetSpawn
 	fleetSpawn = func(name string, argv []string) error {
@@ -210,9 +211,9 @@ func TestFleetRestartMatchesTheUnitScope(t *testing.T) {
 	}
 	switch runtime.GOOS {
 	case "linux":
-		want := []string{"systemctl", "--user", "restart", "dev.herdr-web"}
+		want := []string{"systemctl", "--user", "--no-block", "restart", "dev.herdr-web"}
 		if os.Getuid() == 0 {
-			want = []string{"systemctl", "restart", "dev.herdr-web"}
+			want = []string{"systemctl", "--no-block", "restart", "dev.herdr-web"}
 		}
 		if strings.Join(args, " ") != strings.Join(want, " ") {
 			t.Fatalf("args = %v, want %v", args, want)
