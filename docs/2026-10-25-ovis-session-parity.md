@@ -134,6 +134,7 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `9eaf60c` | 终端镜头里的键条、键盘菜单和查找条仍是鼠标尺寸：44px 的键条里浮着 32px 的键面（上下各 6px 空），菜单的 `hide` 是 26×20 的文本链接、两行网格每行只有 32px，查找条的三枚按钮是 36×36、旁边那颗启动按钮 40×40。键面加到 40px 时整条会从 44 涨到 45（1px 规则 + 2+2 padding），等于白拿终端一行，所以让 padding 从 2 退到 1 把那 1px 还回去，`min-height` 继续钉住 44px——竖屏、横屏、键盘起落四种姿态下终端高度与改前逐项相同（559/429/177/0）。菜单是在流里的，它长多高终端就少多高，于是给小屏横放留了 `min-height: 500px` 的闸：竖着两行网格升到 40px、标题行 44px（`hide` 变成真 34×44），480px 高的横屏手机维持 32px 不变。查找条按钮升到 44px，390 宽仍有 182px 输入框、320 宽 112px，无溢出 |
 | `1dc18b4` | 手机上换 pane 全靠 picker 表，可这张表每一件都还是桌面尺寸：行高 30px、agent 名用 9.5px 的 micro 字号、还塞在 4rem（64px）的列里，于是 `opencode-gpt-5-coder`、`claude-code` 被截成 `opencode-…`/`claude-co…`——一行里唯一能区分两个 pane 的词没了，名字那侧却空着；Agents/Spaces 切换条 34px，筛选框 27px 高、旁边那个 14px 的 `×` 只有 16×14。粗指针下：行 44px，agent 列放宽到 5.25rem 并把字号提到 `--step-fine` 11px（identity 不是 caption），切换条 44px、字号同样升到 11px；筛选框 44px，清除键撑成 44×54 顶满整行、字段用 `padding-right: 46px` 把文字让开它（`top/right/bottom: 0` 让它吃满 filter 行，而不是只吃 input 的 44px）。全部挂在 `(pointer: coarse)` 且以 `.sheet` 前缀收窄，桌面仍是 30px 行 / 34px 切换条 / 27px 筛选框 / 16×14 的 `×`（1440×900 与 1280×800 逐项复测）。390×844、320×780、768×1024 明暗实测：表内每个可点元素都 ≥44×44，列表可滚、无溢出 |
 | `b473db7` | 打字钻进 picker 时那张表把下半屏藏了：`visualViewport` 缩了但 layout viewport 没缩，`.sheet` 是 `position: fixed; inset: 0`，于是 390×844 上配 300px 键盘时 sheet 仍量到 844、第 1–8 行全在键盘后面，而且列表内容 528px 正好塞进 528px 的盒子——没有溢出可滚，第 12 行永远摸不到。修法只用已有的 `html.has-keyboard` 与 `--kb-inset`：粗指针且 `min-height: 500px` 时 `.has-keyboard .sheet { bottom: var(--kb-inset, 0px) }`，sheet 844→544，`.sheet__body` 拿到 381px 的可视区与 528px 的内容，最后一行滚得到也点得中。肖像限定是因为 390px 高的横屏手机 sheet 自带 chrome 就 163px（头 63 + 切换条 45 + 筛选 55），让 250px 给键盘就一行都不剩——那里保留整屏 5 行更好。同一条规则顺带把 new-workspace 弹窗从 y=278 抬到 y=128，仍在键盘以上居中 |
+| `ab13de2` | 横屏手机（844×390）弹出键盘后两个 sheet 整块被盖住：`bottom: var(--kb-inset)` 只写在 `(pointer: coarse) and (min-height: 500px)` 里，390 高的机器不满足，sheet 仍是满高。picker 的第一行在 163px、键盘顶在 ~140，一行都看不见；fleet 的 prompt 滚到后面也在键盘下面。放开到所有粗指针高度，并给矮横屏单独压 chrome：picker 藏掉视图切换、标题折掉、关闭钮浮到过滤行右端（清除钮左移 44px 让两个 ✕ 不叠），chrome 163→45，250px 键盘下仍露 2 行且列表可滚；fleet 少一层内边距，头部 63→45；`.sheet--dialog` 不压（表单本来 287px 就放得下，压到 104px 只会多一段滚动） |
 | `08d0433` | PC 上这张表把宽度撒错了地方：picker 是满屏 sheet，却在 pane 名旁边只给 agent 4rem，于是 `opencode-gpt-5-coder` 被截成 `opencode…`，而右边 1 300px 的名字列空着。⚠️ 这是本轮唯一一处"桌面也要改"的截断：1440×900 下 `.srow__agent` clientWidth 64、scrollWidth 133。改成 `@media (min-width: 700px)` 里 `.sheet .srow:not(.srow--space)` agent 列 10rem、`.srow__agent` 字号从 micro 抬到 fine（这里是身份不是注脚），160px 装得下 133px，名字列仍有 1254px。手机保持 5.25rem——那条粗指针规则从"所有触摸屏"收紧成 `(pointer: coarse) and (max-width: 699px)`，于是 820 宽的 iPad 也吃到桌面列宽。行高不动（桌面 30、触摸 44）。rail 侧栏**故意不加宽**：它只有 244px，名字比 agent 更缺像素，所以 agent / 名字 / 空间行都补了 `title`，picker 行的 `title` 从"只有备注"改成 `名字 — id (空间) · 备注` |
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
@@ -633,6 +634,40 @@ picker 仍是满高、行 30px。`build` 与 `test:unit` 324/324 全绿。
 
 桌面行高、字体基准、终端区宽度都没动：`.srow` 还是 30px，`build` 与
 `test:unit` 324/324 全绿，四端截图（1440 深/浅、390、820）无溢出。
+
+### 4.11 横屏 + 键盘：140px 里怎么放下一张表（`ab13de2`）
+
+4.9 把 sheet 从"满屏"改成"跟 `visualViewport`"，但那条规则外面套了
+`(pointer: coarse) and (min-height: 500px)`——因为竖屏 390×844 扣掉键盘还有 544px，
+而横屏 844×390 扣掉 250px 只剩 140px，当时判断"140px 放不下 picker 的 163px 自带
+chrome，不如整张留着"。实测这个判断错了：整张留着意味着**列表在键盘下面**。
+
+| 量到的东西（844×390 粗指针，深色，250px 键盘） | 改前 | 改后 |
+| --- | --- | --- |
+| `.sheet` 高度 | 390（满高，被键盘盖住 250） | 140 |
+| picker 视图切换 / 头部 / 过滤行 / 列表顶 | 45 / 63 / 55 / 163 | 0 / 45（浮层）/ 45 / 45 |
+| picker 可见整行 | 0 | 2（200px 键盘时 3，无键盘时 5） |
+| fleet 头部 / 列表顶 / `#dispatch-send` | 63 / 63 / 滚到底也在键盘下 | 45 / 45 / 键盘上方可点到（`sendHit` 自己） |
+| new workspace 面板 | 287，`#workspace-create` 在 278–322（键盘顶 140，点不到） | 保持 287 居中，面板本身可滚，滚到底 create 可点 |
+
+三条要记：
+
+1. **"放不下"和"不显示"是两回事。** 140px 确实放不下 163px 的 chrome，但取舍不是
+   "整张 sheet 留着"，而是"chrome 让位"。视图切换（agents/spaces）是唯一可以藏的：
+   关掉重开就能切到另一张表；头部则从"一行"降级成"一个浮动关闭钮"。
+   `padding: 9px 12px` 在矮横屏里是纯损耗，44px 的按钮自己就是行高。
+2. **浮动关闭钮必须让出底下的点击位。** 关闭钮浮在过滤行右端后，`input` 的右侧要留
+   两个 44px（`padding-right: 88px`），清除钮从 `right: 44px` 排到关闭钮左边——
+   否则两个 ✕ 叠在一起，点关闭会清空、点清除会关闭。滤镜行自身的内边距也归零，
+   45px 而不是 55px。
+3. **对话框不吃这条压缩。** `.sheet--dialog` 是 grid 居中的短表单，287px 本来就
+   在键盘上方；跟着 shrink 到 104px 只会把 create 挤进滚动区。所以选择器写成
+   `:not(.sheet--fleet):not(.sheet--dialog)`，fleet 单独只减内边距（它的关闭钮在
+   头部里，头不能消失）。
+
+竖屏回归：390×844（sheet 544、列表 381）、820×1180（880，头部 63）、桌面 1440×900
+（不粗指针，`--kb-inset` 为 0，sheet 仍是 900）全部与改前一致，`build` 与
+`test:unit` 324/324 全绿。
 
 ## 5. 给服务端的一页需求（若要继续逼近 Ovis）
 
