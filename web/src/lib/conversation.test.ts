@@ -112,6 +112,35 @@ test("an inline code chip does not turn an answer paragraph into a user turn", (
 });
 
 /**
+ * A long inline code run wraps, so its fill lands on the next row from column
+ * zero and covers most of it (`91%` on devin's `w6:p7`). "Most of the row" let
+ * that row open a user turn: three tails of one answer surfaced as operator
+ * bubbles while the answer above them stayed prose. A chip run always ends in
+ * plain ink, so the fill never covers every glyph; a real band has nothing
+ * after it.
+ */
+test("a wrapped inline code run does not open a user turn mid-answer", () => {
+  const chip = (code: string): string =>
+    `${ESC}38;2;220;220;170m${ESC}48;2;0;43;54m ${code} ${RESET}`;
+  const text = snapshot([
+    band(" 看下 fleet 和账本的信任边界"),
+    ink(" Problem：peer 名单投毒 → 触发 token 转发和更新源劫持；heartbeat 每"),
+    ink(" 30s 向所有 claimed addr POST → 持续 SSRF。"),
+    `${chip("tConsoles() / knownPeerHost / fleetSources")}${ink(" 。")}`,
+    ink(" If we skip it：入口都靠它开门。"),
+  ]);
+  const conversation = deriveConversation(text);
+  assert.equal(conversation.turns.length, 1);
+  const turn = conversation.turns[0];
+  assert.equal(turn.user, "看下 fleet 和账本的信任边界");
+  assert.match(turn.answer, /claimed addr POST/);
+  assert.match(turn.answer, /tConsoles\(\) \/ knownPeerHost/);
+  assert.match(turn.answer, /If we skip it/);
+  // The wrapped row must not be pulled into the user message before it either.
+  assert.doesNotMatch(turn.user ?? "", /tConsoles/);
+});
+
+/**
  * devin fills the row it echoes as `❭ <first line>` and pads it to the pane
  * width; the wrapped continuation rows keep the fill but not the marker. The
  * marker must be stripped and the whole run kept: dropping the marked row as

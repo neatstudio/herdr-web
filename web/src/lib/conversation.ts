@@ -141,8 +141,8 @@ function hasBackground(line: Line): boolean {
 }
 
 /**
- * A *band* row: the fill starts before the text does, and it covers most of
- * the row.
+ * A *band* row: the fill starts before the text does, and it covers every
+ * glyph on the row.
  *
  * `hasBackground` is not enough to recognise a user message. An answer that
  * mentions a `path` or a `command` carries the inline chip's background on a
@@ -153,9 +153,17 @@ function hasBackground(line: Line): boolean {
  * ("❭ /usage", "❭ 继续") behind as chrome.
  *
  * A real band is filled for the whole row — the input box pads it out to the
- * pane width. Requiring the first visible glyph to sit on the fill, and the
- * fill to cover most of the row, separates the two without comparing colours
- * (the colours are identical; see `BOX_EDGE_RE`).
+ * pane width — so *every* glyph sits on the fill and nothing follows it in
+ * plain ink. Requiring that separates the two without comparing colours (the
+ * colours are identical; see `BOX_EDGE_RE`).
+ *
+ * "Most of the row" was not enough. devin answers in prose with long inline
+ * code runs, and a run that wraps lands its fill on the next row from column
+ * zero: ` tConsoles() / knownPeerHost / fleetSources 。` on `w6:p7` was 91%
+ * filled and opened a user turn, so the tail of an answer surfaced as an
+ * operator bubble. A chip run is always *followed* by the prose that ends the
+ * sentence (it stopped at 71–91%, never 100%), while a band row has nothing
+ * after its fill.
  */
 function isBandRow(line: Line): boolean {
   let filled = 0;
@@ -173,7 +181,7 @@ function isBandRow(line: Line): boolean {
       leading = span.style.bg !== null;
     }
   }
-  return leadingSeen && leading && filled * 2 >= total;
+  return leadingSeen && leading && filled === total;
 }
 
 function italicShare(line: Line): number {
