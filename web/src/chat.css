@@ -81,15 +81,60 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px 2px;
+  /* 6 + 32 + 6 = the 44px a thumb needs. The faces stay 32px and the row pays
+     the rest as padding: the chip's hit skirt is clipped by this row's own
+     overflow, so a 2px floor used to cut the target back to 40. */
+  padding: 6px 12px;
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
+  /* Without this the snap aligns the first chip to the row's edge and eats the
+     12px lead-in, which also makes the row look already-scrolled at rest. */
+  scroll-padding-inline: 12px;
+  scroll-snap-type: x proximity;
   scrollbar-width: none;
+  /* The key bar below reaches 4px up with an invisible skirt, and painting
+     order would hand it the row's bottom band: the chip would lose the last
+     pixels of a target it has just paid for. Answers are what the row is for,
+     so the row wins the boundary; esc keeps the whole bar. */
+  position: relative;
+  z-index: 1;
 }
 
 .chat__pick::-webkit-scrollbar {
   display: none;
+}
+
+/* Menus are longer than a phone is wide: six answers are 1 169px of chips in a
+   390px row, so the third is sliced at the screen edge and reads as a broken
+   box rather than as "swipe for the rest". Fading the edge is the convention
+   the tab strip already uses for a scrolled-away tab; the row borrows it, and
+   only while there is something on that side to reach. */
+.chat__pick--more {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 34px), transparent 100%);
+  mask-image: linear-gradient(to right, #000 calc(100% - 34px), transparent 100%);
+}
+
+.chat__pick--back {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 20px);
+  mask-image: linear-gradient(to right, transparent 0, #000 20px);
+}
+
+.chat__pick--back.chat__pick--more {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 20px,
+    #000 calc(100% - 34px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 20px,
+    #000 calc(100% - 34px),
+    transparent 100%
+  );
 }
 
 .chat__pickopt {
@@ -109,14 +154,19 @@
   font-size: var(--ui-meta, 11px);
   line-height: 1;
   cursor: pointer;
+  scroll-snap-align: start;
 }
 
 /* 32px is what a chip should look like; 44px is what a thumb needs to hit it.
-   The row stays short and the target grows sideways where nothing else lives. */
+   The row pays the extra 12px as padding and the skirt fills it, sideways where
+   nothing else lives. The chip's 1px rule sits between its border box and the
+   box this pseudo is placed against, so the skirt reaches one pixel further
+   than the padding alone would suggest: 6px of padding plus that rule lands on
+   the row's own edge, with nothing left over. */
 .chat__pickopt::after {
   content: "";
   position: absolute;
-  inset: -6px -2px;
+  inset: calc(-6px - var(--rule-w)) -2px;
 }
 
 .chat__pickopt:active {

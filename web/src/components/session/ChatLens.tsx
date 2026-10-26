@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { deriveConversation } from "@/lib/conversation";
 import { sendPaneKeys } from "@/lib/herdr";
@@ -35,6 +35,9 @@ export function ChatLens({ paneId, status, onOpenTerminal }: ChatLensProps) {
   const laneRef = useRef<HTMLDivElement | null>(null);
   const stickyRef = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
+  // The answer row scrolls sideways; these are the two edges it must fade.
+  const pickRef = useRef<HTMLDivElement | null>(null);
+  const [edges, setEdges] = useState({ back: false, more: false });
   // A picker in the transcript can only be answered with keys, and on a phone
   // the only keyboard is the one this bar draws.
   const [latches, setLatches] = useState<KeyLatch>(emptyLatches);
@@ -166,6 +169,52 @@ export function ChatLens({ paneId, status, onOpenTerminal }: ChatLensProps) {
     lane.scrollTop = lane.scrollHeight;
   };
 
+  // A menu longer than the phone is wide turns its answer row into a sideways
+  // scroll, and the chip at the screen edge is cut mid-glyph: that reads as a
+  // clipped box, not as "there is more". Only the row knows whether anything is
+  // left on either side of the viewport, so it reports both edges and the row
+  // fades the one that still has answers behind it.
+  const measurePick = useCallback(() => {
+    const row = pickRef.current;
+    if (row === null) {
+      return;
+    }
+    const back = row.scrollLeft > 2;
+    const more = row.scrollLeft + row.clientWidth < row.scrollWidth - 2;
+    setEdges((current) =>
+      current.back === back && current.more === more ? current : { back, more },
+    );
+  }, []);
+
+  useEffect(() => {
+    const row = pickRef.current;
+    if (row === null) {
+      setEdges((current) => (current.back || current.more ? { back: false, more: false } : current));
+      return;
+    }
+    measurePick();
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
+    // The row's own box can stay put while the answers under it change width, so
+    // the chips are observed too: a new label is a new scrollWidth.
+    const observer = new ResizeObserver(measurePick);
+    observer.observe(row);
+    for (const chip of Array.from(row.children)) {
+      observer.observe(chip);
+    }
+    return () => observer.disconnect();
+  }, [measurePick, options]);
+
+  const pickClass =
+    edges.back && edges.more
+      ? "chat__pick chat__pick--back chat__pick--more"
+      : edges.back
+        ? "chat__pick chat__pick--back"
+        : edges.more
+          ? "chat__pick chat__pick--more"
+          : "chat__pick";
+
   const empty = turns.length === 0;
   const waiting = read.text === "";
   const message = waiting ? "Waiting for the pane to paint." : "No transcript yet.";
@@ -206,7 +255,13 @@ export function ChatLens({ paneId, status, onOpenTerminal }: ChatLensProps) {
         </button>
       )}
       {options !== null && (
-        <div className="chat__pick" role="group" aria-label="answer the menu">
+        <div
+          className={pickClass}
+          ref={pickRef}
+          onScroll={measurePick}
+          role="group"
+          aria-label="answer the menu"
+        >
           {options.map((option) => (
             <button
               key={option.key}
