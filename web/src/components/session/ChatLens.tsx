@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { deriveConversation } from "@/lib/conversation";
 import { sendPaneKeys } from "@/lib/herdr";
 import { PICKER_BAR_KEYS, emptyLatches, type KeyLatch } from "@/lib/keybar";
-import { pickerKeyName, showsPicker } from "@/lib/pickerKeys";
+import { parsePickerOptions, pickerKeyName, showsPicker } from "@/lib/pickerKeys";
 import { usePaneRead } from "@/lib/usePaneRead";
 import { KeyBar } from "./KeyBar";
 import { TurnList } from "./TurnList";
@@ -56,6 +56,13 @@ export function ChatLens({ paneId, status, onOpenTerminal }: ChatLensProps) {
   // bar below is the only keyboard that can answer it — so the snapshot gets a
   // second opinion.
   const picker = blocked || showsPicker(read.text);
+  // A menu's own digits are one tap; the bar's arrows are three. Both stay on
+  // screen: the chips answer, the bar still has esc and a way through a menu
+  // whose answers the snapshot did not spell out.
+  const options = useMemo(
+    () => (picker ? parsePickerOptions(read.text) : null),
+    [picker, read.text],
+  );
 
   // The pane snapshot has no timestamps, so the only duration available is the
   // one we observe: from the first snapshot that carried the running turn.
@@ -197,6 +204,22 @@ export function ChatLens({ paneId, status, onOpenTerminal }: ChatLensProps) {
         >
           latest ↓
         </button>
+      )}
+      {options !== null && (
+        <div className="chat__pick" role="group" aria-label="answer the menu">
+          {options.map((option) => (
+            <button
+              key={option.key}
+              type="button"
+              className="chat__pickopt"
+              aria-label={`answer ${option.key}: ${option.label}`}
+              onClick={() => void sendPaneKeys(paneId, [option.key])}
+            >
+              <span className="chat__picknum">{option.key}</span>
+              <span className="chat__picklabel">{option.label}</span>
+            </button>
+          ))}
+        </div>
       )}
       {picker && (
         <KeyBar

@@ -120,6 +120,9 @@ const HINT_TAIL_LINES = 6;
 /** Box drawing, gutter and list-cursor characters a menu puts before a row. */
 const MENU_LEAD = /^[\s│┃|╎:❯›>»]+/;
 
+/** Box drawing and cursor characters trailing a label. */
+const MENU_TRAIL = /[\s│┃|╎]+$/;
+
 /** How many option rows a single line carries (`1.`, `1)`, `[1]`, `(1)`). */
 function optionsOn(line: string): number {
   return (line.match(/(?:\[\d+\]|\(\d+\)|\d+[.)])\s+\S/g) ?? []).length;
@@ -131,6 +134,45 @@ const CONFIRM_HINTS = [
   /\b(?:enter|return)\b[^\n]{0,24}\b(?:confirm|select|submit|choose|accept)\b/i,
 ];
 
+/** One answer a menu offers: the digit the agent listens for and its label. */
+export type PickerOption = { key: string; label: string };
+
+/** A marker plus the space after it; the label runs to the next marker or EOL. */
+const OPTION_MARK = /(?:\[(\d+)\]|\((\d+)\)|(\d+)[.)])\s+/g;
+/** Column-aligned inline menus separate their answers with a run of spaces. */
+const COLUMN_GAP = /\s{2,}/;
+/** Longest label a chip will draw; anything longer is a paragraph, not an answer. */
+const LABEL_MAX = 26;
+/** How much of a clipped label survives at each end. */
+const LABEL_HEAD = 11;
+const LABEL_TAIL = 14;
+
+/**
+ * The last lines of a snapshot, stripped and trimmed, when they look like a menu.
+ *
+ * `null` means "not a menu" — the same conservative verdict `showsPicker`
+ * returns, shared so the two can never disagree.
+ */
+function menuTail(text: string): string[] | null {
+  if (text === "") {
+    return null;
+  }
+  const lines = stripAnsi(text)
+    .split("\n")
+    .map((line) => line.replace(MENU_LEAD, "").trimEnd())
+    .filter((line) => line.trim() !== "");
+  const options = lines
+    .slice(-MENU_TAIL_LINES)
+    .reduce((count, line) => count + optionsOn(line), 0);
+  if (options < 2) {
+    return null;
+  }
+  const hint = lines
+    .slice(-HINT_TAIL_LINES)
+    .some((line) => CONFIRM_HINTS.some((test) => test.test(line)));
+  return hint ? lines : null;
+}
+
 /**
  * Whether the tail of a pane snapshot is a menu waiting for a key press.
  *
@@ -138,19 +180,59 @@ const CONFIRM_HINTS = [
  * be stripped by the caller.
  */
 export function showsPicker(text: string): boolean {
-  if (text === "") {
-    return false;
+  return menuTail(text) !== null;
+}
+
+/**
+ * A label short enough to be a chip.
+ *
+ * Clipped in the middle, not at the end: the answers to a menu are often paths
+ * or names that share a prefix, so the right edge is the part that tells them
+ * apart. A label this long always contains an ellipsis rather than a prefix.
+ */
+function clipLabel(label: string): string {
+  if (label.length <= LABEL_MAX) {
+    return label;
   }
-  const lines = stripAnsi(text)
-    .split("\n")
-    .map((line) => line.replace(MENU_LEAD, "").trimEnd())
-    .filter((line) => line.trim() !== "");
-  const menu = lines.slice(-MENU_TAIL_LINES);
-  const options = menu.reduce((count, line) => count + optionsOn(line), 0);
-  if (options < 2) {
-    return false;
+  return `${label.slice(0, LABEL_HEAD)}…${label.slice(-LABEL_TAIL)}`;
+}
+
+/**
+ * The answers a menu offers, as digits a thumb can press.
+ *
+ * A menu drawn in a transcript is answerable with six keys and three taps; a
+ * chip with the answer's own digit is one tap. Only menus that already passed
+ * `showsPicker` are parsed, so a chip row can never appear where a bar would
+ * not. Labels stop at the column gap an inline menu uses, and at
+ * `LABEL_MAX` — a chip is an answer, not a line of prose.
+ */
+export function parsePickerOptions(text: string): PickerOption[] | null {
+  const lines = menuTail(text);
+  if (lines === null) {
+    return null;
   }
-  return lines
-    .slice(-HINT_TAIL_LINES)
-    .some((line) => CONFIRM_HINTS.some((hint) => hint.test(line)));
+  const options: PickerOption[] = [];
+  const seen = new Set<string>();
+  for (const line of lines) {
+    // A marker only opens an answer at the start of a row or after the wide
+    // gap a column-aligned row uses. A `2.` inside a sentence is text.
+    const marks = [...line.matchAll(OPTION_MARK)].filter(
+      (mark) => mark.index === 0 || /\s{2,}$/.test(line.slice(0, mark.index)),
+    );
+    for (let i = 0; i < marks.length; i += 1) {
+      const mark = marks[i];
+      const key = mark[1] ?? mark[2] ?? mark[3];
+      const start = (mark.index ?? 0) + mark[0].length;
+      const end = i + 1 < marks.length ? marks[i + 1].index ?? line.length : line.length;
+      const label = clipLabel(
+        line.slice(start, end).split(COLUMN_GAP)[0].replace(MENU_TRAIL, "").trim(),
+      );
+      if (label === "" || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      options.push({ key, label });
+    }
+  }
+  return options.length >= 2 ? options.slice(0, 9) : null;
 }

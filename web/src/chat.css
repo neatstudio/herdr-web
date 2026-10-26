@@ -71,6 +71,73 @@
   padding-bottom: 2px;
 }
 
+/* The answers a menu offers, as chips. A menu is a question with a short list
+   of replies; the key bar below can only walk that list, three taps per answer.
+   Chips sit between the bar and the composer — nearest the thumb, because the
+   answer is what the reader came to press. The bar stays: it owns esc, and it
+   is the only way through a menu whose answers the snapshot never spelled out. */
+.chat__pick {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 2px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.chat__pick::-webkit-scrollbar {
+  display: none;
+}
+
+.chat__pickopt {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 62vw;
+  min-height: 32px;
+  padding: 0 11px;
+  border: var(--rule-w) solid var(--ui-border-strong, var(--rule-strong));
+  border-radius: 999px;
+  background: var(--ui-elev, var(--raised));
+  color: var(--ui-text, var(--ink));
+  font-family: var(--ui-label, var(--font-label));
+  font-size: var(--ui-meta, 11px);
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* 32px is what a chip should look like; 44px is what a thumb needs to hit it.
+   The row stays short and the target grows sideways where nothing else lives. */
+.chat__pickopt::after {
+  content: "";
+  position: absolute;
+  inset: -6px -2px;
+}
+
+.chat__pickopt:active {
+  background: var(--ui-panel, var(--surface));
+}
+
+.chat__picknum {
+  flex: none;
+  font-family: var(--ui-mono, var(--font-mono));
+  font-size: var(--step-micro, 9.5px);
+  color: var(--accent);
+}
+
+.chat__picklabel {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  letter-spacing: 0.01em;
+}
+
 /* ------------------------------------------------------------------ turns */
 
 .chat__turn {
