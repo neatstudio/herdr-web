@@ -140,6 +140,7 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `b3eb59a` | 第三方 agent 的长名字把 tile 头撑成两倍高：herdr 原样透传 pane 跑的东西，`opencode-gpt5-coder-xhigh` 这种 slug 进来时 `.tile__agent` 没有截断，1024px 下被挤到 max-content 以下、在自己的盒子里换行，那一格的头 58px、旁边那格 28px——并排的头就不在一条线上了。芯片封顶 14ch + `text-overflow: ellipsis` + `white-space: nowrap`，全名进 `title`。1024/1280/1440/1920、2 与 3 格全量：每个头都是 28px，芯片单行 91px（`scrollWidth` 176），没有子元素越过 tile 边界 |
 | `79bf6bf` | iOS 只要聚焦的字段小于 16px 就放大整页且不缩回：草稿框早在 `composer.css` 付过这笔账，其余手机够得到的字段没有——picker 筛选 12px、工作区表单 12.5px、dispatch 表单（手机上唯一能把活发出去的入口）输入 12.5px、textarea 与两个 select 13.3px。`(pointer: coarse)` 里把这五类字段抬到 16px：只长字不长盒，44px 高度不变，320/390 实测 `docW === innerW` 无横向溢出；鼠标与触控板窗口一行未改。⚠️ 这是 4.3 那句话的另一半：16px 不是字号档位，是 iOS 不缩放的地板 |
 | `8fd0314` | 禁用态的半透明按钮是个窗口而不是调光器：fleet 的提交钮 `position: sticky` 钉在表单上（4.9 加的），`opacity: .5` 于是让底下滚过的策略提示直接读在橙色上，正好在它解释「为什么不能按」的时候看起来像掉漆。改成同样两种颜色的实色混合（`color-mix(in srgb, var(--accent) 50%, var(--paper))`，字再用纸色 50%）——两种主题下是与原来逐像素相同的禁用色，底下的东西不再透出来；320 实测浅色 #cd967e、深色 #844a28 |
+| `1209205` | 截断之后全名去哪看：4.13 把长 slug 截成 `opencode-gpt5…`，全名只进了 `title`——而 `title` 只认悬停，手机上长按什么也没有，偏偏「这个 pane 跑的是什么 agent」就是决定点不点的信息。芯片补长按（`longPressHandlers`）开 pane 菜单，菜单顶部加一行 `agent` 打印全名（`MenuTarget.agent`，行高按 34 计进弹层高度），回归测试钉三件：1024 下两个 `.tile__head` 高度相等、芯片 `scrollWidth > clientWidth`、`touchstart` 之后菜单里读得到 `opencode-gpt5-coder-xhigh`。同一次提交还带上了 §4.15 的横屏键盘修复 |
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
 `resolveLens` 的三例）；
@@ -776,6 +777,46 @@ dispatch 的 textarea 从 74 涨到 86（4 行 × 字号差），下面的策略
 50% 的 alpha。所以两种主题下颜色与原来逐像素相同（320 实测浅色 `#cd967e`、深色
 `#844a28`），只是不再透出后面的行。桌面提交钮不 sticky，但同一个禁用色也跟着变；
 空表单的 create 钮同理。
+
+### 4.15 横屏键盘上，fleet 的输入框长在提交钮底下（`1209205`）
+
+844×390 的横屏手机弹出 250px 键盘后，fleet 表单只剩 140px：头 45、体 95。这些盒子
+原来装 12.5px / 13.3px 的字；`79bf6bf` 按 iOS 的地板把它们抬到 16px 以后，四行 prompt
+单独就有 86px——再加 30px 的 label、44px 钉住的提交钮，一共 160px 要塞进 95px：输入框
+从 75 长到 161，提交钮钉在 72–140，于是正在打的那一行正好压在「你要按的那个按钮」底下，
+滚到底也只能看见按钮顶上一条橙边。
+
+两件不能动的：sheet 是 `fixed; inset: 0` 加 `bottom: var(--kb-inset)`，不能再长；键盘态
+里提交钮更不能消失（4.9 的规矩）。只能从表单自己身上让出 65px：
+
+1. 体的上内边距 12→6、下内边距 24→0。**提交钮 sticky 贴的是 padding box**，那 24px 正是
+   把它从 140 抬到 116、盖住输入框的直接原因；
+2. prompt 的 label 折掉——占位符 `what should the agents do?` 一字不差地重复了它；
+3. textarea 封到 `2.4em` ≈ 38px（16px 下两行），内部滚动跟光标。
+
+实测（844×390，深/浅一致）：
+
+| 量到的东西 | 改前 | 改后 |
+| --- | --- | --- |
+| prompt 盒 | 75–161（高 86） | 51–89（高 38） |
+| 提交钮盒 | 72–140（盖住 prompt） | 96–140 |
+| 两者间距 | 叠 68px | 空 7px |
+| prompt 底部的 `elementFromPoint` | 落在 `.newws__submit` 上 | 落在 `#dispatch-prompt` 上 |
+
+打进三行以上时 textarea 的 `scrollTop` 跟着光标走（第 3 行 24、第 4 行 42），最后两行
+始终留在盒里；竖屏 390×844、无键盘的横屏（prompt 仍 86px、label 仍在、提交钮回到表单
+末尾 322–366）与全部桌面尺寸逐项未变。
+
+三条要记：
+
+1. **`padding-bottom` 不是呼吸，是位移。** 给滚容器加下内边距，等于把钉住的条往上抬，
+   抬多高就盖住多少内容；算 sticky 的位置要从 padding box 起，不是从 content box。
+2. **`:has()` 在这里替代了组件改动。** DispatchSheet 是另一条线上的文件，用
+   `.newws__field:has(#dispatch-prompt)` 就只针对这一个字段；不支持 `:has()` 的浏览器
+   只是回退成旧布局（label 仍在、输入框四行），不会坏。
+3. **矮横屏的键盘态是全站最紧的盒子（140px）。** 任何「给字段加高度」的规则都要在这里
+   复算；这也是它挂在 `max-height: 499px` + `.has-keyboard` 上、而不是无条件手机规则的
+   原因——竖屏与无键盘横屏都还是完整的四行表单。
 
 ## 5. 给服务端的一页需求（若要继续逼近 Ovis）
 
