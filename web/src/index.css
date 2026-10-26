@@ -1135,9 +1135,19 @@ body::before {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
+/* herdr reports whatever agent a pane actually runs, and that can be a long
+   slug (`opencode-gpt5-coder-xhigh`). The header is a fixed-height strip, so
+   the chip truncates: without this it wrapped inside its own box and doubled
+   the height of that pane's header only, which broke a split's alignment. The
+   full name is on the element's title. */
 .tile__agent {
   padding: 1px 5px 0;
   border: var(--rule-w) solid var(--rule-strong);
+  min-width: 0;
+  max-width: 14ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--font-label);
   font-weight: 500;
 }

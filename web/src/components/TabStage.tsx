@@ -170,7 +170,9 @@ export function TabStage({
               }}
             >
               {agent !== "" && !paneNameRepeatsAgent(pane, workspaceName) && (
-                <span className="tile__agent">{agent}</span>
+                <span className="tile__agent" title={agent}>
+                  {agent}
+                </span>
               )}
               <span className="tile__name" data-pane-title={tile.id}>
                 {paneListName(pane, workspaceName)}
