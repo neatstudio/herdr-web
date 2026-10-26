@@ -28,6 +28,10 @@
 
   --step-micro: 9.5px;
   --step-label: 10.5px;
+  /* Small print in panels and sheets: a step under the body size, above the
+     label caps. Declarations read it long before it was defined, so they
+     quietly inherited the body size instead. */
+  --step-fine: 11px;
   --step-body: 12.5px;
   --step-name: 12px;
   --step-title: 15px;
@@ -2703,6 +2707,16 @@ body::before {
   cursor: default;
 }
 
+/* The send button is the sheet's one action and a thumb target on a phone. The
+   fine step is shorter than the body step it inherited for years, so the
+   padding alone no longer reaches 44px: pin the height rather than fatten the
+   padding on every pointer. */
+@media (pointer: coarse) {
+  .newws__submit {
+    min-height: 44px;
+  }
+}
+
 .newws__tmux {
   margin-top: 14px;
   border-top: var(--rule-w) solid var(--rule);
@@ -2874,12 +2888,14 @@ body::before {
 }
 
 /* The id says nothing about the work, so two entries look alike until each is
-   opened. One ellipsised line of the prompt is what tells them apart. */
+   opened. One ellipsised line of the prompt is what tells them apart, so it
+   keeps the body step while the entry's metadata drops to the fine one: the
+   board has to read as one line of work over a block of facts. */
 .dispatch__prompt {
   margin: 2px 0 0;
   overflow: hidden;
   color: var(--ink-dim);
-  font-size: var(--step-fine);
+  font-size: var(--step-body);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
