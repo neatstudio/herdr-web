@@ -145,6 +145,7 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `8ca78a4` | herdr 的 zoom 让舞台失去了解释自己的能力：`arrangeTiles` 在 `layout.zoomed` 时只返回一格，`arrangeable` 又同时把排列开关藏掉，而 tile 头的闸门是 `tiles.length > 1`——于是一个装着 4 个 pane 的 tab、屏幕上 1 格、头上没名字、没有关闭入口、也没有一句话说另外 3 格去哪了。闸门改成 `tileHeadVisible(tileCount, tabPaneCount)`（多于一格，或该 tab 的 pane 多于显示的格），`layout.zoomed` 时在头里补一句 `zoom 1/4`（琥珀、无框、`--step-micro`，因为 herdr 没有 unzoom RPC，它只能陈述不是按钮）；显示的格恰好不是输入目标时，空态从 `click to read this pane` 改读 `click to work here — the prompt sends to pD`；顺带触摸平板的头从 28px 长到 37px、× 从悬停才显示改成常显 32×32（手机走透镜不渲染tile，所以只命中 iPad 尺寸的帧） |
 | `3b29472` | 一条非 ASCII（或带换行）的草稿只停在 pane 的输入框里，发不出去：这类文字一个键带不动，走的是粘贴路径，而 `pane.send_text` 会把行尾的 `"\n"` 一起写进 pane；在 raw 模式的 TUI 里那个换行是 LF，行编辑器读成「在草稿里换行」（Ctrl+J），于是文字留在 prompt、永远不提交。隔离会话里用一个只打印收到字节的 pane 量到 herdr 0.9.0：带换行的 `pane.send_text` 到达 `61 0a`，`Enter` 键到达 `0d`。改成粘贴不带换行、紧接一次独立的 `Enter` 键；ASCII 的打字路径本来就以那个键收尾，不动 |
 | `7ee9b35` | 两条请求的发送只有一个「成/不成」的答案：一个键带不动的文字走「粘贴 + 单独一个 Enter」，是两个 HTTP 请求，中间能断——粘贴到了、键丢了，输入框就把 pane 里已经有的那行留着，下一次发送会打两遍；粘贴根本没到，屏幕上却什么也不说。发送结果改成三态 `sent / unreached / unsubmitted`，卡片那行 note 讲清落在哪一半：没到是 `could not reach w2:p1, message kept`（草稿留着、不进历史），到了但键丢了是 `in w2:p1, Enter did not land`（清空输入框，并给一颗只发 Enter 的 `send ⏎`，绝不重打文字）；`handOff` 的 Tab 丢了同样交出文字改走 raw 模式，下一键就能补完。新增 `web/tests/prompt-send.spec.ts` 三条用例，把两半分别打到失败 |
+| `90c8344` | 手指够不到的从来不是「盒子不够高」，而是尺寸改了、命中区没改：masthead 的 daemon/fleet 入口和手机上唯一的 pane 开关都只有 20px 高（pane 开关 43px 宽），之前用伪元素把命中区撑到 44px——但 `.cluster--button` 和 `.stage__pick` 自己带 `overflow: hidden`（前者要截断 daemon 标签，后者要截断长工作区名），伪元素被自己的元素裁回 20px，于是 44px 只是一行注释，手指仍旧只摸到 20px 的玻璃。两个无边框控件改成真实盒子长到 44px（daemon 入口的 border 是透明的、pane 开关在头部是 `border: 0`，视觉零变化；两行都是 46px，长高不挤任何东西），唯一有边框的 theme chip 保留伪元素撑高（它自己不裁）。粗指针实测 390×844 与 320×568：host/fleet/pane 开关命中高度 20/20/18px → **44/44/44px**，masthead 与 stage 头仍 46px，tab 条起点仍在 92px，横纵溢出 0/0；桌面 1440×900 一个像素没动（仍 20px） |
 | `83244a6` | 手机横过来再弹键盘，390px 只剩 180px 可画：tab 条占掉 37px（五分之一屏）只为报当前 pane，而草稿卡的 placeholder 本来就在报（`send to w2:p1`），被它挤下去的那行键条却恰是软键盘给不了的（Esc、Tab、方向键）。粗指针且高度 ≤499px、键盘弹起时让 tab 条隐身：844×390 实测 `.lens` 69→106px、xterm 正文 25→62px（一行变四行），kb=160 时正文 75px；竖屏 390×844 配 336px 键盘仍留 37px 身份行（正文 353px），桌面够不着这条查询。新增 `web/tests/landscape-keyboard.spec.ts` 两例，用 `--kb-inset` + `has-keyboard` 模拟键盘，并把规则临时撤销一帧量出「让位前」的高度，钉住增长量恰等于条高、无溢出、竖屏不被动 |
 
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
@@ -1051,3 +1052,47 @@ export function sendTrouble(outcome: SendOutcome, target: string): SendTrouble |
 差 0.5px 以内才算过）、`.lens` 底边与草稿卡顶边齐平且页面不溢出、收起键盘后条
 回到原高原位；第二条用例守竖屏：同一套键盘模拟下条必须还在、正文 >300px。
 
+
+### 4.21 44px 的注释：伪元素撑出的命中区被自己的 overflow 裁掉了（`90c8344`）
+
+手机上一根手指约 9mm，masthead 的 daemon 入口、fleet 入口和面板头部唯一的工作区
+开关都按文字盒子画：20px 高，开关宽 43px。之前给它们加过一道伪元素「裙边」
+（`::before { inset: -12px 0 }`），量出来却什么也没变——`#herdr-host-open`
+真实可达高度仍是 22px，`#herdr-picker-open` 是 18px。
+
+原因是这三个控件自己就是裁切盒：`.cluster` 基规则带 `overflow: hidden`（daemon
+标签要靠它走省略号），`.stage__pick` 的基础规则也带一份（长工作区名同理）。伪元素
+是元素自己的子盒，`overflow: hidden` 连它一起裁——量到 `::before` 的盒子确实是
+102×42，可达区域却只有那 20px。**伪元素能穿透的是祖先的 `overflow`，
+穿不过自己的**，这条是这次量出来的，不是看规范推的：`elementFromPoint` 从控件
+中心往上下逐像素探，22px 外就落到别的元素上。
+
+修法分两类，按「画不画边框」分：
+
+- **无边框的**（daemon 入口、fleet 入口、pane 开关）让真实盒子长到 44px。
+  `.cluster--button` 的边框是 `transparent`，`.stage__pick` 在头部是
+  `border: 0`，所以 44px 盒子不画任何新东西；masthead 和 `.stage__head` 都是
+  46px 的行，44px 控件在里面居中，行高、间距、tab 条起点全都不动。
+- **有边框的 theme chip** 保持伪元素裙边（`.switch--cycle::before { inset: -12px 0 }`）：
+  它自己 `overflow: visible`，裙边本来就生效（实测 45px），而把 22px 的边框盒
+  写到 44px 会变成另一个设计。
+
+量到的数（`elementFromPoint` 逐像素探上下边界，粗指针模拟）：
+
+| 视口 | 控件 | 改前盒 / 可达 | 改后盒 / 可达 |
+| --- | --- | --- | --- |
+| 390×844 | `#herdr-host-open` | 105×20 / 22px | 105×**44** / **44px** |
+| 390×844 | `#herdr-fleet-open` | 54×20 / 22px | 54×**44** / **44px** |
+| 390×844 | `#herdr-picker-open` | 43×18 / 18px | 58×**44** / **44px** |
+| 390×844 | `#herdr-theme-cycle` | 49×22 / 45px | 49×22 / 45px（不动） |
+| 320×568 | 同上 | 同上 | 同上 |
+| 1440×900 鼠标 | host / fleet | 135×20、54×20 | 135×20、54×20（一行未改） |
+
+挡住 44px 的另一个可能不是「父亲裁切」而是「伸得太远偷了下一行的点击」，所以也量了：
+masthead 46px、`.stage__head` 46px、`.stage--lens > .strip` 起点 92px 均不变，
+条顶往下 4px 的 `elementFromPoint` 仍落在条上；页面溢出保持 0/0。
+
+`web/tests/touch-targets.spec.ts` 两例：粗指针下三件控件可达高度 ≥44 且盒子本身
+≥44（防止再退回「裙边被裁」的假修复）、theme chip 盒子仍 <30 但可达 ≥44、两行
+都还是 46px、条顶 92px、条顶 4px 归条不属于控件、无溢出；鼠标视口下 host/fleet
+仍 <30px、pane 开关保持隐藏——粗指针规则不许跟到鼠标上。
