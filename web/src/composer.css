@@ -325,11 +325,14 @@
   /* Typing mode. The 2×2 pad is 74px tall, so it — not the draft — was setting
      the height of a 96px card, and every pixel of the card is a pixel the
      transcript loses to the keyboard. While the keyboard is up the same four
-     controls fold into one 32px row beside the draft: the card drops to 66px
-     (the draft's own two rows plus padding), the row still sits inside the
-     thumb arc, and send stays the last, filled control at the edge of the
-     grip. Nothing is hidden, so the pad keeps its meaning between the two
-     states; it only stops being the tallest thing in the card. */
+     controls fold into one row beside the draft: the card drops to 66px (the
+     draft's own two rows plus padding, which stay the tallest thing in it), the
+     row still sits inside the thumb arc, and send stays the last, filled
+     control at the edge of the grip. The faces stay at the resting 36px: the
+     48px draft sets the card height, so a row of 36px targets costs it nothing,
+     and the earlier 32px fold was 4px of thumb taken for no pixel back.
+     Nothing is hidden, so the pad keeps its meaning between the two states; it
+     only stops being the tallest thing in the card. */
   .has-keyboard .prompt__pad {
     display: flex;
     flex-direction: row;
@@ -343,14 +346,14 @@
 
   .has-keyboard .prompt__act,
   .has-keyboard .prompt__send {
-    width: 32px;
-    height: 32px;
+    width: 36px;
+    height: 36px;
   }
 
   .has-keyboard .prompt__act svg,
   .has-keyboard .prompt__send svg {
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
   }
 
   /* The row has four slots and typing mode gives one of them to the newline:
