@@ -118,6 +118,7 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `e7be773` | 分屏里没被选中的 tile 只写一句 `click to read this pane`，白空掉一整块——那里该回答的是「这是哪个 pane、在哪个目录跑」。它不能读：只有 active tile 读 pane，否则每次轮询都会把每一格的转录拉一遍。正文因此只用 fleet 快照已有的东西：完整 pane id（头部只印短 id，且只在 pane 自己有名字时才印）、目录末两段（`tailPath(cwd, 2)`——末两段才分得清同一个 repo 的两份 checkout，完整路径留在 tooltip）、以及 `statusNote()`：只有 herdr 报了个本 console 不认识的词才印，因为那种词在头部芯片里会被截到 12 字；已知状态头部已经说过，不重复。四行都是 `--step-label` 10.5px，`.scope__idle` 仍是原来那个 flex/full-height 容器，`App.tsx` 里「no pane selected」那条带 `<strong>` 的空态一字未动 |
 | `8974530` | 手机上的聊天 lens 原来只给「herdr 认得出的 agent」开：`hasAgent` 为假时 `drawnLens` 被硬改成 `terminal`、切换器也不画。可 herdr 只认识它认识的 agent——套在 wrapper 脚本里、被 `npm run` 拉起、或刚出的新二进制都报成 shell（`agent: ""`），这种 pane 在手机上就被钉死在 46 列的 xterm 里，恰好是这一宽度唯一读不了的东西。agent 名于是退回只决定**默认**：切换器对每个 pane 都画，每 pane 存过的选择由 `resolveLens()` 优先（`resolveLens("chat", false) === "chat"`），刷新后仍开聊天；prompt 上的 shell 默认照旧是终端，它的文档视图就是回滚读成 prose，空态照旧给 `Open terminal` |
 | `aa88ff0` | 手机上手边的菜单按不到：键条原来只认 herdr 报的 `blocked`，而 herdr 只对它认识的 agent 报 blocked——第三方 agent 画完菜单仍是 `working`，方向键、`↵`、`esc` 就全都没有。改成内容自己出第二意见：`showsPicker(text)` 去 ANSI、逐行去掉竖线/箭头前缀，取末 12 行数选项标记（`[1]`、`(2)`、`3.`）≥2 个、且末 6 行里有一句确认/取消提示，两条都中才出键条；宁可漏判，因为误判会把方向键从正在打字的输入框里抢走。`ChatLens` 的重钉滚动、键盘捕获、键条渲染三处共用这一个判断 |
+| `4afa186` | 菜单的答案原来只能用方向键走过去：键条只有 `esc ↑ ↓ ← → ↵` 六个键，手机上一份三选一的菜单要按三次才选中、四次才确认，而答案本身就是 agent 在等的那个数字。改成把快照里拼出来的答案做成 chips（`parsePickerOptions()` 复用 `showsPicker` 的同一道闸，所以绝不会出现「有键条没 chip」或反之）：`[1] keep [2] skip [3] edit` 一行内联菜单变成三枚 chip，点一下发出 `{"keys":["2"]}`。标签止于内联菜单对齐用的两格以上空档（`1. run step 2. then` 因此是一个答案不是一个），超长标签**中间**截断而不是结尾——答案常是共享前缀的路径，能区分它们的是尾巴（`/Users/gouk…kspace-name-w0`）。键条保留：`esc` 在它手上，且「herdr 报 blocked、快照却没写答案」那种菜单只有键条过得去 |
 
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 293，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
@@ -228,6 +229,19 @@ Esc 后 bar 消失、放大镜回来、装饰清零；`700x800` 细指针（`TOU
 `picker-light-picker.png`。全量 e2e：78 通过 / 9 失败，8 条是既有失败，第 9 条 `1241`
 单跑通过（全量跑里的摇摆用例）。
 
+
+选项条这条的验证：`npm --prefix web run typecheck` 干净；`test:unit` 300/300（`pickerKeys.test.ts`
+新增四例：三选一内联菜单解析成 `1/keep、2/skip、3/edit`；正文无菜单时返回 null；超长标签中段截断成
+`11 + … + 14` 字且两条共享前缀的路径仍可区分；`1. run step 2. then` 与单空格分隔的 `[1] keep [2] skip`
+都不算「多个答案」——宁可退回键条，也不猜一个会打错数字的 chip）；`npm run build` 通过；
+`/tmp/probe-pick-chips.mjs`（390×844 × 明暗，每用例独立 context，六种 pane）：`wE:pI`（opencode
+报 `running`、末尾是内联菜单）chip 行 390×40、键条 390×44，聊天道 603→519（两行都真的让出空间），
+三枚 chip `1 keep / 2 skip / 3 edit`，点第二枚发出 `{"keys":["2"]}`，chip 本体 67×32、伪元素接住区
+`−6px` 竖向外扩 ⇒ 44px；`wE:pF`（正文有编号列表、无提示）与 `wE:pG`（blocked + 正文）都只有键条没有
+chip；`wE:pJ`（claude 报 `running`、八条长路径菜单）八枚 chip 在行内横向滚动，页面溢出仍是 0,0。
+软键盘弹起（`--kb-inset: 336px`）：聊天道 397→313、键条 44、chip 40、草稿卡 66、溢出 0,0。
+截图 `picker-dark-picker.png`、`picker-dark-picker-kb.png`、`picker-light-picker.png`、
+`picker-dark-many.png`。
 
 ## 5. 给服务端的一页需求（若要继续逼近 Ovis）
 
