@@ -133,6 +133,7 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `dcd8738` | 细字一缩小，面板和表里的控件就全部掉到拇指下面：`--step-fine` 只有 11px，而这些盒子没有 `min-height`，高度全靠自己的行盒加 padding——字段 34、策略切换 23、机器行 19（复选框 13）、两处折叠行 18、stop 19、面板头按钮 22/18、关闭按钮 20×24。桌面无所谓，手上大面积按空。先试了 masthead 那套伪元素扩展，用 `elementFromPoint` 逐点扫发现 button 把生成内容裁进自己的盒子，`::before` 的 inset 只在原盒范围命中，于是改成真实长高：字段（含 fleet 表单的 select）、策略键、机器行（复选框 13→18，行内详情在粗指针下允许换行，手机上一行只剩省略号，而“这台机器装了哪个 agent”正是决定点不点的信息）、`.dispatch__line` 居中与 stop、两处 `summary`、`.hostpanel__act`、面板与表的头部按钮/关闭按钮。整块必须写在样式表末尾：`.sheet--dialog .newws__field input` 的 34px 在 500 行之上、同特异度，写在旁边是静默失效。390×844 粗指针实测 host 9 个控件9 个小 → 0，fleet 25 → 0，844×390 同；1440×900 鼠标 host 仍 9 小、fleet 仍 19 小，逐个高度与改前一致（22/18/19/23/30/34） |
 | `9eaf60c` | 终端镜头里的键条、键盘菜单和查找条仍是鼠标尺寸：44px 的键条里浮着 32px 的键面（上下各 6px 空），菜单的 `hide` 是 26×20 的文本链接、两行网格每行只有 32px，查找条的三枚按钮是 36×36、旁边那颗启动按钮 40×40。键面加到 40px 时整条会从 44 涨到 45（1px 规则 + 2+2 padding），等于白拿终端一行，所以让 padding 从 2 退到 1 把那 1px 还回去，`min-height` 继续钉住 44px——竖屏、横屏、键盘起落四种姿态下终端高度与改前逐项相同（559/429/177/0）。菜单是在流里的，它长多高终端就少多高，于是给小屏横放留了 `min-height: 500px` 的闸：竖着两行网格升到 40px、标题行 44px（`hide` 变成真 34×44），480px 高的横屏手机维持 32px 不变。查找条按钮升到 44px，390 宽仍有 182px 输入框、320 宽 112px，无溢出 |
 | `1dc18b4` | 手机上换 pane 全靠 picker 表，可这张表每一件都还是桌面尺寸：行高 30px、agent 名用 9.5px 的 micro 字号、还塞在 4rem（64px）的列里，于是 `opencode-gpt-5-coder`、`claude-code` 被截成 `opencode-…`/`claude-co…`——一行里唯一能区分两个 pane 的词没了，名字那侧却空着；Agents/Spaces 切换条 34px，筛选框 27px 高、旁边那个 14px 的 `×` 只有 16×14。粗指针下：行 44px，agent 列放宽到 5.25rem 并把字号提到 `--step-fine` 11px（identity 不是 caption），切换条 44px、字号同样升到 11px；筛选框 44px，清除键撑成 44×54 顶满整行、字段用 `padding-right: 46px` 把文字让开它（`top/right/bottom: 0` 让它吃满 filter 行，而不是只吃 input 的 44px）。全部挂在 `(pointer: coarse)` 且以 `.sheet` 前缀收窄，桌面仍是 30px 行 / 34px 切换条 / 27px 筛选框 / 16×14 的 `×`（1440×900 与 1280×800 逐项复测）。390×844、320×780、768×1024 明暗实测：表内每个可点元素都 ≥44×44，列表可滚、无溢出 |
+| `b473db7` | 打字钻进 picker 时那张表把下半屏藏了：`visualViewport` 缩了但 layout viewport 没缩，`.sheet` 是 `position: fixed; inset: 0`，于是 390×844 上配 300px 键盘时 sheet 仍量到 844、第 1–8 行全在键盘后面，而且列表内容 528px 正好塞进 528px 的盒子——没有溢出可滚，第 12 行永远摸不到。修法只用已有的 `html.has-keyboard` 与 `--kb-inset`：粗指针且 `min-height: 500px` 时 `.has-keyboard .sheet { bottom: var(--kb-inset, 0px) }`，sheet 844→544，`.sheet__body` 拿到 381px 的可视区与 528px 的内容，最后一行滚得到也点得中。肖像限定是因为 390px 高的横屏手机 sheet 自带 chrome 就 163px（头 63 + 切换条 45 + 筛选 55），让 250px 给键盘就一行都不剩——那里保留整屏 5 行更好。同一条规则顺带把 new-workspace 弹窗从 y=278 抬到 y=128，仍在键盘以上居中 |
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
 `resolveLens` 的三例）；
@@ -563,6 +564,43 @@ picker 是手机上唯一能换 pane 的入口，而它每一件都还停在桌�
 这些规则一律带 `.sheet` 前缀：`.col__input` / `.col__clear` 桌面侧栏
 （`Sidebar.tsx`）也在用，不带前缀会把桌面 rail 的筛选框一起抬到 44px。实测桌面
 picker 一行 30px、切换条 34px、筛选框 27px、`×` 16×14，与改前逐位相同。
+
+### 4.9 软键盘弹起时的 picker 表（`b473db7`）
+
+4.8 把这张表的每一行抬到 44px 之后，手机上剩最后一个坑：**打字时表的下半屏在键盘
+后面**。这不是「表变高了」，而是 sheet 与键盘各说各话：
+
+| 量到的东西（390×844 粗指针，假键盘 300px） | 改前 | 改后 |
+| --- | --- | --- |
+| `html` 上的 `--kb-inset` / `has-keyboard` | `300px` / 有 | 同（本来就有，只是没人用） |
+| `.sheet` 盒 | `[0,0,390,844]` | `[0,0,390,544]` |
+| `.sheet__body` client / scroll | `681 / 681`（无溢出，滚不动） | `381 / 528`，可滚 147px |
+| 最后一行 `p13` | `[0,647,…]`，在键盘后且滚不到 | 滚到底后 `[0,500,…]`，`elementFromPoint` 命中行内 |
+| `docOverflow` | `[0,0]` | `[0,0]` |
+
+320×780 同姿态：sheet `780 → 480`、body `317 / 528`、滚 211px、最后一行
+`[0,436,…]` 命中 `row__id`。844×390 横屏故意不动（`min-height: 500px` 之外），
+sheet 仍是 390、body `227 / 528` 可滚、5 行可见。
+
+三件事值得记：
+
+1. **可滚的不是 `.col__list`。** 看 DOM 是 `.sheet__body > .col__list`，而
+   `.sheet__body` 是 `display: block; flex: 1 1 auto; overflow-y: auto`——`.col__list`
+   的 `flex: 1` 在没有 flex 上下文的父盒里不生效。第一次探针把 `scrollTop` 设在
+   `.col__list` 上，`scrollHeight == clientHeight`，结论是「不可滚」；真实滚的是
+   `.sheet__body`。
+2. **「正好塞满」比「溢出」更坏。** 满高时 528 的内容进 681 的盒子，没有滚动条、
+   也没有行为异常——问题只在键盘上来后才出现，而且在没有真机键盘的鼠标探针里
+   永远看不见。缩 sheet 是让溢出重新出现的唯一办法：视图矮了，滚动才有意义。
+3. **横屏不许让。** sheet 的 chrome（头 + 切换条 + 筛选）是 163px 固定成本，390px
+   高的横屏手机让出 250px 后 body 只剩负值。所以这条规则挂在
+   `(pointer: coarse) and (min-height: 500px)`，与 4.7 的菜单同一道闸。
+
+顺带确认没有连坐：规则选择器是 `.has-keyboard .sheet`，会一起命中
+`.sheet--dialog`（new workspace）与 `.sheet--fleet`（dispatch）——实测 new-workspace
+面板从 `[18,278,354,287]` 移到 `[18,128,354,287]`，仍在 544px 的可视区里居中，
+底部的按钮跟着上来了。桌面没有 `has-keyboard`（没有软键盘），1440×900 鼠标下
+picker 仍是满高、行 30px。`build` 与 `test:unit` 324/324 全绿。
 
 ## 5. 给服务端的一页需求（若要继续逼近 Ovis）
 
