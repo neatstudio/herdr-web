@@ -573,8 +573,16 @@ func (s *Server) fleetFollowOnce(ctx context.Context) (bool, error) {
 	candidates := s.fleetSources()
 	var lastErr error
 	for _, candidate := range candidates {
+		// A peer already reported its version in the heartbeat. Do not spend a
+		// network round trip on a build that is not newer.
+		if candidate.Version != "" && !selfNewer(strings.TrimSpace(candidate.Version), ConsoleVersion) {
+			continue
+		}
 		attemptCtx, cancel := context.WithTimeout(ctx, selfSourceTimeout)
-		published := mustSelfText(attemptCtx, candidate.Source+"/version")
+		// Only the version probe is short; a real download gets the full budget.
+		versionCtx, versionCancel := context.WithTimeout(attemptCtx, 5*time.Second)
+		published := mustSelfText(versionCtx, candidate.Source+"/version")
+		versionCancel()
 		if strings.TrimSpace(published) == "" || !selfNewer(strings.TrimSpace(published), ConsoleVersion) {
 			cancel()
 			continue
