@@ -2555,6 +2555,32 @@ body::before {
   }
 }
 
+/* The strip is a thumb's primary navigation on a phone and its tabs are 35px
+   tall — the same "under a fingertip" problem, without the same fix. The strip
+   sits between the head and the transcript, so a pseudo-element reach would
+   land either on the lens switch above (whose own reach already starts 9px
+   below the head's midpoint) or on the transcript below, where a scroll that
+   began in the text would turn into a tab switch. So the strip itself grows:
+   44px of nav costs the transcript 8px, 1.3% of a portrait session. The pinned
+   "+" was worse — 30px wide in landscape, narrower than the tab beside it — and
+   gets the same 44px. Typing mode takes the 8px back, because while the
+   keyboard is up the strip only has to say which tab you are in, and the row
+   above it is already carrying the keyboard's debt. */
+@media (pointer: coarse) {
+  .tab {
+    min-height: 44px;
+  }
+
+  .tab--new {
+    min-width: 44px;
+    justify-content: center;
+  }
+
+  .has-keyboard .tab {
+    min-height: 36px;
+  }
+}
+
 /* The workspace column's "+": making a workspace had no entry point at all. */
 .col__count {
   display: flex;
