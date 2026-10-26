@@ -3,10 +3,12 @@ package server
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -14,6 +16,136 @@ import (
 // worktree from it. The orchestrator sends the clone URL and the token env name
 // because the target may not have the repository in its own registry; the token
 // itself is read from the target's environment and never stored in the task.
+var checkoutRefPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
+
+// validCheckoutRef keeps a branch or base name from becoming a git option.
+func validCheckoutRef(ref string) bool {
+	return checkoutRefPattern.MatchString(ref) &&
+		!strings.HasPrefix(ref, "-") &&
+		!strings.Contains(ref, "..") &&
+		!strings.Contains(ref, "//") &&
+		!strings.HasSuffix(ref, "/") &&
+		!strings.HasSuffix(ref, ".lock")
+}
+
+func privateGitHost(host string) bool {
+	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	if host == "localhost" || strings.HasSuffix(host, ".local") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && isPrivateV4(ip)
+}
+
+// validCloneURL rejects transports that can make git run a local command.
+func validCloneURL(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	// A local file remote is useful in tests and for an operator's own bare
+	// mirror, but it is also git's command-execution transport. It is opt-in.
+	if strings.TrimSpace(os.Getenv("HERDR_WEB_ALLOW_FILE_CLONE")) == "1" &&
+		(parsed.Scheme == "file" || (parsed.Scheme == "" && filepath.IsAbs(raw))) {
+		return true
+	}
+	if parsed.Host == "" {
+		return false
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "https":
+		return parsed.User == nil
+	case "ssh":
+		// ssh://git@host is a username, not a password. A password in the URL
+		// would be a secret in the request; reject it.
+		if parsed.User == nil {
+			return true
+		}
+		_, hasPassword := parsed.User.Password()
+		return !hasPassword
+	case "http":
+		return parsed.User == nil && privateGitHost(parsed.Hostname())
+	default:
+		return false
+	}
+}
+
+// validProviderURL is the API-side equivalent: no file/ext transports, and
+// plain HTTP only on a private host.
+func validProviderURL(raw string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Host == "" || parsed.User != nil {
+		return false
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "https":
+		return true
+	case "http":
+		return privateGitHost(parsed.Hostname())
+	default:
+		return false
+	}
+}
+
+// checkoutRoots is where a job may create a new checkout. Existing git
+// checkouts outside these roots remain usable; the dangerous operation was
+// creating a repository in a path chosen by the caller.
+func checkoutRoots() []string {
+	roots := make([]string, 0, 4)
+	add := func(path string) {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			return
+		}
+		if abs, err := filepath.Abs(path); err == nil {
+			path = abs
+		}
+		for _, existing := range roots {
+			if existing == path {
+				return
+			}
+		}
+		roots = append(roots, path)
+	}
+	for _, item := range strings.FieldsFunc(os.Getenv("HERDR_WEB_CHECKOUT_ROOTS"), func(r rune) bool {
+		return r == ',' || r == '\n' || r == '\t'
+	}) {
+		add(item)
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		add(filepath.Join(home, ".local", "share", "herdr-web", "checkouts"))
+	}
+	return roots
+}
+
+func checkoutAllowed(s *Server, path, repoID string) bool {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	roots := checkoutRoots()
+	if repoID != "" {
+		if repo, ok := s.repos.Get(repoID); ok && strings.TrimSpace(repo.Checkout) != "" {
+			roots = append(roots, repo.Checkout)
+		}
+	}
+	for _, root := range roots {
+		rootAbs, err := filepath.Abs(root)
+		if err != nil {
+			continue
+		}
+		rel, err := filepath.Rel(rootAbs, abs)
+		if err != nil {
+			continue
+		}
+		if rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) prepareCheckout(ctx context.Context, request jobRequest) error {
 	cwd := expandHome(strings.TrimSpace(request.Cwd))
 	if cwd == "" || strings.TrimSpace(request.Branch) == "" {
@@ -25,6 +157,12 @@ func (s *Server) prepareCheckout(ctx context.Context, request jobRequest) error 
 	base := strings.TrimSpace(request.BaseBranch)
 	if base == "" {
 		base = "main"
+	}
+	if !validCheckoutRef(strings.TrimSpace(request.Branch)) || !validCheckoutRef(base) {
+		return fmt.Errorf("branch and base branch must be plain git refs")
+	}
+	if cloneURL != "" && !validCloneURL(cloneURL) {
+		return fmt.Errorf("clone URL must be https, ssh, or private http")
 	}
 	token := checkoutToken(request.TokenEnv)
 
@@ -40,6 +178,9 @@ func (s *Server) prepareCheckout(ctx context.Context, request jobRequest) error 
 			}
 			if !empty || cloneURL == "" {
 				return fmt.Errorf("checkout %s is not a git repository", cwd)
+			}
+			if !checkoutAllowed(s, cwd, request.Repo) {
+				return fmt.Errorf("checkout %s is outside the allowed checkout roots", cwd)
 			}
 			if err := cloneRepository(ctx, cwd, cloneURL, token); err != nil {
 				return err
@@ -71,6 +212,9 @@ func (s *Server) prepareCheckout(ctx context.Context, request jobRequest) error 
 	}
 	if cloneURL == "" {
 		return fmt.Errorf("checkout %s does not exist and no clone URL is configured", cwd)
+	}
+	if !checkoutAllowed(s, cwd, request.Repo) {
+		return fmt.Errorf("checkout %s is outside the allowed checkout roots", cwd)
 	}
 	if err := os.MkdirAll(filepath.Dir(cwd), 0o755); err != nil {
 		return err
@@ -120,6 +264,9 @@ func (s *Server) pushDevBranch(ctx context.Context, event ledgerEvent) error {
 	branch := strings.TrimSpace(event.Branch)
 	if branch == "" {
 		return nil
+	}
+	if !validCheckoutRef(branch) {
+		return fmt.Errorf("branch %q is not a plain git ref", branch)
 	}
 	cloneURL := strings.TrimSpace(event.CloneURL)
 	tokenEnv := strings.TrimSpace(event.TokenEnv)

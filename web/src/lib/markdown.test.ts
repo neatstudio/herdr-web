@@ -7,6 +7,7 @@ import {
   foldCode,
   inlineSpans,
   parseList,
+  safeHref,
 } from "./markdown.ts";
 
 /* ----------------------------------------------------------------- inline */
@@ -153,3 +154,19 @@ test("a long fence folds to its first lines and reports the count", () => {
   assert.equal(fold?.head.split("\n").at(-1), `line ${FOLDED_CODE_LINES - 1}`);
 });
 
+
+test("only http, https and mailto links can become anchors", () => {
+  assert.equal(safeHref("https://example.test/a"), "https://example.test/a");
+  assert.equal(safeHref("http://example.test/a"), "http://example.test/a");
+  assert.equal(safeHref("mailto:dev@example.test"), "mailto:dev@example.test");
+  assert.equal(safeHref("/api/health"), "/api/health");
+  for (const unsafe of [
+    "javascript:alert(1)",
+    "JaVaScRiPt:alert(1)",
+    " java\nscript:alert(1)",
+    "data:text/html,<script>alert(1)</script>",
+    "vbscript:msgbox(1)",
+  ]) {
+    assert.equal(safeHref(unsafe), null, unsafe);
+  }
+});

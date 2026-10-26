@@ -241,10 +241,12 @@ func TestReleaseUploadSeedsAServingHost(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Setenv("HERDR_WEB_RELEASE_DIR", previous) })
 
+	t.Setenv(releaseUploadTokenEnv, "seed-secret")
 	payload := []byte("a linux binary")
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/release/"+otherPlatform,
 		bytes.NewReader(payload))
+	request.Header.Set("X-Herdr-Release-Token", "seed-secret")
 	handleRelease(recorder, request)
 
 	if recorder.Code != http.StatusOK {
@@ -629,5 +631,43 @@ func TestSelfUpdateRefusesADevelopmentBuild(t *testing.T) {
 	updated, err := console.fleetFollowOnce(context.Background())
 	if err == nil || updated {
 		t.Fatalf("updated = %v, err = %v", updated, err)
+	}
+}
+
+func TestReleaseUploadRequiresItsOwnSecret(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HERDR_WEB_RELEASE_DIR", dir)
+	t.Setenv(releaseUploadTokenEnv, "")
+
+	disabled := httptest.NewRecorder()
+	handleRelease(disabled, httptest.NewRequest(http.MethodPost, "/release/"+otherPlatform,
+		strings.NewReader("x")))
+	if disabled.Code != http.StatusForbidden {
+		t.Fatalf("disabled = %d: %s", disabled.Code, disabled.Body.String())
+	}
+
+	t.Setenv(releaseUploadTokenEnv, "seed-secret")
+	missing := httptest.NewRecorder()
+	handleRelease(missing, httptest.NewRequest(http.MethodPost, "/release/"+otherPlatform,
+		strings.NewReader("x")))
+	if missing.Code != http.StatusUnauthorized {
+		t.Fatalf("missing = %d: %s", missing.Code, missing.Body.String())
+	}
+
+	wrong := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/release/"+otherPlatform, strings.NewReader("x"))
+	request.Header.Set("X-Herdr-Release-Token", "wrong")
+	handleRelease(wrong, request)
+	if wrong.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong = %d: %s", wrong.Code, wrong.Body.String())
+	}
+
+	// The console token must not work as the seed secret.
+	console := httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodPost, "/release/"+otherPlatform, strings.NewReader("x"))
+	request.Header.Set("Authorization", "Bearer seed-secret")
+	handleRelease(console, request)
+	if console.Code != http.StatusUnauthorized {
+		t.Fatalf("console bearer = %d: %s", console.Code, console.Body.String())
 	}
 }

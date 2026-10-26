@@ -41,6 +41,27 @@ function isWordChar(char: string | undefined): boolean {
   return char !== undefined && WORD_CHAR.test(char);
 }
 
+
+const SAFE_HREF_SCHEMES = new Set(["http:", "https:", "mailto:"]);
+
+/** A link scheme that cannot run script in the console's origin. */
+export function safeHref(raw: string): string | null {
+  const text = raw.trim();
+  if (text === "") {
+    return null;
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(text, "https://herdr.invalid/");
+  } catch {
+    return null;
+  }
+  if (!SAFE_HREF_SCHEMES.has(parsed.protocol)) {
+    return null;
+  }
+  return text;
+}
+
 export function inlineSpans(text: string): InlineSpan[] {
   const spans: InlineSpan[] = [];
   let cursor = 0;

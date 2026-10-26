@@ -139,6 +139,18 @@ func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "a command job needs testCommand")
 		return
 	}
+	if branch := strings.TrimSpace(request.Branch); branch != "" && !validCheckoutRef(branch) {
+		writeError(w, http.StatusBadRequest, "invalid_request", "branch is not a plain git ref")
+		return
+	}
+	if base := strings.TrimSpace(request.BaseBranch); base != "" && !validCheckoutRef(base) {
+		writeError(w, http.StatusBadRequest, "invalid_request", "baseBranch is not a plain git ref")
+		return
+	}
+	if cloneURL := strings.TrimSpace(request.CloneURL); cloneURL != "" && !validCloneURL(cloneURL) {
+		writeError(w, http.StatusBadRequest, "invalid_request", "cloneUrl must be https, ssh, or private http")
+		return
+	}
 	// Admission and the slot claim are one step: a check now and a record after
 	// the herdr calls let concurrent starts both pass it.
 	taskID := strings.TrimSpace(request.TaskID)

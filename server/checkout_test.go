@@ -41,8 +41,10 @@ func seedRemote(t *testing.T) (remote, seed string) {
 }
 
 func TestPrepareCheckoutClonesAndChecksOutBase(t *testing.T) {
+	t.Setenv("HERDR_WEB_ALLOW_FILE_CLONE", "1")
 	remote, _ := seedRemote(t)
 	checkout := filepath.Join(t.TempDir(), "checkout")
+	t.Setenv("HERDR_WEB_CHECKOUT_ROOTS", filepath.Dir(checkout))
 	console := NewServer("", nil)
 	err := console.prepareCheckout(context.Background(), jobRequest{
 		Cwd: checkout, Branch: "job/1", CloneURL: remote, BaseBranch: "main",
@@ -66,8 +68,10 @@ func TestPrepareCheckoutClonesAndChecksOutBase(t *testing.T) {
 }
 
 func TestPrepareCheckoutRefusesDirtyCheckout(t *testing.T) {
+	t.Setenv("HERDR_WEB_ALLOW_FILE_CLONE", "1")
 	remote, _ := seedRemote(t)
 	checkout := filepath.Join(t.TempDir(), "checkout")
+	t.Setenv("HERDR_WEB_CHECKOUT_ROOTS", filepath.Dir(checkout))
 	console := NewServer("", nil)
 	if err := console.prepareCheckout(context.Background(), jobRequest{
 		Cwd: checkout, Branch: "job/1", CloneURL: remote, BaseBranch: "main",
@@ -111,5 +115,82 @@ func TestPushDevBranchPushesTheWorktreeHead(t *testing.T) {
 	local := gitTest(t, checkout, "rev-parse", "HEAD")
 	if pushed != local {
 		t.Fatalf("remote head = %q, local = %q", pushed, local)
+	}
+}
+
+func TestCheckoutRejectsPathsOutsideAllowedRoots(t *testing.T) {
+	t.Setenv("HERDR_WEB_ALLOW_FILE_CLONE", "1")
+	remote, _ := seedRemote(t)
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "evil")
+	t.Setenv("HERDR_WEB_CHECKOUT_ROOTS", root)
+
+	console := NewServer("", nil)
+	err := console.prepareCheckout(context.Background(), jobRequest{
+		Cwd: outside, Branch: "job/1", CloneURL: remote, BaseBranch: "main",
+	})
+	if err == nil || !strings.Contains(err.Error(), "outside the allowed") {
+		t.Fatalf("outside checkout error = %v", err)
+	}
+	if _, statErr := os.Stat(outside); !os.IsNotExist(statErr) {
+		t.Fatalf("outside path was created: %v", statErr)
+	}
+}
+
+func TestCheckoutRejectsGitOptionRefs(t *testing.T) {
+	t.Setenv("HERDR_WEB_ALLOW_FILE_CLONE", "1")
+	remote, _ := seedRemote(t)
+	checkout := filepath.Join(t.TempDir(), "checkout")
+	t.Setenv("HERDR_WEB_CHECKOUT_ROOTS", filepath.Dir(checkout))
+	console := NewServer("", nil)
+
+	err := console.prepareCheckout(context.Background(), jobRequest{
+		Cwd: checkout, Branch: "--upload-pack=/tmp/evil.sh", CloneURL: remote, BaseBranch: "main",
+	})
+	if err == nil || !strings.Contains(err.Error(), "plain git refs") {
+		t.Fatalf("option ref error = %v", err)
+	}
+}
+
+func TestCheckoutRejectsFileTransportByDefault(t *testing.T) {
+	remote, _ := seedRemote(t)
+	checkout := filepath.Join(t.TempDir(), "checkout")
+	t.Setenv("HERDR_WEB_CHECKOUT_ROOTS", filepath.Dir(checkout))
+	console := NewServer("", nil)
+	if err := console.prepareCheckout(context.Background(), jobRequest{
+		Cwd: checkout, Branch: "job/1", CloneURL: remote, BaseBranch: "main",
+	}); err == nil || !strings.Contains(err.Error(), "clone URL") {
+		t.Fatalf("file clone error = %v", err)
+	}
+}
+
+func TestCheckoutRefAndURLValidation(t *testing.T) {
+	for _, ref := range []string{"main", "job/issue-9", "release/v1.2.3"} {
+		if !validCheckoutRef(ref) {
+			t.Fatalf("%q should be a valid ref", ref)
+		}
+	}
+	for _, ref := range []string{"", "-x", "--upload-pack=x", "a..b", "a//b", "a/", "a.lock", "a b"} {
+		if validCheckoutRef(ref) {
+			t.Fatalf("%q should be rejected", ref)
+		}
+	}
+	for _, raw := range []string{
+		"https://github.com/a/b.git",
+		"ssh://git@github.com/a/b.git",
+		"http://127.0.0.1:3000/a/b.git",
+		"http://192.168.1.4/a/b.git",
+	} {
+		if !validCloneURL(raw) {
+			t.Fatalf("%q should be accepted", raw)
+		}
+	}
+	for _, raw := range []string{
+		"file:///tmp/repo", "/tmp/repo", "ext::sh -c id", "http://evil.example/a.git",
+		"git://github.com/a/b.git", "https://user:pass@github.com/a/b.git",
+	} {
+		if validCloneURL(raw) {
+			t.Fatalf("%q should be rejected", raw)
+		}
 	}
 }

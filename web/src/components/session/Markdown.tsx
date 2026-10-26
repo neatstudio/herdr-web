@@ -9,6 +9,7 @@ import {
   foldCode,
   inlineSpans,
   parseList,
+  safeHref,
 } from "@/lib/markdown";
 
 /**
@@ -66,12 +67,17 @@ function inline(text: string, keyBase: string): ReactNode[] {
         );
       case "em":
         return <em key={key}>{span.text}</em>;
-      case "link":
+      case "link": {
+        const href = safeHref(span.href);
+        if (href === null) {
+          return <span key={key}>{span.text}</span>;
+        }
         return (
-          <a key={key} href={span.href} target="_blank" rel="noreferrer">
+          <a key={key} href={href} target="_blank" rel="noreferrer">
             {span.text}
           </a>
         );
+      }
       default:
         return span.text;
     }

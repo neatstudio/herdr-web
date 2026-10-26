@@ -2,6 +2,7 @@ package server
 
 import (
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -243,7 +244,30 @@ func writeChecksumForSelf(w http.ResponseWriter, r *http.Request) {
 //
 // The body is the file itself, and the checksum is computed here rather than
 // trusted from the request, so what is served later is exactly what arrived.
+// releaseUploadTokenEnv is a dedicated seed secret. It is deliberately not
+// HERDR_WEB_TOKEN: the console token is also forwarded to fleet peers, while
+// this one only authorizes writing the release directory.
+const releaseUploadTokenEnv = "HERDR_WEB_RELEASE_UPLOAD_TOKEN"
+
+func releaseUploadAuthorized(r *http.Request) bool {
+	expected := strings.TrimSpace(os.Getenv(releaseUploadTokenEnv))
+	supplied := strings.TrimSpace(r.Header.Get("X-Herdr-Release-Token"))
+	return expected != "" && supplied != "" &&
+		subtle.ConstantTimeCompare([]byte(supplied), []byte(expected)) == 1
+}
+
 func handleReleaseUpload(w http.ResponseWriter, r *http.Request) {
+	if strings.TrimSpace(os.Getenv(releaseUploadTokenEnv)) == "" {
+		writeError(w, http.StatusForbidden, "release_upload_disabled",
+			"release uploads require HERDR_WEB_RELEASE_UPLOAD_TOKEN")
+		return
+	}
+	if !releaseUploadAuthorized(r) {
+		w.Header().Set("WWW-Authenticate", `Herdr-Release realm="herdr-web"`)
+		writeError(w, http.StatusUnauthorized, "unauthorized",
+			"a release upload token is required")
+		return
+	}
 	name := strings.Trim(strings.TrimPrefix(r.URL.Path, "/release/"), "/")
 	if name == "" || strings.Contains(name, "..") || strings.Contains(name, "/") {
 		writeError(w, http.StatusBadRequest, "invalid_request", "a release file name is required")

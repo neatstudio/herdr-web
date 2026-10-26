@@ -159,6 +159,9 @@ func normalizeRepo(repo Repo) (Repo, error) {
 			return Repo{}, errors.New("baseUrl is required for gitea")
 		}
 	}
+	if !validProviderURL(repo.BaseURL) {
+		return Repo{}, errors.New("baseUrl must be https or private http")
+	}
 	if repo.TokenEnv == "" {
 		if repo.Provider == "github" {
 			repo.TokenEnv = "GITHUB_TOKEN"
@@ -175,6 +178,9 @@ func normalizeRepo(repo Repo) (Repo, error) {
 	}
 	if repo.DefaultBranch == "" {
 		repo.DefaultBranch = "main"
+	}
+	if !validCheckoutRef(repo.DefaultBranch) {
+		return Repo{}, errors.New("defaultBranch is not a plain git ref")
 	}
 	repo.ID = repo.Provider + ":" + repo.Owner + "/" + repo.Name
 	return repo, nil
