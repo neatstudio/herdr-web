@@ -3374,3 +3374,23 @@ body::before {
     padding-bottom: 0;
   }
 }
+
+/* iOS zooms the page when a field it focuses is under 16px, and it does not
+   zoom back out on blur: the page stays scaled while the sheet, the keyboard
+   inset and the 44px boxes were all measured at 1x. The prompt already paid
+   this in `composer.css`; every other field a phone can reach did not — the
+   picker filter (12px), the workspace dialog (12.5px) and the dispatch form
+   (12.5px, its textarea and selects 13.3px, and that form is how a job gets
+   sent from a phone at all). 16px is the floor that stops the zoom, not a
+   style step, so only the text inside grows: the boxes keep their 44px and
+   the fields are wide enough that nothing rewraps. Mouse and trackpad
+   windows never take this path. */
+@media (pointer: coarse) {
+  .col__input,
+  .menu__input,
+  .newws__field input,
+  .newws__field textarea,
+  .newws__field select {
+    font-size: 16px;
+  }
+}
