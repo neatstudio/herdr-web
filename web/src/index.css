@@ -2661,34 +2661,35 @@ body::before {
 /* Finger-sized chrome. The masthead's console entries, the theme cycle and the
    phone's only pane switch are label-sized boxes — 20px tall and, for the pane
    switch, 28px wide — well under a fingertip, which is why a tap on the
-   workspace name often landed on nothing. They cannot simply be made taller:
-   the theme chip is a bordered box and the pane switch carries the head's
-   alignment, and a 44px border around a 10px label is a different design. So
-   the box keeps its drawing and a pseudo-element widens only the region that
-   accepts the tap, the same trick `.lens__opt` already uses. Both host rows are
-   46px, so the reach stays inside the row it belongs to; the pane switch grows
-   sideways into the empty left margin. Mouse-driven windows are untouched: a
+   workspace name often landed on nothing. The first attempt widened only the
+   tap region with a pseudo-element, and it did nothing: those controls carry
+   `overflow: hidden` (the cluster needs it to ellipsize the daemon label, the
+   pane switch to clip a long workspace name), so the reach was clipped back to
+   the label box and a finger still hit 20px of glass. The two borderless ones
+   now grow their real box instead. That costs nothing on screen — the daemon
+   entry's border is transparent and the pane switch has `border: 0` in the head
+   — and both rows are 46px, so a 44px control moves nothing. The theme chip is
+   the one drawn box, so it keeps the pseudo-element, which its own
+   `overflow: visible` never clipped. Mouse-driven windows are untouched: a
    pointer that precise was never the problem. */
 @media (pointer: coarse) {
-  .masthead .cluster--button,
-  .masthead .switch--cycle,
+  .masthead .cluster--button {
+    min-height: 44px;
+  }
+
   .stage__pick {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .masthead .switch--cycle {
     position: relative;
   }
 
-  .masthead .cluster--button::before,
   .masthead .switch--cycle::before {
     content: "";
     position: absolute;
     inset: -12px 0;
-  }
-
-  /* The pane switch already draws its caret with `::after`, and the box has to
-     grow edgewise anyway: 28px of text is a keycap, not a target. */
-  .stage__pick::before {
-    content: "";
-    position: absolute;
-    inset: -13px -10px;
   }
 }
 
