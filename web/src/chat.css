@@ -745,6 +745,27 @@
        of letting baseline alignment pin it to the top of the row. */
     align-items: center;
   }
+
+  /*
+   * The fenced-block header is the last tucked-away control in the transcript:
+   * `copy` was 26x20 and `show all 34 lines` 30px tall, and a phone is exactly
+   * where a long log needs folding. The header row grows to carry them; the
+   * language label still takes the ellipsis.
+   */
+  .chat__code-head {
+    min-height: 44px;
+    padding-block: 0;
+  }
+
+  .chat__code-copy {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .chat__code-more {
+    min-height: 44px;
+    padding-block: 12px;
+  }
 }
 
 /* 320px wide: the only change needed is a tighter raised block. */
