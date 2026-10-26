@@ -114,8 +114,10 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `63cdfa4` | 不认识的 agent 状态不再被念成 idle：herdr 把 `agent_status` 原样透传，官方之外的 agent 会报 `error`、`paused` 这类词，而 `toneOf()` 让它们全落进 idle——分组和配色这样没错，写成字就是撒谎，一个刚出错的 pane 在标题栏里读作 IDLE。改成「tone 是桶、状态字才是真相」：`statusLabel()` 对四种已知状态印规范词、其余印原词（按词边界截到 24 字），`statusChip()` 在 tile 头里截到 12 字；`data-tone` 照旧吃 `toneOf`，所以侧栏的颜色与排序一字未动，不认识的词挂在行的 tooltip 上。同一个 clip 也顺手把整句状态收进 `.stage__status-word` 30ch 与 `.tile__status` 12ch 的天花板，长词不会把标题挤走 |
 | `503991e` | 手机上的 chrome 与打字盘给手指让路：masthead 三个入口、主题循环、以及手机上唯一的 pane 切换器都是 20–22px 高（切换器只有 28px 宽）——不到半个指尖，点工作区名经常点空。盒子不能直接加高：主题块是带边框的、切换器扛着 head 的左对齐，44px 的框套 10px 的字是另一个设计。于是盒子照旧画，只把「接住那一指」的伪元素撑开（`.lens__opt` 早就在用这招）：masthead 里 `inset: -12px 0` ⇒ 44px 高、仍在 46px 的行内；切换器 `inset: -13px -10px` ⇒ 48×44，文字的 x 位置不动；没有粗指针的桌面一行未改。打字模式四个控件从 32px 回到 36px：草稿自己两行撑起 66px 的卡，这一行不会因 36px 变高，那 4px 是白让的 |
 | `d2842eb` | 标签条也给手指让路：它是手机上唯一的导航，而 tab 只有 35px 高，横屏里钉住的 `+` 更是只剩 30px 宽。这里借不到 head 那招伪元素——标签条夹在 head 与转录之间，向外撑出来的那几像素要么落在上面 24px 的透镜切换器上（它的接住区正好也在那儿），要么落在下面的转录上，从第一行起手的一次滚动会变成切 tab。所以条子本身长到 44px：转录让出 8px，竖屏会话的 1.3%；`+` 两向都到 44，正好对上条子早就给它留的 `scroll-padding-right: 44px`。打字模式把这 8px 还回来（键盘弹起时条子只需说明「你在哪个 tab」），仍是 36px |
+| `690f11a` | 横屏里那个钉住的 `+` 其实点不到：9 个 tab 时整条 844px 装满，`+` 本该 `position: sticky; right: 0` 永远露在右沿，可这两条规矩写在 `max-width: 700px` 里，844×390 恰好落在 700–900 之间——`+` 退回普通 flex 项，被挤出右边界 43px（条子要多滚 73px 才看得见它）。挪进 900px 那一块（和 `.tab{min-width: 5.5rem; max-width: 66vw}`、`scroll-padding-right: 44px` 一起）：900px 正是「标签条是手机唯一 tab 列表」的分界。改后 390/700/768/844 四种视口 `+` 都贴在右沿内侧（844 是 `[800,844]`），700–900px 的桌面窗口也让 tab 收窄而不是把条子撑出屏幕 |
+| `e7be773` | 分屏里没被选中的 tile 只写一句 `click to read this pane`，白空掉一整块——那里该回答的是「这是哪个 pane、在哪个目录跑」。它不能读：只有 active tile 读 pane，否则每次轮询都会把每一格的转录拉一遍。正文因此只用 fleet 快照已有的东西：完整 pane id（头部只印短 id，且只在 pane 自己有名字时才印）、目录末两段（`tailPath(cwd, 2)`——末两段才分得清同一个 repo 的两份 checkout，完整路径留在 tooltip）、以及 `statusNote()`：只有 herdr 报了个本 console 不认识的词才印，因为那种词在头部芯片里会被截到 12 字；已知状态头部已经说过，不重复。四行都是 `--step-label` 10.5px，`.scope__idle` 仍是原来那个 flex/full-height 容器，`App.tsx` 里「no pane selected」那条带 `<strong>` 的空态一字未动 |
 
-配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（含 `fitComposer` 两行起底、
+配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 290，含 `fitComposer` 两行起底、
 `imeEnter` 各一例，以及 `findLabel` 的 1/4、0/0 与越界夹取）；
 `/tmp/probe-enter.mjs`：回车发 `/keys`、`⇧⏎` 只换行、合成 IME 回车不发、发送后焦点仍在草稿；
 `/tmp/probe-card-attach.mjs`：`#herdr-attach` 与 `#herdr-image` 两个选择器都能加附件、卡片长到 231px；
@@ -181,6 +183,24 @@ Esc 后 bar 消失、放大镜回来、装饰清零；`700x800` 细指针（`TOU
 `/tmp/probe-fill.mjs` 1440×900 与 1920×1080 的 1/2/4/6 pane 几何 0 处差异（细指针的条子还是 35px）。
 截图 `strip-phone-{dark,light}.png`、`strip-landscape-{dark,light}.png`，顶部裁切
 `strip-top-phone-dark.png`、`strip-top-landscape-light.png`。
+
+钉住 `+` 这条的验证：`npm --prefix web run typecheck` 干净；`/tmp/probe-sticky4.mjs`（10 pane 撑满条子，
+390×844 / 700×900 / 768×400 / 844×390 四种视口读计算样式）：`plusPos:"sticky"`、`plusRight:"0px"`、
+`plusOrder:"0"`，`+` 分别是 `[346,390]`、`[656,700]`、`[724,768]`、`[800,844]`，`scrollWidth` 都等于条宽。
+`/tmp/probe-strip-fit.mjs`（1/2/3/4/9 pane × 竖横 × 明暗，`deviceScaleFactor:2`）：九 pane 横屏
+`tab` 宽 `[89]×9`、`scrollWidth 844 = 条宽`、`+ [800,844]`，九 pane 竖屏 `[346,390]` 且条子可滚 446px；
+`activeUnderPlus:false`、`docOverflow:0` 处处成立。`/tmp/probe-strip-desktop.mjs`（细指针 640–900px）：
+760/800/900px 下 `+` 仍贴右沿、九 pane 的 `tab` 收窄到 88px，与粗指针一致。
+
+空 tile 这条的验证：`npm --prefix web run typecheck` 干净；`test:unit` 290/290（新增 `idleTileFacts`
+一例：目录取末两段、无 cwd 不出空行、已知状态不重复、未知词原样给出）；`npm run build` 通过；
+`/tmp/probe-idle.mjs`（四 pane 分屏，1440×900 与 1100×760 × 明暗）：`wE:pB` 读到 `wE:pB` /
+`tmux/api`（tooltip 是全路径）/ 斜体 `waiting for the…`（tooltip 是整句）/ `click to read this pane`，
+`wE:pC` 只有 id 与 `/`，`wE:pD` 只有 id 与提示，`idClipped` 全 false，`scrollWidth - innerWidth` 0，
+正文在格子里垂直居中（`wE:pB` 正文 146px 落在 164–454 的 tile 里）；
+`/tmp/probe-idle-click.mjs`：点正文（不是按钮）仍会激活它——`herdr:pane` 变成 `wE:pB`、
+`#herdr-feed-text` 读到 `read from B`、`.scope--idle` 从 2 格剩 1 格。
+截图 `idle-dark-1440.png`、`idle-light-1100.png`、`idle-activated.png`。
 
 ## 5. 给服务端的一页需求（若要继续逼近 Ovis）
 
