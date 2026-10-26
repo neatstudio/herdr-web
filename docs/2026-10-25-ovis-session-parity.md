@@ -142,6 +142,7 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `8fd0314` | 禁用态的半透明按钮是个窗口而不是调光器：fleet 的提交钮 `position: sticky` 钉在表单上（4.9 加的），`opacity: .5` 于是让底下滚过的策略提示直接读在橙色上，正好在它解释「为什么不能按」的时候看起来像掉漆。改成同样两种颜色的实色混合（`color-mix(in srgb, var(--accent) 50%, var(--paper))`，字再用纸色 50%）——两种主题下是与原来逐像素相同的禁用色，底下的东西不再透出来；320 实测浅色 #cd967e、深色 #844a28 |
 | `1209205` | 截断之后全名去哪看：4.13 把长 slug 截成 `opencode-gpt5…`，全名只进了 `title`——而 `title` 只认悬停，手机上长按什么也没有，偏偏「这个 pane 跑的是什么 agent」就是决定点不点的信息。芯片补长按（`longPressHandlers`）开 pane 菜单，菜单顶部加一行 `agent` 打印全名（`MenuTarget.agent`，行高按 34 计进弹层高度），回归测试钉三件：1024 下两个 `.tile__head` 高度相等、芯片 `scrollWidth > clientWidth`、`touchstart` 之后菜单里读得到 `opencode-gpt5-coder-xhigh`。同一次提交还带上了 §4.15 的横屏键盘修复 |
 | `a3cc97b` | 桌面上的 tab 条一溢出，够不着的就不只是最后一个 tab：`white-space: nowrap` 让每个 tab 的自动最小宽度等于整个名字，tab 从不收缩、溢出的是条本身——而桌面条把滚动条藏了（`.strip::-webkit-scrollbar { display: none }`），鼠标滚轮也不滚横向，于是 1024px 下八个 139px 的 tab 在 848px 的条里多出 292px，最后几个落在右边界外、任何指针手势都够不着；`+` 的 sticky 只写在窄屏块里，同一个原因下它也一起越界（1286–1316）。让名字走省略号（`.tab__name` 早就会）之后 tab 可缩到 88px，下限 5.5rem 保住序号/编号/状态点，八个 tab 以 102px 全部上屏（848 == 848）；`+` 的固定从窄屏块提到基础规则（桌面同样需要），仍然溢出的情形（1024 下 12 个 tab：1087 > 848）由 `strip--more` 在固定钮左缘补一道阴影，说明底下还有 |
+| `8ca78a4` | herdr 的 zoom 让舞台失去了解释自己的能力：`arrangeTiles` 在 `layout.zoomed` 时只返回一格，`arrangeable` 又同时把排列开关藏掉，而 tile 头的闸门是 `tiles.length > 1`——于是一个装着 4 个 pane 的 tab、屏幕上 1 格、头上没名字、没有关闭入口、也没有一句话说另外 3 格去哪了。闸门改成 `tileHeadVisible(tileCount, tabPaneCount)`（多于一格，或该 tab 的 pane 多于显示的格），`layout.zoomed` 时在头里补一句 `zoom 1/4`（琥珀、无框、`--step-micro`，因为 herdr 没有 unzoom RPC，它只能陈述不是按钮）；显示的格恰好不是输入目标时，空态从 `click to read this pane` 改读 `click to work here — the prompt sends to pD`；顺带触摸平板的头从 28px 长到 37px、× 从悬停才显示改成常显 32×32（手机走透镜不渲染tile，所以只命中 iPad 尺寸的帧） |
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
 `resolveLens` 的三例）；
@@ -854,6 +855,49 @@ tab 内容宽过容器，右边那几个既不换行也不可达：没有任何�
 3. **藏起来的滚动条 + 没有手指 = 不可达。** 能缩就缩，缩到下限还溢出才滚，滚的
    时候要说出右边还有东西：`strip--more` 给固定钮加左缘阴影（不能给条本身加右侧
    mask，那会把固定钮一起淡掉），左侧照旧由 `strip--scrolled` 的 mask 说明。
+
+### 4.17 一格为什么只显示一格（`8ca78a4`）
+
+herdr 能把一个 tab 缩放到单格（zoom）。桌面舞台在 `layout.zoomed` 时由
+`arrangeTiles` 收敛成一格——这一步是对的，别的 pane 确实不在屏幕上。但同一时刻
+`arrangeable` 变成 false，排列开关也藏了，而 tile 的头只在 `tiles.length > 1`
+时画。三件事叠在一起：tab 条说这里有 4 格，舞台只画 1 格，没有头、没有关闭入口、
+没有一句话；输入框还写着 `send to wE:pC`，而屏幕上那格可能是 `wE:pD`——herdr
+的 focus 决定谁在屏幕上，我们的选择决定消息发去哪，两者本来就可以不同。
+
+判据不该是「舞台上有几格」，而是「这一格需不需要被介绍」。新加的
+`tileHeadVisible(tileCount, tabPaneCount)` 在「多于 1 格」或「该 tab 的 pane
+多于显示的格」时为真；只有一格 pane 的 tab 照旧不画头，因为 `.stage__head` 已经
+写着工作区、cwd 和状态，再画一条就是重复。
+
+实测（`/tmp/probe-zoom.mjs` 桌面、`/tmp/probe-zoom-phone.mjs` 触摸平板，明暗各一遍）：
+
+| 场景 | 改前 | 改后 |
+| --- | --- | --- |
+| 1280×800 暗，zoom 4 格 | 1 格，无头、无关闭入口 | 1 格 1062×537，头 28px：`omp pC zoom 1/4 … working`，chip 56×15，溢出 `0/0` |
+| 1280×800 亮，zoom 但输入目标是另一格 | 空态读 `click to read this pane`，像一格活的舞台 | 空态读 `click to work here — the prompt sends to pD` |
+| 1440×900 暗，focus 模式（非 zoom） | — | 1 格 1195×637，头 28px，无 chip，开关 `grid=false / one=true` |
+| 1440×900 亮，单 pane 的 tab | — | 无头、无开关，溢出 `0/0` |
+| 1024×768 亮，zoom | 头无 | 848 宽舞台，头 28px，chip 起于 x 233 |
+| 1024×768 触摸，4 格 | 头 28px，`×` 16×14 且 `opacity: 0` | 头 37px，`×` 32×32 常显 |
+| 820×1180 触摸，4 格 | 头 28px | 头 37px，`×` 32×32，溢出 `0/0` |
+
+三条要记：
+
+1. **收敛本身不是 bug，沉默才是。** 舞台少画几格是 herdr 的决定，客户端只是如实
+   转述；问题在于转述到一半就停了。凡是屏幕上的东西少于数据里的东西，就得有个地方
+   把差额说出来，否则用户读到的不是「缩放」而是「丢 pane」。
+2. **描述状态的字不能长得像控件。** 第一版把 `zoom 1/4` 画成带虚线框的 chip，
+   和 agent、pane id 并排时读作第三个名字，也像第三个能点的按钮；改成无框的琥珀
+   `--step-micro` 注脚之后，它才明确是「关于这一格的注解」。
+3. **触屏上没有 hover，所以「藏起来」等于「看不见但能点」。** 关掉一个 pane 的
+   `×` 在桌面是 hover 才浮出来，平板上它就是一块看不见的命中区，而它执行的是不可逆
+   操作。给 32×32 的常显盒子，头从 28px 长到 37px，代价是每格 9px；手机走透镜
+   根本不渲染 tile，所以这条只落在 iPad 尺寸的帧上。
+
+配套：`npm --prefix web run typecheck` 干净，`test:unit` 325/325（`layout.test.ts`
+新增 `tileHeadVisible` 五组断言：`(1,1)=false`、`(2,2)=true`、`(1,4)=true`、
+`(3,3)=true`、`(0,0)=false`），`npm --prefix web run build` 通过。
 
 ## 5. 给服务端的一页需求（若要继续逼近 Ovis）
 
