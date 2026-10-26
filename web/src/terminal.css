@@ -128,6 +128,16 @@
     display: none;
   }
 
+  /* xterm 6 stopped painting the native viewport scrollbar and draws its own
+     14px overlay rail instead (`.scrollbar.vertical`), so the two rules above
+     match nothing any more. The rail is a DOM box, not a painted scrollbar, so
+     it survived: it sits in the gutter right of the last column and fades up
+     whenever the grid overflows — on a phone, whenever the keys menu opens.
+     Same decision as above: touch scrolls the text, the rail is noise. */
+  .term__host .xterm-scrollable-element > .scrollbar {
+    display: none;
+  }
+
   .keys {
     display: flex;
     flex: none;
