@@ -39,7 +39,7 @@ import {
   type AgentPane,
   type PageTheme,
 } from "@/lib/fleet";
-import { defaultLens, readStoredLens, storeLens, type Lens } from "@/lib/lens";
+import { readStoredLens, resolveLens, storeLens, type Lens } from "@/lib/lens";
 import { readStoredPane, resolveStoredPane, storePane } from "@/lib/selection";
 import { holdCreatedPane, type CreatedPane } from "@/lib/createdPane";
 import type { ComposerAction } from "@/lib/composer";
@@ -313,12 +313,15 @@ export function App() {
     [panes, shownWorkspaceId],
   );
   const tiles = useMemo(() => arrangeTiles(layout, narrow ? "stack" : "side"), [layout, narrow]);
-  // A shell has no transcript to read: `pane.read` would return a prompt and
-  // nothing else. The agent name is the honest test — `agentStatus` is
-  // "unknown" for every shell, so testing it would hide the switch from the
-  // panes whose agents report nothing.
+  // A pane with an agent opens as a transcript, a plain shell opens as a
+  // terminal — but herdr only names the agents it recognises, and an agent
+  // launched through a wrapper, a `npm run` or a brand-new binary is reported as
+  // a shell. On a phone that pane used to be locked into a 46-column xterm with
+  // no way out, which is the one view that cannot be read there. So the agent
+  // name now only decides the *default*: the switch is offered for every pane,
+  // and `drawnLens` honours whatever the operator picked.
   const hasAgent = activePane !== null && paneAgent(activePane) !== "";
-  const drawnLens: Lens = hasAgent ? lens : "terminal";
+  const drawnLens: Lens = lens;
 
   // Seed the lens per pane. A stored choice is an instruction the operator gave
   // for this exact pane and beats the default; without one, a pane with an agent
@@ -331,7 +334,7 @@ export function App() {
       // Nothing is known about a restored pane yet; the default would be wrong.
       return;
     }
-    setLens(readStoredLens(safeStorage(), paneId) ?? defaultLens(hasAgent));
+    setLens(resolveLens(readStoredLens(safeStorage(), paneId), hasAgent));
   }, [paneId, paneKnown, hasAgent]);
 
   const chooseLens = useCallback(
@@ -548,9 +551,11 @@ export function App() {
               {activeWorkspace?.name ?? "workspaces"}
             </button>
             <div className="stage__spacer" />
-            {narrow && hasAgent && (
+            {narrow && activePane !== null && (
               // Words, not glyphs: at 320px two icons would be guesswork, and
-              // the head is already 46px tall so this costs no height.
+              // the head is already 46px tall so this costs no height. Offered
+              // for every pane: herdr cannot name every agent, and the document
+              // view is the only readable one at this width.
               <LensSwitch lens={drawnLens} onLens={chooseLens} />
             )}
             {activePane !== null && remotePanes.has(activePane.id) && (

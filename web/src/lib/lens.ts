@@ -2,12 +2,16 @@
  * Which lens a session is read through on a narrow screen: the document
  * (chat) or the real terminal.
  *
- * A pane that is not running an agent has no conversation to derive — herdr
- * reports `agent: ""` for a shell — so the terminal is the only honest lens
- * there. Any explicit choice the operator made is remembered per pane, the
- * same way Ovis remembers its view per pane, because "this pane is always a
- * terminal for me" is a real preference and re-guessing it every time the
- * phone reopens the console is a papercut.
+ * A pane herdr did not report an agent in opens as a terminal: herdr says
+ * `agent: ""` for a shell, and a prompt is not a conversation. That is a
+ * default, not a lock. herdr only names the agents it recognises, so an agent
+ * behind a wrapper, an `npm run` script or a brand-new binary arrives as a
+ * shell — and at phone width its real terminal is the one view that cannot be
+ * read. The switch is therefore offered for every pane, and any explicit choice
+ * the operator made is remembered per pane, the same way Ovis remembers its
+ * view per pane, because "this pane is always a terminal for me" is a real
+ * preference and re-guessing it every time the phone reopens the console is a
+ * papercut.
  */
 
 export type Lens = "chat" | "terminal";
@@ -23,6 +27,13 @@ export function lensKey(paneId: string): string {
 /** The lens a pane should open in when nobody has chosen one yet. */
 export function defaultLens(hasAgent: boolean): Lens {
   return hasAgent ? "chat" : "terminal";
+}
+
+/** The lens a pane actually opens in: an explicit per-pane choice first, the
+ *  agent test only as the fallback. "No agent" is herdr failing to name the
+ *  program, not proof that there is no conversation to read. */
+export function resolveLens(stored: Lens | null, hasAgent: boolean): Lens {
+  return stored ?? defaultLens(hasAgent);
 }
 
 /** The stored choice, if it is still a lens we render. A corrupt or outdated

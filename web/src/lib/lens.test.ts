@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { lensKey, defaultLens, readStoredLens, storeLens, type Lens } from "./lens.ts";
+import {
+  defaultLens,
+  lensKey,
+  readStoredLens,
+  resolveLens,
+  storeLens,
+  type Lens,
+} from "./lens.ts";
 
 /** A Map-backed stand-in for localStorage, with an optional quota failure. */
 function memory(failOnWrite = false): Pick<Storage, "getItem" | "setItem"> {
@@ -23,6 +30,24 @@ test("a pane with an agent opens as a transcript", () => {
 
 test("a pane with no agent opens as a terminal", () => {
   assert.equal(defaultLens(false), "terminal");
+});
+
+test("a pane herdr did not name as an agent still opens in the chosen lens", () => {
+  // herdr only names the agents it recognises. A wrapper script or a brand-new
+  // binary arrives with `agent: ""`, and its terminal is unreadable at phone
+  // width, so the operator's choice has to outrank the agent test.
+  assert.equal(resolveLens("chat", false), "chat");
+  assert.equal(resolveLens("terminal", false), "terminal");
+});
+
+test("an explicit choice outranks the agent test in both directions", () => {
+  assert.equal(resolveLens("terminal", true), "terminal");
+  assert.equal(resolveLens("chat", true), "chat");
+});
+
+test("with no stored choice the agent test decides the default", () => {
+  assert.equal(resolveLens(null, true), "chat");
+  assert.equal(resolveLens(null, false), "terminal");
 });
 
 test("the stored key is namespaced per pane", () => {
