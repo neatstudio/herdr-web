@@ -499,15 +499,34 @@
   align-content: end;
 }
 
+/* The draft starts at the top of the card, not on its floor. The desktop rule
+   aligns the field's bottom edge so a one-row pad sits on the last line of a
+   two-row draft; here the pad is two rows (74px) and taller than the draft's
+   two-row floor (48px), so bottom alignment pushed the first line 27px down:
+   the card's top-left corner was a hole, and the caret started below the
+   attach button it sits beside. Top-aligned, the first line is level with
+   attach and image, and the empty row under it reads as room to write instead
+   of as a gap. Nothing moves the other way: the pad stays the tallest thing in
+   the card, so the card keeps its 96px. */
+.shell.is-narrow .prompt__field {
+  align-items: start;
+}
+
 /* Typing mode folds the pad back into one row (see the touch block above), and
    that has to keep winning over the 2×2 grid now that both rules carry two
    classes: this one carries three. `.has-keyboard` sits on the root element —
-   it is an ancestor of the shell, never a descendant of it. */
+   it is an ancestor of the shell, never a descendant of it. The same three
+   classes hold the pad centred on the draft while typing, because folding the
+   pad makes the draft the tallest thing in the card again. */
 .has-keyboard .shell.is-narrow .prompt__pad {
   display: flex;
   flex-direction: row;
   gap: 2px;
   align-content: start;
+}
+
+.has-keyboard .shell.is-narrow .prompt__field {
+  align-items: center;
 }
 
 /* A phone on its side has 390px of height for a transcript and a card that is
