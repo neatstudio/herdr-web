@@ -137,6 +137,9 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `52125a0` | xterm 6 把原生滚动条换成了自己画的 14px 浮层（`.scrollbar.vertical`），于是 `(pointer: coarse)` 里那两条隐藏原生滚动条的规则悄悄失效，手机上右边缘又出现一条随溢出淡入的栏杆。改成同时隐藏浮层：屏幕宽度、行数（27 行 / 19 行带键盘）、行宽 374px 全都不变，只是栏杆没了；桌面 `(pointer: coarse)/(max-width: 720px)` 都不命中，PC 仍保留栏杆 |
 | `ab13de2` | 横屏手机（844×390）弹出键盘后两个 sheet 整块被盖住：`bottom: var(--kb-inset)` 只写在 `(pointer: coarse) and (min-height: 500px)` 里，390 高的机器不满足，sheet 仍是满高。picker 的第一行在 163px、键盘顶在 ~140，一行都看不见；fleet 的 prompt 滚到后面也在键盘下面。放开到所有粗指针高度，并给矮横屏单独压 chrome：picker 藏掉视图切换、标题折掉、关闭钮浮到过滤行右端（清除钮左移 44px 让两个 ✕ 不叠），chrome 163→45，250px 键盘下仍露 2 行且列表可滚；fleet 少一层内边距，头部 63→45；`.sheet--dialog` 不压（表单本来 287px 就放得下，压到 104px 只会多一段滚动） |
 | `08d0433` | PC 上这张表把宽度撒错了地方：picker 是满屏 sheet，却在 pane 名旁边只给 agent 4rem，于是 `opencode-gpt-5-coder` 被截成 `opencode…`，而右边 1 300px 的名字列空着。⚠️ 这是本轮唯一一处"桌面也要改"的截断：1440×900 下 `.srow__agent` clientWidth 64、scrollWidth 133。改成 `@media (min-width: 700px)` 里 `.sheet .srow:not(.srow--space)` agent 列 10rem、`.srow__agent` 字号从 micro 抬到 fine（这里是身份不是注脚），160px 装得下 133px，名字列仍有 1254px。手机保持 5.25rem——那条粗指针规则从"所有触摸屏"收紧成 `(pointer: coarse) and (max-width: 699px)`，于是 820 宽的 iPad 也吃到桌面列宽。行高不动（桌面 30、触摸 44）。rail 侧栏**故意不加宽**：它只有 244px，名字比 agent 更缺像素，所以 agent / 名字 / 空间行都补了 `title`，picker 行的 `title` 从"只有备注"改成 `名字 — id (空间) · 备注` |
+| `b3eb59a` | 第三方 agent 的长名字把 tile 头撑成两倍高：herdr 原样透传 pane 跑的东西，`opencode-gpt5-coder-xhigh` 这种 slug 进来时 `.tile__agent` 没有截断，1024px 下被挤到 max-content 以下、在自己的盒子里换行，那一格的头 58px、旁边那格 28px——并排的头就不在一条线上了。芯片封顶 14ch + `text-overflow: ellipsis` + `white-space: nowrap`，全名进 `title`。1024/1280/1440/1920、2 与 3 格全量：每个头都是 28px，芯片单行 91px（`scrollWidth` 176），没有子元素越过 tile 边界 |
+| `79bf6bf` | iOS 只要聚焦的字段小于 16px 就放大整页且不缩回：草稿框早在 `composer.css` 付过这笔账，其余手机够得到的字段没有——picker 筛选 12px、工作区表单 12.5px、dispatch 表单（手机上唯一能把活发出去的入口）输入 12.5px、textarea 与两个 select 13.3px。`(pointer: coarse)` 里把这五类字段抬到 16px：只长字不长盒，44px 高度不变，320/390 实测 `docW === innerW` 无横向溢出；鼠标与触控板窗口一行未改。⚠️ 这是 4.3 那句话的另一半：16px 不是字号档位，是 iOS 不缩放的地板 |
+| `8fd0314` | 禁用态的半透明按钮是个窗口而不是调光器：fleet 的提交钮 `position: sticky` 钉在表单上（4.9 加的），`opacity: .5` 于是让底下滚过的策略提示直接读在橙色上，正好在它解释「为什么不能按」的时候看起来像掉漆。改成同样两种颜色的实色混合（`color-mix(in srgb, var(--accent) 50%, var(--paper))`，字再用纸色 50%）——两种主题下是与原来逐像素相同的禁用色，底下的东西不再透出来；320 实测浅色 #cd967e、深色 #844a28 |
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
 `resolveLens` 的三例）；
@@ -704,6 +707,75 @@ chrome，不如整张留着"。实测这个判断错了：整张留着意味着*
    `.term__jump` 已经负责"有历史且你不在底部"的提示。
 3. **只在粗指针/窄屏隐藏。** 媒体查询原样保留，桌面鼠标滚动条照旧；`build` 与
    `test:unit` 324/324 全绿，390 深/浅、1440 截图对比无其他变化。
+
+### 4.13 长 agent 名把并排的头撑歪（`b3eb59a`）
+
+herdr 是 agent-agnostic 的：面板里跑什么就报什么。官方几个名字都短，第三方的是
+slug——`opencode-gpt5-coder-xhigh` 这种。`.tile__agent` 是芯片（`padding: 1px 5px 0`
+＋描边），从来没人给它设过宽度上限，于是 1024px 四格并排时它被挤到 max-content
+以下、在**自己的盒子里换行**：
+
+| 量到的东西（1024×768 鼠标，深色，一格宽 424） | 改前 | 改后 |
+| --- | --- | --- |
+| 该格 `.tile__head` 高度 | 58（芯片三行） | 28 |
+| 邻格 `.tile__head` 高度 | 28 | 28（两格终于齐平） |
+| `.tile__agent` 盒 | 宽 92、`scrollWidth` 176、三行 | 宽 92、单行 91，`scrollWidth` 176 截成 `opencode-gpt5…` |
+| 子元素越界（`right > tile.right`） | 0（是变高不是溢出） | 0 |
+
+三条要记：
+
+1. **固定高度的条里，任何 chip 都要能截断。** 排气孔不是"名字太长"，是"换行
+   把一格撑高"：头是高 28 的条，只有它自己变形时，并排的格子才对不齐——比溢出
+   更难发现，因为 `document.scrollWidth` 是干净的。
+2. **截断要按字符给上限，不是按像素。** 14ch 跟着字号走，`--step-micro` 变成
+   11px 时不用重算；`title` 补回全名，悬停可读，手机长按也能看到。
+3. **padding 不动。** 芯片的 1px/5px 是它的视觉呼吸，改宽度前先量 `scrollWidth`
+   而不是猜"是不是 padding 太大"；这里 92px 的盒子装 176px 的字，任何 padding
+   都救不回来。
+
+### 4.14 手机上的表单：16px 是 iOS 的地板，禁用态不该是窗口（`79bf6bf`、`8fd0314`）
+
+两件都出在"手机上能填的表单"上，一起补。
+
+**第一件：iOS 的聚焦缩放。** iOS ≥10 不看 `user-scalable=no`，只要聚焦的
+`input`/`textarea`/`select` 字号小于 16px 就放大整页，并且**不缩回**——随后所有
+`visualViewport` 与 `--kb-inset` 的量都不再是 1:1，键盘弹起那套版式全歪。草稿框在
+`composer.css` 里早写过 `max(16px, …)` 和注释，其余字段没人管：
+
+| 字段（390×844 与 320×640 粗指针，明暗各一遍） | 改前 | 改后 |
+| --- | --- | --- |
+| `#herdr-input`（草稿） | 16 / 48 | 16 / 48（本来就对） |
+| `#herdr-sheet-filter`（picker 筛选） | 12 / 44 | 16 / 44 |
+| `#workspace-label`、`#workspace-cwd` | 12.5 / 44 | 16 / 44 |
+| `#dispatch-prompt`（textarea） | 13.33 / 74 | 16 / 86 |
+| `#dispatch-cwd`、`#dispatch-branch` | 12.5 / 44 | 16 / 44 |
+| `#dispatch-kind`、`#dispatch-weight`（select） | 13.33 / 44 | 16 / 44 |
+| `docW - innerW`（横向溢出） | 0 | 0（两个宽度都是） |
+
+只有字长：盒子高度全是既有的 44px 刻度，没有一条 `min-height` 被改写；唯一的位移是
+dispatch 的 textarea 从 74 涨到 86（4 行 × 字号差），下面的策略/机器行因此各下移
+12px，320×640 上本来就在首屏之外，靠 sticky 的提交钮仍可直接按。规则挂在
+`(pointer: coarse)`，鼠标与触控板窗口一像素没动——PC 上 16px 的筛选框只会显得笨。
+
+**第二件：禁用态的 `opacity` 是个窗口。** 4.9 把 fleet 的提交钮钉在表单底部
+（`position: sticky; bottom: 0`），而 `.newws__submit:disabled { opacity: .5 }`
+是**整只按钮**半透明，包括背景色：表单滚到策略提示那行时，提示文字直接读在橙色
+按钮上，像按钮掉了一块漆——恰好是它在说"send to 0 machines"的时候。`opacity` 不能
+只调字，但可以把同样的混合结果写成实色：
+
+```css
+.newws__submit:disabled {
+  opacity: 1;
+  background: color-mix(in srgb, var(--accent) 50%, var(--paper));
+  color: color-mix(in srgb, var(--paper) 50%, transparent);
+  cursor: default;
+}
+```
+
+半透明橙叠在纸色上，就是"橙 50% + 纸 50%"；半透明的字叠在那块实色上，等于纸色
+50% 的 alpha。所以两种主题下颜色与原来逐像素相同（320 实测浅色 `#cd967e`、深色
+`#844a28`），只是不再透出后面的行。桌面提交钮不 sticky，但同一个禁用色也跟着变；
+空表单的 create 钮同理。
 
 ## 5. 给服务端的一页需求（若要继续逼近 Ovis）
 
