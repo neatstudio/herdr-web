@@ -134,6 +134,7 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `9eaf60c` | 终端镜头里的键条、键盘菜单和查找条仍是鼠标尺寸：44px 的键条里浮着 32px 的键面（上下各 6px 空），菜单的 `hide` 是 26×20 的文本链接、两行网格每行只有 32px，查找条的三枚按钮是 36×36、旁边那颗启动按钮 40×40。键面加到 40px 时整条会从 44 涨到 45（1px 规则 + 2+2 padding），等于白拿终端一行，所以让 padding 从 2 退到 1 把那 1px 还回去，`min-height` 继续钉住 44px——竖屏、横屏、键盘起落四种姿态下终端高度与改前逐项相同（559/429/177/0）。菜单是在流里的，它长多高终端就少多高，于是给小屏横放留了 `min-height: 500px` 的闸：竖着两行网格升到 40px、标题行 44px（`hide` 变成真 34×44），480px 高的横屏手机维持 32px 不变。查找条按钮升到 44px，390 宽仍有 182px 输入框、320 宽 112px，无溢出 |
 | `1dc18b4` | 手机上换 pane 全靠 picker 表，可这张表每一件都还是桌面尺寸：行高 30px、agent 名用 9.5px 的 micro 字号、还塞在 4rem（64px）的列里，于是 `opencode-gpt-5-coder`、`claude-code` 被截成 `opencode-…`/`claude-co…`——一行里唯一能区分两个 pane 的词没了，名字那侧却空着；Agents/Spaces 切换条 34px，筛选框 27px 高、旁边那个 14px 的 `×` 只有 16×14。粗指针下：行 44px，agent 列放宽到 5.25rem 并把字号提到 `--step-fine` 11px（identity 不是 caption），切换条 44px、字号同样升到 11px；筛选框 44px，清除键撑成 44×54 顶满整行、字段用 `padding-right: 46px` 把文字让开它（`top/right/bottom: 0` 让它吃满 filter 行，而不是只吃 input 的 44px）。全部挂在 `(pointer: coarse)` 且以 `.sheet` 前缀收窄，桌面仍是 30px 行 / 34px 切换条 / 27px 筛选框 / 16×14 的 `×`（1440×900 与 1280×800 逐项复测）。390×844、320×780、768×1024 明暗实测：表内每个可点元素都 ≥44×44，列表可滚、无溢出 |
 | `b473db7` | 打字钻进 picker 时那张表把下半屏藏了：`visualViewport` 缩了但 layout viewport 没缩，`.sheet` 是 `position: fixed; inset: 0`，于是 390×844 上配 300px 键盘时 sheet 仍量到 844、第 1–8 行全在键盘后面，而且列表内容 528px 正好塞进 528px 的盒子——没有溢出可滚，第 12 行永远摸不到。修法只用已有的 `html.has-keyboard` 与 `--kb-inset`：粗指针且 `min-height: 500px` 时 `.has-keyboard .sheet { bottom: var(--kb-inset, 0px) }`，sheet 844→544，`.sheet__body` 拿到 381px 的可视区与 528px 的内容，最后一行滚得到也点得中。肖像限定是因为 390px 高的横屏手机 sheet 自带 chrome 就 163px（头 63 + 切换条 45 + 筛选 55），让 250px 给键盘就一行都不剩——那里保留整屏 5 行更好。同一条规则顺带把 new-workspace 弹窗从 y=278 抬到 y=128，仍在键盘以上居中 |
+| `08d0433` | PC 上这张表把宽度撒错了地方：picker 是满屏 sheet，却在 pane 名旁边只给 agent 4rem，于是 `opencode-gpt-5-coder` 被截成 `opencode…`，而右边 1 300px 的名字列空着。⚠️ 这是本轮唯一一处"桌面也要改"的截断：1440×900 下 `.srow__agent` clientWidth 64、scrollWidth 133。改成 `@media (min-width: 700px)` 里 `.sheet .srow:not(.srow--space)` agent 列 10rem、`.srow__agent` 字号从 micro 抬到 fine（这里是身份不是注脚），160px 装得下 133px，名字列仍有 1254px。手机保持 5.25rem——那条粗指针规则从"所有触摸屏"收紧成 `(pointer: coarse) and (max-width: 699px)`，于是 820 宽的 iPad 也吃到桌面列宽。行高不动（桌面 30、触摸 44）。rail 侧栏**故意不加宽**：它只有 244px，名字比 agent 更缺像素，所以 agent / 名字 / 空间行都补了 `title`，picker 行的 `title` 从"只有备注"改成 `名字 — id (空间) · 备注` |
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
 `resolveLens` 的三例）；
@@ -601,6 +602,37 @@ sheet 仍是 390、body `227 / 528` 可滚、5 行可见。
 面板从 `[18,278,354,287]` 移到 `[18,128,354,287]`，仍在 544px 的可视区里居中，
 底部的按钮跟着上来了。桌面没有 `has-keyboard`（没有软键盘），1440×900 鼠标下
 picker 仍是满高、行 30px。`build` 与 `test:unit` 324/324 全绿。
+
+### 4.10 桌面这张表为什么也窄（`08d0433`）
+
+4.8/4.9 的结论是"手机上的 picker 要拇指化"，桌面一直没量。一量就发现**满屏 sheet 的
+宽度全给了名字**：
+
+| 量到的东西（1440×900 鼠标，深色） | 改前 | 改后 |
+| --- | --- | --- |
+| `.sheet .srow__agent` clientWidth | 64（`4rem`） | 160（`10rem`） |
+| 同一个格子 `opencode-gpt-5-coder` 的 scrollWidth | 133 → 截成 `opencode…` | 160，装得下 |
+| `claude-code` / `cursor-agent` / `grok` 的 scrollWidth | 77 / 84 / 64（后两个被截） | 全部 ≤160 |
+| `.srow__name` 宽度（1440 / 1280） | 1350 / 1190 | 1254 / 1094 |
+| `.srow` 行高 | 30 | 30（只动宽度） |
+
+三条要记：
+
+1. **满屏 sheet 不分桌面/手机，宽度预算却按手机给的。** 5.25rem 是 4.8 为 390px
+   定的（否则名字列被吃掉），但同一套规则在 1440 上跑时，那 60px 是纯浪费。
+   宽屏该按宽屏给，所以桌面规则挂在 `min-width: 700px`，与指针无关——平板也够宽。
+2. **粗指针规则要收紧到窄屏，否则会盖掉桌面规则。** 4.8 的
+   `.sheet .srow:not(.srow--space)` 在文件末尾、后于新规则，会赢；把它改成
+   `(pointer: coarse) and (max-width: 699px)` 之后，820×1180 的 iPad 拿到 160px
+   列宽（实测），390 手机仍是 84px。
+3. **rail 侧栏不跟着加宽。** 它 244px（1440）里要塞 agent + 名字 + 空间三样，
+   名字更缺像素；把 agent 列加 12px 只是把截断从 agent 挪到名字。这里 PC 的补法是
+   `title`：`.row__agent`、`.srow__agent`、空间行的 `.srow__name` 都带上了原文，
+   picker 行的 `title` 也从"只有 note"换成 `名字 — id (空间) · 备注`。
+   `opencode-gpt-5-coder` 在 rail 里仍是 `opencode-gp…`，但悬停可读全。
+
+桌面行高、字体基准、终端区宽度都没动：`.srow` 还是 30px，`build` 与
+`test:unit` 324/324 全绿，四端截图（1440 深/浅、390、820）无溢出。
 
 ## 5. 给服务端的一页需求（若要继续逼近 Ovis）
 
