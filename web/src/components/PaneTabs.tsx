@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { HerdrPane } from "@/lib/herdr";
 import { paneListName, paneOwnHasName, shortPaneId, toneOf } from "@/lib/fleet";
 import { longPressHandlers } from "@/lib/press";
@@ -36,31 +36,46 @@ export function PaneTabs({
 }: Props) {
   const activeRef = useRef<HTMLButtonElement | null>(null);
   const stripRef = useRef<HTMLDivElement | null>(null);
+
+  // Two edges can hide tabs. Scrolled, the leftmost is a fragment cut mid-glyph;
+  // overflowing, the rightmost slides under the pinned "+" and the strip stops
+  // looking like it continues. Each edge gets an affordance, and neither can be
+  // a mask on the strip itself — that would fade the pinned "+" out with it.
+  const [edges, setEdges] = useState({ left: false, right: false });
+  const measure = useCallback(() => {
+    const el = stripRef.current;
+    if (!el) {
+      return;
+    }
+    const left = el.scrollLeft > 4;
+    const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 2;
+    setEdges((prev) => (prev.left === left && prev.right === right ? prev : { left, right }));
+  }, []);
+
   // A strip that overflows shows its first tabs, not the one being read. Keep
   // the selected tab in view; "nearest" means no scrolling when it already is.
   useEffect(() => {
     activeRef.current?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [activeTabId]);
+    measure();
+  }, [activeTabId, measure]);
 
-  // Scrolled, the leftmost tab is a fragment cut mid-glyph. Fading that edge
-  // says "there is more to the left" instead of leaving a stray character.
-  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [measure, panes]);
 
   if (panes.length === 0) {
     return null;
   }
+  const stripClass = `strip${edges.left ? " strip--scrolled" : ""}${edges.right ? " strip--more" : ""}`;
   return (
     <div
-      className={scrolled ? "strip strip--scrolled" : "strip"}
+      className={stripClass}
       role="tablist"
       aria-label="Panes"
       ref={stripRef}
-      onScroll={() => {
-        const left = stripRef.current?.scrollLeft ?? 0;
-        if (left > 4 !== scrolled) {
-          setScrolled(left > 4);
-        }
-      }}
+      onScroll={measure}
     >
       {panes.map((pane, index) => {
         const active = pane.tabId === activeTabId;
