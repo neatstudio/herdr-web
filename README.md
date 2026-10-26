@@ -351,6 +351,11 @@ already at 99. `scripts/version.sh` does the arithmetic (`next patch|minor|major
 `tag`), so the version creeps upward instead of leaping to 1.0 on a good
 afternoon.
 
+The binary reports the newest tag verbatim, never a git-describe count or hash:
+`v0.6.14` stays `v0.6.14` across rebuilds. Releases are cut by tagging before a
+build; two builds of the same tag are the same release and do not auto-update
+over each other.
+
 ### A fleet with no centre
 
 Several consoles can know each other: `--fleet-seeds http://hub:5000` is an entry

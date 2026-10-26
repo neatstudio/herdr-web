@@ -35,7 +35,7 @@ func webFS() fs.FS {
 	return sub
 }
 
-// version is set at build time: -ldflags "-X main.version=$(git describe --tags)".
+// version is set at build time to the newest tag: -ldflags "-X main.version=$(git describe --tags --abbrev=0)".
 // A released binary can then say what it is, which is what the installer and an
 // operator need to tell two copies apart.
 var version = "dev"

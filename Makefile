@@ -12,7 +12,10 @@ GO ?= go
 GOFLAGS ?= -trimpath
 LDFLAGS ?= -s -w
 # The released binary should be able to say which release it is.
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+# The build version is the newest tag, verbatim. A commit count or a hash in
+# the version made every rebuild look like a new release; releases are cut by
+# tagging, and version.sh carries a component to 99 before rolling over.
+VERSION ?= $(shell git describe --tags --abbrev=0 2>/dev/null || echo dev)
 LDFLAGS += -X main.version=$(VERSION)
 
 .PHONY: all build web go-build run test test-go test-web e2e fmt vet clean \

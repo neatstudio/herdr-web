@@ -84,3 +84,8 @@
 - A：`/release/` 上传默认关闭，只接受独立的 `HERDR_WEB_RELEASE_UPLOAD_TOKEN`；checkout 限制根目录、ref 字符、clone/provider URL；Markdown 只渲染 http/https/mailto。
 - B：dispatch targets 只允许已知 peer/seed/loopback，最多 16；`tokenEnv` 走白名单；fleet hello/peer 行改为 ed25519 签名，接收方设置 Seen、限制 64 条、节流持久化；发现与 release 下载不再带 console token。
 - C：账本 claim/heartbeat/release/cancel/fail_merge 要求操作签名；命令 job 使用每-job nonce，agent job 不以输出文本完成；失败 job 不再被 attest，终态缓存；dev attestation 记录 workspace HEAD；merge 锁优先用 Repo/CloneURL。
+
+## 2026-10-26（版本号只取 tag）
+
+- 构建版本改为 `git describe --tags --abbrev=0`，输出 `v0.6.14` 这种 tag，不再带 `-155-g...` 或 dirty 后缀。
+- 自动更新只比较 release tag；同一 tag 的 rebuild 不互相覆盖，发布前先 tag。小版本仍在 99 后进位。

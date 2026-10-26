@@ -520,23 +520,21 @@ func TestSelfUpdateRefusesAnOlderPeer(t *testing.T) {
 	}
 }
 
-func TestSelfNewerUnderstandsUntaggedBuilds(t *testing.T) {
-	// Two builds of the same release differ only by their commit count, and a
-	// fleet that never tags relies on that being ordered.
-	if !selfNewer("v0.2.0-22-g8916292", "v0.2.0-17-g32b94d0") {
-		t.Error("a later commit count is not newer")
+func TestSelfNewerUsesReleaseTagsOnly(t *testing.T) {
+	if selfNewer("v0.2.0-22-g8916292", "v0.2.0-17-g32b94d0") {
+		t.Error("a commit count is not a newer release")
 	}
-	if selfNewer("v0.2.0-15-g6e049b7", "v0.2.0-22-g8916292") {
-		t.Error("an earlier commit count is newer")
-	}
-	if selfNewer("v0.2.0-22-g8916292", "v0.2.0-22-g8916292") {
-		t.Error("the same build is not newer")
+	if selfNewer("v0.6.14-155-gabc", "v0.6.14") {
+		t.Error("a describe suffix is not a newer release")
 	}
 	if !selfNewer("v0.2.1", "v0.2.0-22-g8916292") {
 		t.Error("a later release is not newer")
 	}
 	if selfNewer("v0.2.0", "v0.2.0-22-g8916292") {
-		t.Error("the release a build sits on is not newer than that build")
+		t.Error("the same release is not newer than its build")
+	}
+	if selfNewer("v0.2.0", "v0.2.0") {
+		t.Error("the same tag is newer")
 	}
 }
 

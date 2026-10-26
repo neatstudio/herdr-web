@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -341,55 +340,15 @@ func selfSourceLabel(source string) string {
 	}
 }
 
-// describeCount reads the commit count out of a git-describe version such as
-// v0.2.0-22-g8916292, which is what an untagged build reports.
-func describeCount(version string) (int, bool) {
-	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
-	// The shape is <tag>-<count>-g<hash>[-dirty].
-	fields := strings.Split(version, "-")
-	for index := len(fields) - 1; index >= 0; index-- {
-		if !strings.HasPrefix(fields[index], "g") {
-			continue
-		}
-		if index == 0 {
-			return 0, false
-		}
-		count, err := strconv.Atoi(fields[index-1])
-		if err != nil {
-			return 0, false
-		}
-		return count, true
-	}
-	return 0, false
-}
-
 // selfNewer reports whether a published build is newer than the running one.
-//
-// The numbers decide first. When they are equal — two untagged builds of the
-// same release — the commit count from git-describe decides, because otherwise
-// every build of the same base tag looks identical and a fleet that never tags
-// could never update itself.
+// Versions are release tags; a git-describe suffix is not a second version
+// number. Two builds of the same tag are the same release, and only a later
+// tag is adopted.
 func selfNewer(published, current string) bool {
 	// An unstamped build ("dev") carries no numbers, so anything numbered is a
 	// step forward from it.
 	if len(versionParts(current)) == 0 {
 		return len(versionParts(published)) > 0
 	}
-	if newerVersion(published, current) {
-		return true
-	}
-	if len(versionParts(published)) != len(versionParts(current)) {
-		return false
-	}
-	for index, part := range versionParts(published) {
-		if part != versionParts(current)[index] {
-			return false
-		}
-	}
-	publishedCount, publishedOK := describeCount(published)
-	currentCount, currentOK := describeCount(current)
-	if !publishedOK || !currentOK {
-		return false
-	}
-	return publishedCount > currentCount
+	return newerVersion(published, current)
 }
