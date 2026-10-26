@@ -7,6 +7,7 @@ import { HerdrPanel } from "@/components/HerdrPanel";
 import { DispatchSheet } from "@/components/DispatchSheet";
 import { NewWorkspace } from "@/components/NewWorkspace";
 import { TabStage } from "@/components/TabStage";
+import { ArrangeSwitch } from "@/components/session/ArrangeSwitch";
 import { LensSwitch } from "@/components/session/LensSwitch";
 import { SessionStage } from "@/components/session/SessionStage";
 import { Masthead } from "@/components/Masthead";
@@ -30,7 +31,7 @@ import {
   type HerdrStatus,
   type HerdrWorkspace,
 } from "@/lib/herdr";
-import { arrangeTiles, tabsOf, type PaneLayout } from "@/lib/layout";
+import { arrangeTiles, tabsOf, type ArrangeMode, type PaneLayout } from "@/lib/layout";
 import {
   mostUrgentPane,
   paneAgent,
@@ -106,6 +107,10 @@ export function App() {
   const [menu, setMenu] = useState<MenuTarget | null>(null);
   const [picker, setPicker] = useState(false);
   const [layout, setLayout] = useState<PaneLayout | null>(null);
+  // A split tab on a laptop draws every pane at once, which is the point of a
+  // split and also the reason to look at one pane at a time again. This only
+  // changes what is drawn: herdr's layout, and its own zoom, are untouched.
+  const [stageFocus, setStageFocus] = useState(false);
   // The path whose preview is open, if any.
   const [openPath, setOpenPath] = useState<string | null>(null);
   // True while herdr cannot be reached; the view keeps its last known state.
@@ -312,7 +317,14 @@ export function App() {
     () => tabsOf(panes.filter((pane) => shownWorkspaceId === null || pane.workspaceId === shownWorkspaceId)),
     [panes, shownWorkspaceId],
   );
-  const tiles = useMemo(() => arrangeTiles(layout, narrow ? "stack" : "side"), [layout, narrow]);
+  const stageMode: ArrangeMode = narrow ? "stack" : stageFocus ? "focus" : "side";
+  const tiles = useMemo(
+    () => arrangeTiles(layout, stageMode, paneId),
+    [layout, stageMode, paneId],
+  );
+  // Nothing to arrange when the tab is one pane, or when herdr already zoomed
+  // it: the switch would be a second way to say the same thing.
+  const arrangeable = !narrow && layout !== null && !layout.zoomed && layout.panes.length > 1;
   // A pane with an agent opens as a transcript, a plain shell opens as a
   // terminal — but herdr only names the agents it recognises, and an agent
   // launched through a wrapper, a `npm run` or a brand-new binary is reported as
@@ -551,6 +563,9 @@ export function App() {
               {activeWorkspace?.name ?? "workspaces"}
             </button>
             <div className="stage__spacer" />
+            {arrangeable && (
+              <ArrangeSwitch focus={stageFocus} onChange={setStageFocus} />
+            )}
             {narrow && activePane !== null && (
               // Words, not glyphs: at 320px two icons would be guesswork, and
               // the head is already 46px tall so this costs no height. Offered
@@ -607,7 +622,7 @@ export function App() {
               panes={tilePanes}
               workspaces={workspaces}
               activePaneId={paneId}
-              mode={narrow ? "stack" : "side"}
+              mode={stageMode}
               theme={theme}
               display={display}
               onDisplay={chooseDisplay}

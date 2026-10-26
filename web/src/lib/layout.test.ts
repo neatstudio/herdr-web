@@ -31,6 +31,27 @@ test("the same split stacks on a phone", () => {
   ]);
 });
 
+test("focus gives one pane the whole stage", () => {
+  assert.deepEqual(layout.arrangeTiles(split, "focus", "w1:p2"), [
+    { id: "w1:p2", focused: false, left: 0, top: 0, width: 100, height: 100 },
+  ]);
+});
+
+test("focus falls back to herdr's own focus, then to the first pane", () => {
+  assert.deepEqual(layout.arrangeTiles(split, "focus"), [
+    { id: "w1:p1", focused: true, left: 0, top: 0, width: 100, height: 100 },
+  ]);
+  assert.deepEqual(layout.arrangeTiles(split, "focus", "w1:gone"), [
+    { id: "w1:p1", focused: true, left: 0, top: 0, width: 100, height: 100 },
+  ]);
+  assert.deepEqual(layout.arrangeTiles(null, "focus", "w1:p2"), []);
+});
+
+test("focus has no split edges to drag", () => {
+  assert.deepEqual(layout.splitsOf(split, "focus"), []);
+  assert.equal(layout.splitsOf(split, "side").length, 1);
+});
+
 test("a nested split is just more boxes", () => {
   const nested: layout.PaneLayout = {
     ...split,

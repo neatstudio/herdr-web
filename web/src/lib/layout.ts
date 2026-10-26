@@ -27,11 +27,17 @@ export type Tile = { id: string; focused: boolean; left: number; top: number; wi
 /**
  * `side` keeps herdr's own arrangement, which is what a wide window can show.
  * `stack` puts the panes one above another, because two panes side by side on
- * a phone leaves neither readable.
+ * a phone leaves neither readable. `focus` gives one pane the whole stage
+ * while herdr keeps the tab as it is: four tiles on a laptop are four small
+ * windows, and reading one of them is the other half of that trade.
  */
-export type ArrangeMode = "side" | "stack";
+export type ArrangeMode = "side" | "stack" | "focus";
 
-export function arrangeTiles(layout: PaneLayout | null, mode: ArrangeMode): Tile[] {
+export function arrangeTiles(
+  layout: PaneLayout | null,
+  mode: ArrangeMode,
+  focusPaneId?: string | null,
+): Tile[] {
   if (layout === null || layout.panes.length === 0) {
     return [];
   }
@@ -39,6 +45,16 @@ export function arrangeTiles(layout: PaneLayout | null, mode: ArrangeMode): Tile
   if (layout.zoomed) {
     const pane = layout.panes.find((item) => item.id === layout.focusedPaneId) ?? layout.panes[0];
     return [{ id: pane.id, focused: true, left: 0, top: 0, width: 100, height: 100 }];
+  }
+  if (mode === "focus") {
+    // The pane the operator is working in wins over herdr's focus: clicking a
+    // tile sends to it without moving herdr's own cursor.
+    const pane =
+      layout.panes.find((item) => item.id === focusPaneId) ??
+      layout.panes.find((item) => item.id === layout.focusedPaneId) ??
+      layout.panes.find((item) => item.focused) ??
+      layout.panes[0];
+    return [{ id: pane.id, focused: pane.focused, left: 0, top: 0, width: 100, height: 100 }];
   }
   if (mode === "stack") {
     const each = 100 / layout.panes.length;
@@ -97,7 +113,14 @@ export type SplitHandle = { paneId: string; direction: "right" | "down"; at: num
  * pane after the fact, so dragging one would resize nothing.
  */
 export function splitsOf(layout: PaneLayout | null, mode: ArrangeMode): SplitHandle[] {
-  if (layout === null || mode === "stack" || layout.zoomed || layout.area.width <= 0 || layout.area.height <= 0) {
+  if (
+    layout === null ||
+    mode === "stack" ||
+    mode === "focus" ||
+    layout.zoomed ||
+    layout.area.width <= 0 ||
+    layout.area.height <= 0
+  ) {
     return [];
   }
   const handles: SplitHandle[] = [];

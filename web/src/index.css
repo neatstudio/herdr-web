@@ -1095,7 +1095,8 @@ body::before {
   background: var(--paper);
 }
 
-.tiles[data-arrange="side"] .tile {
+.tiles[data-arrange="side"] .tile,
+.tiles[data-arrange="focus"] .tile {
   position: absolute;
 }
 
