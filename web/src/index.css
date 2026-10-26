@@ -3287,3 +3287,19 @@ body::before {
     font-size: 20px;
   }
 }
+
+/* A soft keyboard does not shrink the layout viewport, and the picker sheet is
+   `position: fixed; inset: 0` — so with the filter focused the sheet still
+   measured 844px while the bottom 300 were behind the keyboard. The list could
+   not be scrolled to them either: at full height it fitted exactly, so there
+   was no overflow to reach row 12. Shrinking the sheet to the visual viewport
+   gives the list its own scroll and puts every row above the keyboard.
+
+   Portrait only: on a 390px-tall landscape phone the sheet's own chrome is
+   163px (head 63 + views 45 + filter 55), so honouring a 250px keyboard would
+   leave zero rows. There the full sheet with 5 visible rows beats an empty one. */
+@media (pointer: coarse) and (min-height: 500px) {
+  .has-keyboard .sheet {
+    bottom: var(--kb-inset, 0px);
+  }
+}
