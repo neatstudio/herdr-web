@@ -129,6 +129,10 @@ func (l *jobLedger) replayLocked(event ledgerEvent) {
 		if event.TaskID != "" && event.WorkspaceID != "" {
 			l.tasks[event.TaskID] = event.WorkspaceID
 		}
+	case "finished":
+		if event.PaneID != "" {
+			l.results[event.PaneID] = jobResult{Status: event.Reason, Kind: event.Kind}
+		}
 	case "stopped":
 		if taskID := l.running[event.WorkspaceID].TaskID; taskID != "" {
 			delete(l.tasks, taskID)
@@ -341,6 +345,12 @@ func (l *jobLedger) finished(paneID, status, kind, output string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.results[paneID] = jobResult{Status: status, Kind: kind, Output: output}
+	event := ledgerEvent{
+		At: time.Now().Unix(), Event: "finished", PaneID: paneID,
+		Kind: kind, Reason: status,
+	}
+	l.appendLocked(event)
+	l.persistLocked(event)
 }
 
 func (l *jobLedger) resultForPane(paneID string) (jobResult, bool) {
