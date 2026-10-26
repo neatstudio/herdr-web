@@ -268,6 +268,18 @@
     background: var(--ui-panel, var(--surface));
   }
 
+  /* The quick row under the panel is the same keyboard one screen lower: all
+     six of its keys are in the grid, and its `keys` toggle is the very button
+     that opened the panel. Left in place it costs the terminal a whole 44px
+     strip for nothing — the one thing this lens cannot spare — so while the
+     grid is open the row steps aside. The way back is `hide`, the panel's own
+     exit, which is also where a reader who opened the menu by mistake looks.
+     A sibling selector, not `:has()`: the panel is the row's previous sibling
+     by construction, and `:has()` is newer than the rest of this sheet. */
+  .keymenu__panel ~ .keys:not(.keys--grid) {
+    display: none;
+  }
+
   .keymenu__head {
     display: flex;
     align-items: center;
@@ -284,6 +296,7 @@
   }
 
   .keymenu__hide {
+    position: relative;
     flex: none;
     min-height: 20px;
     padding: 0;
@@ -294,6 +307,18 @@
     cursor: pointer;
     text-decoration: underline;
     text-underline-offset: 2px;
+  }
+
+  /* 26x20 of underlined text is the right size for the head and the wrong size
+     for a thumb — and with the row gone this link is the menu's only exit on
+     any frame under 500px tall, where the head stays one line high. Rather than
+     buy a taller head with 24px of terminal, buy only the target: an inset
+     skirt reaches 44px. It cannot leak downward onto the grid, which paints
+     after the head and takes the taps where the two boxes overlap. */
+  .keymenu__hide::before {
+    content: "";
+    position: absolute;
+    inset: -12px -10px;
   }
 
   .keymenu__hide:hover {
@@ -543,9 +568,7 @@
      once with nothing to scroll;
    - `hide` stays, as one more cell of that row at a full 44px thumb height,
      instead of a head stacked above it;
-   - the head's `keys` label and the bar's duplicated keys drop out. The bar is
-     `BAR_KEYS`, the grid is `KEY_MENU_KEYS`, which contains all of them; the
-     bar's own `keys` toggle keeps its one job here, closing the menu.
+   - the head's `keys` label drops out.
 
    The row keeps the full 44px of a thumb strip at every width, and everything
    that was vertical becomes horizontal, which is the axis a phone in landscape
@@ -619,29 +642,15 @@
     min-height: 44px;
     padding: 0 8px;
     margin: 0;
+    /* The panel's only exit in this state, so it reads at the same weight as a
+       key face instead of as a caption. */
+    color: var(--ui-dim, var(--ink));
   }
 
-  /* The bar's six keys are already in the grid, so only its toggle survives. */
+  /* Closed, the row holds nothing but the bar: let the bar take the full width
+     so its keys centre under the thumb the way they do at every other size,
+     rather than bunching at the left edge of an 844px landscape screen. */
   html.has-keyboard .keymenu > .keys:not(.keys--grid) {
-    flex: none;
-    gap: 0;
-    min-height: 44px;
-    padding: 0;
-    overflow: visible;
-    border-top: 0;
-    background: none;
-    -webkit-mask-image: none;
-    mask-image: none;
-  }
-
-  html.has-keyboard .keymenu > .keys:not(.keys--grid) > .keys__key {
-    display: none;
-  }
-
-  html.has-keyboard .keymenu > .keys:not(.keys--grid) > .keys__more {
-    flex: none;
-    width: 44px;
-    min-width: 44px;
-    height: 44px;
+    flex: 1 1 auto;
   }
 }
