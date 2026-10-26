@@ -130,6 +130,7 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `7cb89b9` | 平板竖着也不该掉进手机框：`compactFrame` 原来只看宽度，于是 iPad 竖放（744×1133、820×1180、768×1024）落进透镜、横放却拿到桌面舞台——转一下屏整个控制台重建。宽度本来就说不清这件事：手机之所以是手机看的是短边，而短边不随摆放改变。判据改成「宽度 ≤720」，否则「粗指针且短边 ≤500」；500 落在横放手机（≤480）与 iPad mini 短边（744）之间，`TOUCH_WIDTH`（900）整条删掉。900px 的 CSS 折叠不动：平板现在留着舞台，折掉它的侧栏在这个宽度上本来就对。测试钉住手机/平板分界，并断言六种摆放里 `f(w,h) === f(h,w)`。实测 820×1180 / 744×1133 触摸：8 格 205px/186px 的 tile、草稿 70px、页脚 26px、溢出 0/0；390×844、320×568、844×390、932×430 与 1280×800、1024×768 逐位不变 |
 | `4bfd5f1` | 触屏 tile 上的 AUTO/WRAP/EXACT/FIT 被切成半截：它是四列等分的 grid，可 grid 项不会缩到自身 min-content 以下，格子于是被四个词撑成 223px，而 8 格 tab 在 744px 平板上给每格 186px——最后一个词 `FI` 被 tile 的 `overflow: hidden` 剪掉，820px 平板剪掉 18px、1024px 剪掉 11px。它还在读 `--step-fine`，这个 token 样式表从头到尾没定义过，字号于是继承祖先（约 15px）。格子改 `minmax(44px, 1fr)`（每格仍是一指宽，四格均分 tile），字改 `--step-label`、内边距 4px+`min-width: 0`，最宽的词 EXACT（41px）正好装进最窄的格（46px）。实测 744/820/1024 的末格右沿刚好落在 tile 右沿、溢出 0、格宽 47–53px；鼠标桌面的浮层条仍是 [183,20]、格宽 46/45/53/38 一点没动 |
 | `b013330` | 细字一直在假装自己存在：`--step-fine` 被 20 处声明引用（面板、弹窗、任务板、peek 预览），却在两个仓库里都没有定义过（`git log -S` 查空），声明全部落到 computed-value 阶段失效、字号继承正文 12.5px——面板因此只剩颜色一层层级。在 `:root` 定成 11px（标签 10.5 < 细字 11 < 正文 12.5）。连带两件：`.newws__submit` 高度是 padding + 行盒，细字一缩手机上 44→42px，coarse 下钉 `min-height: 44px`（桌面仍 30px，副产品是弹窗里的 create 在粗指针下 32→44px）；任务板条目的那行 prompt 是唯一识别信息，留在正文 12.5px，其余元信息才用细字。390×844/844×390/1440×900 明暗实测 20 处全 11px/17.6，旧 tmux、peek、dispatch 条目、commits、collect 这批原本量不到的补 fixture 后也一致 |
+| `dcd8738` | 细字一缩小，面板和表里的控件就全部掉到拇指下面：`--step-fine` 只有 11px，而这些盒子没有 `min-height`，高度全靠自己的行盒加 padding——字段 34、策略切换 23、机器行 19（复选框 13）、两处折叠行 18、stop 19、面板头按钮 22/18、关闭按钮 20×24。桌面无所谓，手上大面积按空。先试了 masthead 那套伪元素扩展，用 `elementFromPoint` 逐点扫发现 button 把生成内容裁进自己的盒子，`::before` 的 inset 只在原盒范围命中，于是改成真实长高：字段（含 fleet 表单的 select）、策略键、机器行（复选框 13→18，行内详情在粗指针下允许换行，手机上一行只剩省略号，而“这台机器装了哪个 agent”正是决定点不点的信息）、`.dispatch__line` 居中与 stop、两处 `summary`、`.hostpanel__act`、面板与表的头部按钮/关闭按钮。整块必须写在样式表末尾：`.sheet--dialog .newws__field input` 的 34px 在 500 行之上、同特异度，写在旁边是静默失效。390×844 粗指针实测 host 9 个控件9 个小 → 0，fleet 25 → 0，844×390 同；1440×900 鼠标 host 仍 9 小、fleet 仍 19 小，逐个高度与改前一致（22/18/19/23/30/34） |
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
 `resolveLens` 的三例）；
@@ -459,6 +460,41 @@ panel 才从“两档”变“三档”；而 `.hostpanel__body button` 已经�
 `checkoutPath`/`diffReady` 与一个 stopped job），并把 `<details>` 全部展开后截图。
 截图 `fine-{phone390,land844,desk1440,desk1440l}-{host,fleet,newws}.png`，另加
 `-board` / `-legacy` 两张滚到底的尾部；`test:unit` 324 例全过。
+
+### 4.6 拇指尺度：面板和表里的控件（`dcd8738`）
+
+4.5 把细字定成 11px 之后，面板和弹窗里有一批控件的高度就只剩自己的行盒与
+padding。它们的尺寸不是算出来的，是「小字恰好撑到多高」碰出来的：
+
+| 控件 | 改前（390×844 粗指针） | 改后 |
+| --- | --- | --- |
+| `.newws__field` 的 input/textarea/select（含 fleet 表单） | 34 | 44 |
+| `.dispatch__strategy button` | 23 | 44 |
+| `.dispatch__targets label` | 19，复选框 13×13 | 44，复选框 18×18，一行放不下换行 |
+| `.dispatch__line .dispatch__stop` | 19×46 | 44×62 |
+| `.dispatch__entry summary` / `.hostpanel__legacy summary` | 18 | 44 |
+| `.hostpanel__act`（OPEN / TAKE OVER / peek） | 22 | 44 |
+| `#herdr-host-refresh` / `#herdr-host-close` / `#dispatch-close` | 22×81 / 18×23 / 20×24 | 44×81 / 44×44 / 44×44 |
+
+两条经验，写在这里省下下次的两次构建：
+
+1. **伪元素那套在 `<button>` 上不能用。** masthead 的
+   `position: relative` + `::before { inset: -12px 0 }` 看着通用，但按钮会把生成
+   内容裁到自己的盒子，`inset` 只在原盒范围命中。用 `elementFromPoint` 从按钮
+   中心往外逐点扫（3/6/9/12/15/19/21px）就能看见：盒内命中、出盒即穿。头部因此
+   改成真实 44×44（`inline-flex` 居中）。
+2. **写在旁边的粗指针覆写会静默失效。** `.sheet--dialog .newws__field input` 在
+   500 行之上声明 `min-height: 34px`，同特异度、后写者赢，粗指针块若放在它前面
+   就是一笔白改（第一次复测正是在这里翻车，两个 select 仍是 34）。所以整块钉在
+   样式表末尾，并把原因写在注释里。
+
+机器行里唯一的“内容”改动：`.dispatch__targets .newws__dim` 在粗指针下允许换行。
+桌面那条「一行一台机器、详情省略、全文进 title」的规则不变，但手机上 44px 的行里
+只留一个 `claude omp cursor g…` 的省略号，把选择机器最要紧的信息藏了。
+
+桌面一个像素都没动：1440×900 鼠标下 host 仍是 9 个小控件、fleet 仍是 19 个，高度
+与改前逐项相同（22/18/19/23/30/34）——这一批只存在于 `@media (pointer: coarse)`。
+截图 `taps-{phone390,land844,desk1440,desk1440l}-{host,fleet-top,fleet-bottom}.png`。
 
 ## 5. 给服务端的一页需求（若要继续逼近 Ovis）
 
