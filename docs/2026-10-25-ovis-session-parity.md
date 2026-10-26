@@ -155,6 +155,7 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `a264c84` | 键盘一弹，头一藏，唯一能换镜头的开关也跟着走了——偏偏拇指最想换镜头的时候就是打字打到一半、正看着一份读不懂的 TUI 的时候。放回头里就是 34px：320×568 加 336px 键盘只剩 197px 轨道的一半左右，所以头不改 DOM 位置、改成脱离文档流浮在 tab 条上：36px 高、透明、`pointer-events: none`，只有 `.stage__lenswrap`收 `auto`，底下的 tab 照样能划；条在尾端留出 96px+内边距给开关，钉住的 `+` 让位（37px 的条里 96+44 再加间隙是 160px，320px 宽只塞得下一个 44px 控件，打字时有用的是开关），关掉键盘 `+` 立刻回来；开关的裙摆长到 34px，正好填满条的内带、碰不到下面的转录和终端镜头的查找钮；点一下换镜头不 blur，键盘和光标原位不动。只在 `(pointer: coarse) and (min-height: 500px)` 里成立：`.stage--lens` 本来就只在 ≤720px 的帧出现，横屏手机（<500px）照旧藏头。新增 `web/tests/lens-typing.spec.ts` 五例 |
 | `f6adf48` | 320×568 配 260px 键盘再打一份五行草稿，键条底部 11px 被草稿卡盖住：舞台只剩 ~300px（37 条 + 44 回答行 + 44 键行 + 最高 120px 的草稿卡），唯一能让的是轨道，而轨道的**内边距本身也在地板里**——`.chat__lane` 上下 20/28px 共 48px，48+44+44=136 的硬地板撞上舞台只剩 125px 的行，溢出 11px（实测 `keys.bottom` 173 vs `prompt.top` 162.5），`.lens` 的 `overflow: hidden` 正好把它裁在草稿卡边上。改的是空气不是转录：`html.has-keyboard` 下轨道上下各 8px（地板 16），键盘一收立刻回 20/28；实测 320 变成 37..74 / 74..118 / 118..162 / 162..300 首尾相接，120px 的草稿卡仍 `overflow-y: auto` 能滚到第 6 行，390×844 kb=336 逐项未动。**先修的是量尺**：老用例只手设 `--kb-inset`，`visualViewport.height` 还是整窗，`fitComposer` 的 40% 上限就按 568 算成 227px（8 行），量出来的溢出比真机更狠、也永远量不准真机；改成只谎报 visual viewport 高度并派发 `resize`，让 `PromptBar` 自己发布 inset 与 class。新增第六例钉住夹击（`keys.bottom <= prompt.top`、三行首尾相接、草稿卡 ≤120px 且滚动、轨道 padding 8/8、收键盘回 20），把修复撤掉该例以 11px 溢出失败 |
 | `059ba3c` | 横过来打字时，换镜头的开关跟着头一起没了：`(pointer: coarse) and (max-height: 499px)` 把头整行藏掉（4.20），键条用它换来的那 44px 里没有开关的位置——而这块屏**默认就是终端镜头**（宽而粗指针的帧默认 `terminal`），于是「想读成转录」这个动作在打字时彻底不可达。开关改在 `.lens` 里脱离文档流，落在键条居中之后空出来的右翼：844×390 配 210px 键盘实测 `lens` 844×106、`head` 与 `.lens__switch` 都是 0×0，pill `735,69` 99×28（行 `y62 h44`，末键右沿 564，剩下 171px 空档），`document.elementFromPoint(839, 101)` 命中 `button.flip__opt`、往左 1px 命中 `div.keys`，**高度代价 0px**；568×320 配 160px 键盘 pill 落在 `459,49`。门是粗指针 + `max-height: 499` + `min-width: 560` + `has-keyboard` + `:has(.keys)`，桌面/竖屏/没有待选菜单的聊天镜头一概不画。26px 的面上用 `::after` 撑到 38px，`pointerdown` 取消掉，点它不 blur、键盘不掉、光标不动。**回归是测试自己抓到的**：`keymenu-space` 的横屏例点不动 `hide`——`<button class="flip__opt" aria-pressed="true" title="the session's real terminal">term</button> … intercepts pointer events`。键菜单展开时它自己就是那一行，`hide` 正好在同一条右翼上，于是加 `:not(:has(.keymenu__panel))`：面板一开 pill 让位，收起即回。新增 `web/tests/lens-flip.spec.ts` 六例 |
+| `aaeb4f6` | 横过来再弹键盘，键条底部那一截还是被草稿卡吃掉：`4.27` 只把轨道的空气从 48px 压到 16px，可草稿卡按设计能拿 40% 的可视高度，一行变三行时它就从 66px 长到 90px——844×390 配 210px 键盘，`.lens` 只剩 **82px**；568×320 配 160px 剩 **86px**。键条下面那一摞是 8（轨道空气）+44（回答行）+44（键行）=**104px**，差的 18–22px 就被 `.lens` 的 `overflow: hidden` 裁在草稿卡边上：半颗键看得见、一颗也按不到。草稿的份额不能让（读不了的草稿比看不见的会话更糟），让的是行：键盘弹起时 `.lens` 变成 size container，容器查询在 **103px**（比需要的 104px 少一像素）以下才触发——轨道空气归 0、回答行 padding 6→4（芯片裙摆跟着收到 `calc(-4px - var(--rule-w))`，40px 的行仍是 40px 的靶）、键行的 1px 规则从 `border-top` 挪进 `inset` 阴影，于是 40px 的键面正好装进 40px 的行，没有一颗键掉到 4.21 的手指地板以下。实测折叠后 844×390 键条底沿与 `.lens` 底沿**同为 82px**（轨道余 2px）、568×320 键行结束在 86px、轨道留 6px（原来是键条被藏 18px）、844×390 空草稿仍是 106px 的镜头不折叠（44/44 原样）、竖屏 390×844 与 320×568 逐项未动，草稿卡自己一像素没缩（三行仍是 90px）。新增 `web/tests/squeeze-rows.spec.ts` 五例 |
 
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
@@ -1426,3 +1427,75 @@ pill 的 `z-index: 3` 压住了它——用户打开的菜单关不掉，而菜�
 横屏帧的默认镜头是 `terminal`，所以用例在 `addInitScript` 里钉住 `herdr:lens:w2:p1`
 才量得到聊天镜头。六例与 `keymenu-space` 四例同跑 10 例 9.9s 全绿，回归子集 31 例全绿，
 `tsc --noEmit` 干净。
+
+### 4.29 键条与回答行在镜头不够高时自己折叠（`aaeb4f6`）
+
+4.27 把轨道的空气压到 16px，是为了让 320×568 上的键条不被草稿卡盖住。可草稿卡的高度不是常数：
+按 `fitComposer` 的设计它最多拿可视高度的 40%，一行变三行时它自己会从 66px 长到 90px。
+于是同一台机器上换一份草稿，溢出又回来了：
+
+| 帧 | 键盘 | 草稿 | `.lens` | 轨道 | 回答行 | 键行 | 合计 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 844×390 | 210px | 空 | 106px | 18px | 44px | 44px | 106px ✓ |
+| 844×390 | 210px | 三行 | **82px** | 8px | 44px | 44px | 96px ✗ 18px 在草稿卡下面 |
+| 568×320 | 160px | 三行 | **86px** | 6px | 44px | 44px | 94px ✗ 18px |
+| 320×568 | 260px | 五行 | 125px | 8px | 44px | 44px | 96px ✓（4.27 已修） |
+
+差别在于竖屏有一整块舞台，横屏没有：横屏的 `.lens` 是「舞台减去草稿卡」，而草稿卡能长到
+40% 的可视高度，所以镜头的高度是被别人决定的，且随时会变窄。
+
+**谁让路**。三条都试过：
+
+1. **让草稿卡缩回两行**——它已经在 40% 那个上限里了，除非改 `COMPOSER_VIEWPORT_SHARE`，
+   而那个数字是「你打的字必须读得全」的承诺，为 18px 的键条去砍它不划算。
+2. **让键行消失**——`esc` 是软键盘给不了的键，正是 4.19 把键条搬到移动端的理由。
+3. **把回答行折进键行**——两块命中区叠在一条 40px 的带子里，手指分不出按到哪个。
+
+**让行自己折叠**，但只在镜头真的不够高时。判据不能是媒体查询：同样的 844×390，空草稿的
+镜头有 106px（够），三行草稿只有 82px（不够），媒体查询看不见草稿。能看见的是一个容器查询——
+`.lens` 的高度是 flex 给的（舞台减草稿卡），**与它自己的内容无关**，所以给它加尺寸 containment
+不会造成循环布局：
+
+```css
+@media (pointer: coarse) and (max-height: 499px) {
+  html.has-keyboard .lens { container-name: lens; container-type: size; }
+
+  @container lens (max-height: 103px) {
+    html.has-keyboard .chat__lane { padding-top: 0; padding-bottom: 0; }
+    html.has-keyboard .chat__pick { padding-top: 4px; padding-bottom: 4px; }
+    html.has-keyboard .lens .keys { min-height: 40px; border-top: 0; box-shadow: inset 0 var(--rule-w) 0 …; }
+  }
+}
+```
+
+阈值 103px 是 104px 少一像素：栈需要 104px 时一条也不折，矮于它才折，折叠后又一定装得下
+（折叠后只要 80px），所以不会在两个状态之间抖动。
+
+**40px 的行，40px 的键面**。折叠态最容易犯的错是「把行压到 40px 然后键面还是 44px」——
+那会把键面自己的边框挤出盒子，肉眼看不出来，手指落在键面上沿按到的是上一行。做法是：
+键面的高度不动（仍是 40px，横屏粗指针那条规则本来就给的是 40），把本该在盒子外面的 1px
+规则换成 `box-shadow: inset`，于是盒子 40px = 键面 40px。回答行同理：padding 6→4 之后
+32px 的芯片面两侧各剩 4px，裙摆 `inset: calc(-4px - var(--rule-w)) -2px` 多出的一像素被行的
+`overflow` 裁掉，靶子正好铺满 40px 的整行。
+
+**不折的三条边界**（都是用例钉住的）：
+
+- 草稿短的时候就别折。844×390 空草稿的镜头 106px，44px 的行原样留着——折叠是补丁，不是新样式。
+- 竖屏不折。查询挂在 `(pointer: coarse) and (max-height: 499px)` 上，390×844 配 336px 键盘
+  仍是 44/44。
+- 草稿卡不折。三行草稿仍是 90px（40% × 180px 的可视高度），折叠只动它下面的行。
+
+`web/tests/squeeze-rows.spec.ts` 五例：844×390 三行草稿（镜头 82px、键条底沿 = 镜头底沿、
+回答行 40、键行 40、键面 40、芯片面 32、规则 `border-top` 为 0 且 `box-shadow` 含 `inset`、
+键与芯片中心的 `elementFromPoint` 分别命中 `keys__key` 与 `chat__pickopt`、草稿卡仍是 90px、
+页面 `scrollHeight` 仍是 390）、844×390 空草稿（镜头 106px、44/44、`containerType` 为 `size`）、
+568×320 三行草稿（镜头 86px、键条底沿 = 镜头底沿、轨道 ≥0 且 <8px、两块都点得到）、
+568×320 终端镜头（折叠同样生效、终端盒底沿不超过镜头底沿）、390×844 竖屏（44/44，查询不越界）。
+键盘模拟沿用 4.27 的量尺：只谎报 `visualViewport.height`，让 `PromptBar` 自己发
+`--kb-inset` 与 `has-keyboard`。
+
+同跑：`squeeze-rows` 五例 3.6s 全绿，回归子集（`lens-flip`、`keymenu-space`、`pick-row`、
+`touch-targets`、`landscape-keyboard`、`palette-fit`、`lens-typing`）28 例 16.8s 全绿，
+`tsc --noEmit` 干净。探针 `/tmp/probe-568c.mjs` 用**真实样式表**（不再注入候选 CSS）复测
+八个尺寸，数值与注入版逐项相同：折叠态 568 轨道 6px / 键行 40@46..86、844 轨道 2px /
+键行 40@42..82、844 空草稿 44/44、两档竖屏逐项未动。
