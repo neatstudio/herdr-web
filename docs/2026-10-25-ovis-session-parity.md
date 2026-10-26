@@ -159,6 +159,7 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `fc74ed9` | 一条回答的尾巴被贴进了操作者的气泡：devin 的回答是纯散文 + 行内代码片，代码片一长就会折行，于是下一行**从第 0 列起**就是芯片底色。`isBandRow` 当时的要求是「填充从文字前开始并覆盖大半行」，`w6:p7` 上 ` tConsoles() / knownPeerHost / fleetSources 。` 填充 **91%**、` laim / Heartbeat / Release / Cancel  全不验。` **79%**、`  web/src/components/session/Markdown.tsx:71   <a ...` **71%**，三行全部被当成 user band，同一个窗口被切成 4 轮、其中 3 轮的操作者气泡是 agent 自己的话，而真正的操作者消息（`❭ /usage`）在别的窗口。判据改成「填充覆盖整行的每一个字形」：真输入框会把消息铺满 pane 宽度，带底色的行**后面不再跟着任何普通墨色**；而折行的代码片一定会被收句的散文接住（实测 71–91%，从没有 100%）。改完 `w6:p7` 从 4 轮回到 1 轮、三个假气泡全消，`w2N:p5` 的真气泡 `❭ /usage`（bg `42;42;42`、填充 100%）照旧开一轮；omp 三个窗口（`w6:p3`、`w8:p4`、`w2T:p1`）与 agy（`wE:pG`）的轮次、thoughts、work、answer 逐项未变（omp 的盒子行本来就是 100% 填充，仍由 `BOX_EDGE_RE` 先收走）。新增 `conversation.test.ts` 一例钉住折行芯片（撤掉修复该例即失败），`test:unit` 330/330 |
 | `c1d1eef` | 手机上那个查找放大镜一直是**压在正文上**的角标：它 44×44 钉在网格右上角，而网格右上角正是 TUI 摆状态行的地方——390×844 实测盖掉了两段话的尾巴，844×390 配 210px 键盘时网格只剩 55px 高（四行），角标就吃掉三行，`v0.6.14 ta[g]` 这种折行处也被切在字中间。改用「它是键条里的一颗键，不是网格上的一个角标」：`TerminalLens` 把它从 `.term__host` 里移出来做兄弟节点（`.term` 补 `position: relative` 当定位上下文），`terminal.css` 只在触屏帧把它停靠进键条——竖屏停右翼、横屏停左翼（右翼已被 4.28 的镜头开关占掉），别的帧仍是原来那个角标。**键条的翼是从自己的内边距里买的**：390px 宽、`padding: 2px 6px` 的键条内容盒 378px，七面 44px + 六道 4px 间隙正好 332px，皮肤上 46px 无处可让，于是 `padding-right: 52px` 把内容盒收到 326px——(326−24)/7 = **43.1px**，实测仍按 44 上报（`keyFirst w=44`、末键 `more` 右沿 338、放大镜 344..388 落在 696..740 的条里，6px 间隙）；**362px 是门**：内容盒 304px 时脸正好 (304−24)/7 = **40px** 地板，再窄就得掉到 34px 的 `ctrl` 之下，所以 320×568 保留角标（实测 270..314 / 143..187）。横屏 844×390 用 `padding-left: 52px`，内容盒 786px 居中出 332px ⇒ 键 279..611，放大镜 `2..46 / 270..310`，同一行「查找 · 键 · 开关」；键盘弹起（vv 180）时 `.term` 只剩 106px、网格 55px，折叠键菜单把 3px 内边距搬到 `.keymenu` 上，放大镜的 `bottom` 跟着补这 3px（`63..103` 落在条 `59..103` 里），**高度代价 0px**，右翼 `flip` 仍 735..834 互不重叠。40px 高而不是 44：旁边是 44px 条里的 40px 脸，44px 会往回扎进 4px 网格。键菜单展开时它不带面板、键条被 `.keymenu__panel ~ .keys` 藏掉，于是 `:has(.keymenu__panel)` 一并收走。新增 `web/tests/term-find-dock.spec.ts` 六例（竖屏/竖屏键盘/320 角标/横屏/横屏键盘/桌面 1280×800 无镜头），同跑 `keymenu-space` + `lens-typing` 16 例全绿，`test:unit` 330/330、`tsc --noEmit` 干净 |
 | `a387869` | 桌面上的 AUTO/WRAP/EXACT/FIT 是**浮在正文上**的：6px 贴角、静止 35% 不透明，而转录是追着尾巴滚的——1280×800 实测条在 `142..162`、第一条可见行在 `148`，字从脸里透出来。补滚动内边距修不了：`overflow:auto` 会把内容画进 padding 带，而它永远滚着，实测 30px 内边距下仍有行盒落在 `141`。所以细指针 + >900px 给它一行真栅格：条占第一行 `auto`、阻塞提示第二行、滚动盒第三行，静止不透明；代价是 537px 高 tile 里的 24px（一条折行），换来静止与尾巴处都没有字被压。粗指针/窄帧那条 44px 整宽触屏条一位未动 |
+| `49b2aa0` | 手机草稿在卡片里**贴着底**：桌面把 `prompt__field` 对齐到底，好让一行高的按钮压在两行草稿的最后一行上；但手机的 pad 是 2×2（74px），比草稿两行起底（48px）高，于是草稿被顶到底：390×844 实测 field `751..825`、textarea `777..825`，占位文字比它旁边的 attach 按钮低 26px，卡片左上角是一块空洞。窄帧改成 `align-items: start`，草稿首行与 attach/image 齐平（都是 751），空出的那一行读作「可以接着写」；卡片仍是 96px，一行转录都没多花。打字态 pad 折成一行，用**三个类**把它重新居中到草稿上（`.has-keyboard .shell.is-narrow .prompt__field`，66px 卡片）；短横屏的侧折仍居中（70px）；平板 820×1180 与桌面 1280×800 还是 `end` |
 
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
@@ -1616,3 +1617,41 @@ AUTO / WRAP / EXACT / FIT 从 4.4 起就是「贴角的小字」：`position: ab
 同跑 `app.spec` 里六条显示相关用例，其中五条在 390 宽的手机上全部超时失败，但**与本条无关**：紧凑帧早已把 `Scope` 换成 `SessionStage`，手机上根本没有 `#herdr-feed-text` 和 `#herdr-display-*`（`git stash` 掉本条样式后同样失败）。`tsc --noEmit` 干净，`test:unit` 330/330。
 
 这一条对应目标里「UI 你看看……既要考虑 PC 上能够显示得完全」：PC 的问题不是缺功能，而是**控件和正文共用同一块像素**。
+
+### 4.33 手机草稿的首行不该沉到卡片底（`49b2aa0`）
+
+草稿卡有三个状态：静止、打字（软键盘弹起）、短横屏。静止时右边是 2×2 的 36px pad（`4.24`），打字时 pad 折成一行（键盘吃掉高度），短横屏再把 pad 侧折进同一行（卡片 96 → 70px）。三种状态共用一条桌面规则：
+
+```
+.prompt__field { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; }
+```
+
+桌面上这条是对的：pad 只有一行 34px，草稿两行 44px，底对齐把按钮压在草稿**最后一行**上，卡片上沿留给第一行。手机上它错了——pad 是 74px 的两行，比草稿的 48px 起底还高，底对齐就等于把草稿推到卡片地板上：
+
+| 帧 | field | textarea | attach | 症状 |
+| --- | --- | --- | --- | --- |
+| 390×844 静止 | `751..825` | `777..825` | `751..787` | 占位文字比按钮低 26px，左上角空洞 |
+| 320×568 静止 | `475..549` | `501..549` | `475..511` | 同上，26px |
+
+试过三种候选，只量 `textarea.y`：`end`（现状）777、`center` 764、`start` 751。`start` 胜出的理由不是数字好看，是**它让空出来的那一行有含义**：草稿首行与 attach/image 齐平，下面那行是留给第二行字的书写空间；`center` 则是上下各半块空洞，读起来像排歪了。卡片高度三种候选都是 96px——pad 仍是卡片里最高的东西，所以这个修复不向转录收任何费用。
+
+打字态要反过来：pad 折成一行 36px 后，48px 的草稿又成了最高的东西，居中才让那一行按钮骑在草稿中线上。这需要一条**三个类**的规则，因为 `composer.css:369` 早有一条 `.has-keyboard .prompt__field { align-items: center }`，两个类的窄帧规则写在它后面会赢过它：
+
+```
+.shell.is-narrow .prompt__field { align-items: start; }                      /* 静止 */
+.has-keyboard .shell.is-narrow .prompt__field { align-items: center; }       /* 打字，三票 */
+```
+
+短横屏不用另写：`@media (pointer: coarse) and (max-height: 500px)` 那块的 `.shell.is-narrow .prompt__field { align-items: center }` 在文件末尾，两个类、同特异性、后到，自然压住静止那条。平板（820×1180 粗指针）和桌面（1280×800 细指针）都不是 `is-narrow`，一条都没碰到，仍是 `end`。
+
+**用例**。`web/tests/composer-draft-top.spec.ts` 五例，键盘走真实检测（只改 `visualViewport.height` 再派发 `resize`，由 `PromptBar` 自己挂 `has-keyboard`）：
+
+- 390×844 静止：`alignItems === "start"`、`|textarea.y − attach.y| ≤ 1`、卡片 96、field 74、pad 74 且 `pad.bottom === field.bottom`、草稿 48 且右沿不越过 pad 左沿、field 在卡片里上下等距；
+- 390×844 填两行：卡片仍是 96、`textarea.y === attach.y`（长高了不往下沉）；
+- 390×844 + 300px 键盘：`center`、pad 折成一行 36、卡片 66、attach 落在草稿的上下沿之间；
+- 844×390 静止：`center`、卡片 70、pad 36；
+- 1280×800 细指针：仍是 `end`、attach 底沿在草稿底沿之内——这条是**保护**，桌面那条规则不许被手机改动带走。
+
+同跑 `squeeze-rows` / `touch-targets` / `landscape-keyboard` / `desktop-display-row`，共 16 例全过——这三个状态（96 / 66 / 70）都在其中被量过。`tsc --noEmit` 干净，`test:unit` 330/330。
+
+这一条对应目标里「更多的要考虑移动端的交互……只有这一块做好了，移动端才算是真正可用」：软键盘和拇指都到位了，剩下的是**光标该从哪儿开始写**。
