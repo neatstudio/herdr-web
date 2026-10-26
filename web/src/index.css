@@ -3505,3 +3505,91 @@ body::before {
     display: none;
   }
 }
+
+/* The head used to leave with the keyboard: `.has-keyboard ... .stage__head
+   { display: none }` (2026-10-25, line ~2629) bought the lane its 46px back and
+   took the only control that belongs to the lenses with it. That was the wrong
+   half of the trade. At 320px the two lenses are the difference between a
+   document you can read and a TUI you can drive, and a thumb is most likely to
+   want the other one mid-sentence, not after closing the keyboard.
+
+   So the head comes back as an overlay instead of a row. Re-inserting it in the
+   flow costs the lane 34px of 197px at 320x568 with the keyboard up (17% of the
+   transcript), and moving the switch into the strip as a second row costs more
+   than it saves. The head instead keeps its DOM place, leaves the flow, and
+   paints over the strip's trailing slot, where a control floating above a
+   scrolling row is already this shell's pattern: the pinned `+` does exactly
+   that with `position: sticky`.
+
+   Two consequences, both deliberate:
+   - the `+` steps aside while the keyboard is up (see `.tab--new` below). The
+     strip is 37px tall; a 96px switch plus a 44px button plus the gap between
+     them is 160px, which is half of a 320px strip, and only one of the two is
+     useful while typing. Close the keyboard and `+` is back where it was.
+   - the strip reserves the switch's width on its right edge, so the last tab
+     can always be dragged out from under the overlay instead of ending there.
+
+   Only coarse, tall frames match. `.stage--lens` itself only exists on a frame
+   narrower than 720px, so the pointer is enough to say which frames this is
+   for; a landscape phone is shorter than the breakpoint, where the strip is
+   already gone (max-height: 499px above) and there would be nothing to align
+   the switch with, only the terminal's first lines and its find button. */
+@media (pointer: coarse) and (min-height: 500px) {
+  .has-keyboard .shell.is-narrow .stage--lens {
+    /* the overlay is placed against the stage, not against the zero-height
+       head it is rendered in */
+    position: relative;
+    /* 96px of switch + the head's 10px padding on each side of it */
+    --lens-head: 116px;
+  }
+
+  .has-keyboard .shell.is-narrow .stage--lens .stage__head {
+    display: flex;
+    position: absolute;
+    inset: 0 0 auto auto;
+    z-index: 2;
+    height: 36px; /* the strip's own height while the keyboard is up */
+    min-height: 0;
+    padding: 0 10px;
+    gap: 0;
+    align-items: center;
+    justify-content: flex-end;
+    border: 0;
+    background: transparent;
+    /* Only the switch is solid. The rest of the row must stay scratchable or
+       the tabs underneath would be covered by an invisible full-width div. */
+    pointer-events: none;
+  }
+
+  /* Everything else the head carried is a duplicate of something already on
+     screen while typing (the pane itself, its agent's state in the transcript)
+     or belongs to the masthead, which is gone. */
+  .has-keyboard .shell.is-narrow .stage--lens .stage__head > *:not(.stage__lenswrap) {
+    display: none;
+  }
+
+  .has-keyboard .shell.is-narrow .stage--lens .stage__head .stage__lenswrap {
+    display: flex;
+    pointer-events: auto;
+  }
+
+  /* A 26px face in a 36px row cannot have a 44px target without bleeding into
+     the transcript's first line and the terminal lens' find button, which both
+     sit in that corner. 34px stays inside the row: the row's height minus the
+     hairline, with the face centred in it. */
+  .has-keyboard .shell.is-narrow .stage--lens .stage__head .lens__opt::after {
+    /* The skirt fills the row's inner band: 24px of face plus 5px above and
+       below is the 34px a thumb gets here. The row's own hairlines stay the
+       last pixel, so the target never reaches the transcript below it. */
+    inset: -5px -2px;
+  }
+
+  .has-keyboard .shell.is-narrow .stage--lens > .strip .tab--new {
+    display: none;
+  }
+
+  .has-keyboard .shell.is-narrow .stage--lens > .strip {
+    padding-right: var(--lens-head);
+    scroll-padding-right: var(--lens-head);
+  }
+}

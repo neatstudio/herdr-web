@@ -582,7 +582,19 @@ export function App() {
               // the head is already 46px tall so this costs no height. Offered
               // for every pane: herdr cannot name every agent, and the document
               // view is the only readable one at this width.
-              <LensSwitch lens={drawnLens} onLens={chooseLens} />
+              //
+              // The wrapper is what keeps the soft keyboard up: while typing,
+              // the head collapses to this one control and it floats over the
+              // pane strip, and a flip that blurred the composer would take the
+              // keyboard away at the moment it was being used. Cancelling the
+              // pointerdown keeps focus where it is and still lets the click
+              // through, the same trick the composer's own buttons use.
+              <span
+                className="stage__lenswrap"
+                onPointerDown={(event) => event.preventDefault()}
+              >
+                <LensSwitch lens={drawnLens} onLens={chooseLens} />
+              </span>
             )}
             {activePane !== null && remotePanes.has(activePane.id) && (
               // The working directory above belongs to another machine, so the
