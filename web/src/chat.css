@@ -64,6 +64,18 @@
   overscroll-behavior: contain;
 }
 
+/* With a keyboard up a 320×568 phone has about 300px of shell: a 37px strip, a
+   44px answer row, a 44px key row and a composer that may grow to five lines
+   already fill it. The lane is the only row that gives, but its own padding is
+   part of its floor, and 48px of floor plus the rows above left the key row
+   painted under the composer. Trim the air, not the transcript: the lane keeps
+   a tight 8px on both ends while the keyboard is out and gets the full padding
+   back the moment it drops. */
+.has-keyboard .chat__lane {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
 /* A picker in the transcript needs keys, and that bar belongs to the document,
    not to the composer: the composer below it already pads for the home
    indicator, so the bar keeps only its own 2px instead of doubling the inset. */

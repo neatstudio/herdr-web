@@ -97,12 +97,32 @@ async function installBridge(page: Page): Promise<void> {
   );
 }
 
-/** Raise the keyboard the way `PromptBar` reports one, without a real one. */
+/**
+ * Raise the keyboard the way a browser does it: the window keeps its height and
+ * only the *visual* viewport shrinks. Short-cutting that difference by setting
+ * `--kb-inset` by hand is a trap — `PromptBar` also caps the composer against
+ * the visual viewport, so an unshimmed frame measures the cap against the full
+ * window and the composer grows far past what a real keyboard leaves. One lie
+ * (the viewport height), then the shell's own code does the rest: the inset, the
+ * class, the grid reflow and the composer re-fit all run for real.
+ */
 async function keyboardUp(page: Page, inset: number): Promise<void> {
   await page.evaluate((px) => {
-    document.documentElement.style.setProperty("--kb-inset", `${px}px`);
-    document.documentElement.classList.add("has-keyboard");
+    const vv = window.visualViewport;
+    if (vv === null) {
+      return;
+    }
+    Object.defineProperty(vv, "height", {
+      configurable: true,
+      get: () => window.innerHeight - px,
+    });
+    vv.dispatchEvent(new Event("resize"));
   }, inset);
+  await expect(page.locator("html")).toHaveClass(/has-keyboard/);
+  const published = await page.evaluate(() =>
+    getComputedStyle(document.documentElement).getPropertyValue("--kb-inset").trim(),
+  );
+  expect(published).toBe(`${inset}px`);
   // The composer re-fits against the shorter frame; the strip must survive it.
   await page.waitForTimeout(120);
 }
@@ -110,9 +130,14 @@ async function keyboardUp(page: Page, inset: number): Promise<void> {
 /** Put the keyboard away again, the way a dismissal reports itself. */
 async function keyboardDown(page: Page): Promise<void> {
   await page.evaluate(() => {
-    document.documentElement.style.removeProperty("--kb-inset");
-    document.documentElement.classList.remove("has-keyboard");
+    const vv = window.visualViewport;
+    if (vv !== null) {
+      // Dropping the shim brings back the browser's own getter.
+      delete (vv as unknown as Record<string, unknown>).height;
+      vv.dispatchEvent(new Event("resize"));
+    }
   });
+  await expect(page.locator("html")).not.toHaveClass(/has-keyboard/);
   await page.waitForTimeout(120);
 }
 
@@ -330,5 +355,69 @@ test.describe("the lens switch while typing", () => {
     expect(measured!.laneTop).toBeCloseTo(measured!.strip.bottom, 0);
     expect(measured!.strip.height - 1).toBeGreaterThanOrEqual(34);
     expect(measured!.newTab).toBe("none");
+  });
+
+  test("a five-line draft keeps the key row above the composer", async ({ page }) => {
+    await openLens(page, { width: 320, height: 568, inset: 260 });
+
+    // Six lines, so the composer hits its cap and scrolls: this is the tallest
+    // the card can get on a phone, and the worst case for everything above it.
+    const input = page.locator(".prompt__input");
+    await input.fill("line 1\nline 2\nline 3\nline 4\nline 5\nline 6");
+    await page.waitForTimeout(160);
+
+    const stack = await page.evaluate(() => {
+      const box = (selector: string) => {
+        const el = document.querySelector<HTMLElement>(selector);
+        if (el === null) {
+          return null;
+        }
+        const rect = el.getBoundingClientRect();
+        const style = getComputedStyle(el);
+        return {
+          top: rect.top,
+          bottom: rect.bottom,
+          height: rect.height,
+          paddingTop: parseFloat(style.paddingTop),
+          paddingBottom: parseFloat(style.paddingBottom),
+        };
+      };
+      return {
+        viewport: window.visualViewport?.height ?? -1,
+        shell: box(".shell"),
+        strip: box(".stage--lens > .strip"),
+        lane: box(".chat__lane"),
+        pick: box(".chat__pick"),
+        keys: box(".chat .keys"),
+        prompt: box(".prompt"),
+        input: box(".prompt__input"),
+        scrolls: getComputedStyle(document.querySelector<HTMLElement>(".prompt__input")!).overflowY,
+      };
+    });
+
+    // The card is capped and scrolls rather than growing to the whole screen.
+    expect(stack.scrolls).toBe("auto");
+    expect(stack.input!.height).toBeLessThanOrEqual(120);
+
+    // Each row still sits on the one below it, in order, inside the shell: the
+    // bug was the key row's bottom 11px painted under the composer because the
+    // lane would not give up its 48px of padding.
+    expect(stack.lane!.bottom).toBeCloseTo(stack.pick!.top, 0);
+    expect(stack.pick!.bottom).toBeCloseTo(stack.keys!.top, 0);
+    expect(stack.keys!.bottom).toBeLessThanOrEqual(stack.prompt!.top + 0.5);
+    expect(stack.prompt!.bottom).toBeLessThanOrEqual(stack.viewport + 0.5);
+    expect(stack.shell!.bottom).toBeCloseTo(stack.viewport, 0);
+
+    // The air is what got cut, and only while typing: the transcript keeps a
+    // sliver plus both rows, and the full padding comes back with the keyboard.
+    expect(stack.lane!.height).toBeGreaterThanOrEqual(20);
+    expect(stack.lane!.paddingTop).toBe(8);
+    expect(stack.lane!.paddingBottom).toBe(8);
+
+    await keyboardDown(page);
+    const restored = await page.evaluate(() =>
+      parseFloat(getComputedStyle(document.querySelector<HTMLElement>(".chat__lane")!).paddingTop),
+    );
+    expect(restored).toBe(20);
   });
 });
