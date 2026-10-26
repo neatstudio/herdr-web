@@ -1,5 +1,12 @@
 import type { AgentPane } from "@/lib/fleet";
-import { paneAgent, paneListName, paneOwnHasName, shortPaneId, toneOf } from "@/lib/fleet";
+import {
+  paneAgent,
+  paneNameRepeatsAgent,
+  paneListName,
+  paneOwnHasName,
+  shortPaneId,
+  toneOf,
+} from "@/lib/fleet";
 import type { HerdrWorkspace } from "@/lib/herdr";
 import { useRef } from "react";
 import { splitsOf, type ArrangeMode, type PaneLayout, type SplitHandle, type Tile } from "@/lib/layout";
@@ -158,7 +165,9 @@ export function TabStage({
                 onMenu(pane, event.clientX, event.clientY);
               }}
             >
-              {agent !== "" && <span className="tile__agent">{agent}</span>}
+              {agent !== "" && !paneNameRepeatsAgent(pane, workspaceName) && (
+                <span className="tile__agent">{agent}</span>
+              )}
               <span className="tile__name" data-pane-title={tile.id}>
                 {paneListName(pane, workspaceName)}
               </span>

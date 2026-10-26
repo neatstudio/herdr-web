@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { AgentPane } from "@/lib/fleet";
-import { orderByTone, paneAgent, paneListName, toneOf } from "@/lib/fleet";
+import { orderByTone, paneAgent, paneListName, paneRowName, toneOf } from "@/lib/fleet";
 import type { HerdrWorkspace } from "@/lib/herdr";
 import { longPressHandlers } from "@/lib/press";
 
@@ -182,7 +182,7 @@ function Agents({ panes, workspaces, selectedPaneId, onPane, onPaneMenu }: Props
               >
                 {/* Status is the colour of the name, not a mark beside it. */}
                 <span className="row__agent">{agent === "" ? "shell" : agent}</span>
-                <span className="row__name">{paneListName(pane, workspaceName)}</span>
+                <span className="row__name">{paneRowName(pane, workspaceName)}</span>
                 <span className="row__workspace" title={workspaceName}>
                   {workspaceName}
                 </span>

@@ -172,6 +172,31 @@ export function paneListName(
   return pane.id;
 }
 
+/**
+ * True when the name column already prints the agent, so a chip beside it would
+ * say the same word twice. herdr sets a pane's terminal title to the program it
+ * runs, so an agent pane nobody renamed carries "codex" as both its agent and
+ * its name, and rows read "codex codex w1:p2"; the type is already said once.
+ */
+export function paneNameRepeatsAgent(pane: AgentPane, workspaceName: string): boolean {
+  const agent = paneAgent(pane);
+  if (agent === "") {
+    return false;
+  }
+  return paneListName(pane, workspaceName).toLowerCase() === agent.toLowerCase();
+}
+
+/**
+ * The name a row prints beside its agent chip. When the name would only repeat
+ * the chip, the pane id is of more use: it is what the operator types at the
+ * prompt, and it is what the tile header falls back to as well.
+ */
+export function paneRowName(pane: AgentPane, workspaceName: string): string {
+  return paneNameRepeatsAgent(pane, workspaceName)
+    ? shortPaneId(pane.id)
+    : paneListName(pane, workspaceName);
+}
+
 /** A pane with its workspace's name attached, for a flat fleet listing. */
 export type FleetPane = {
   pane: AgentPane;

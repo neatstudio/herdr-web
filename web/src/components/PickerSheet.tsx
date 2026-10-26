@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { AgentPane } from "@/lib/fleet";
-import { orderByTone, paneAgent, paneListName, toneOf } from "@/lib/fleet";
+import { orderByTone, paneAgent, paneListName, paneRowName, toneOf } from "@/lib/fleet";
 import type { HerdrWorkspace } from "@/lib/herdr";
 
 type Props = {
@@ -167,7 +167,7 @@ export function PickerSheet({
                 >
                   <span className="srow__agent">{paneAgent(pane) || "shell"}</span>
                   <span className="srow__name">
-                    {paneListName(pane, workspaceName)}
+                    {paneRowName(pane, workspaceName)}
                     <span className="row__id">{workspaceName}</span>
                   </span>
                 </button>

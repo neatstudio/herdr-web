@@ -116,6 +116,52 @@ test("paneListName prefers a real name, then the directory, then the id", () => 
   assert.equal(fleet.paneListName({ id: "w1:p1" }, "web"), "w1:p1");
 });
 
+test("paneNameRepeatsAgent spots a title that is only the agent again", () => {
+  // herdr titles an untouched agent pane with the program it runs, so the row's
+  // agent chip and its name column would print the same word twice.
+  assert.equal(fleet.paneNameRepeatsAgent({ id: "w1:p1", workspaceId: "w1", agent: "codex" }, "web"), false);
+  assert.equal(
+    fleet.paneNameRepeatsAgent({ id: "w1:p1", workspaceId: "w1", agent: "codex", terminalTitle: "codex" }, "web"),
+    true,
+  );
+  assert.equal(
+    fleet.paneNameRepeatsAgent({ id: "w1:p1", workspaceId: "w1", agent: "codex", terminalTitle: " CODEX " }, "web"),
+    true,
+  );
+  // displayAgent wins over agent, as everywhere else in the fleet list.
+  assert.equal(
+    fleet.paneNameRepeatsAgent(
+      { id: "w1:p1", workspaceId: "w1", agent: "codex", displayAgent: "omp", terminalTitle: "omp" },
+      "web",
+    ),
+    true,
+  );
+  // A renamed pane and a shell pane both say something new.
+  assert.equal(
+    fleet.paneNameRepeatsAgent({ id: "w1:p1", workspaceId: "w1", agent: "codex", terminalTitle: "fix the tests" }, "web"),
+    false,
+  );
+  // A directory that happens to spell the agent is still one word, so it goes.
+  assert.equal(
+    fleet.paneNameRepeatsAgent({ id: "w1:p1", workspaceId: "w1", agent: "app", cwd: "/srv/app" }, "web"),
+    true,
+  );
+  assert.equal(fleet.paneNameRepeatsAgent({ id: "w1:p1", workspaceId: "w1", terminalTitle: "omp" }, "web"), false);
+});
+
+test("paneRowName falls back to the pane id instead of repeating the agent", () => {
+  assert.equal(fleet.paneRowName({ id: "w1:p2", workspaceId: "w1", agent: "codex" }, "web"), "w1:p2");
+  assert.equal(
+    fleet.paneRowName({ id: "w1:p2", workspaceId: "w1", agent: "codex", terminalTitle: "codex" }, "web"),
+    "p2",
+  );
+  assert.equal(
+    fleet.paneRowName({ id: "w1:p2", workspaceId: "w1", agent: "codex", terminalTitle: "deploy" }, "web"),
+    "deploy",
+  );
+  assert.equal(fleet.paneRowName({ id: "w1:p2", workspaceId: "w1", cwd: "/srv/app" }, "web"), "app");
+});
+
 test("paneOwnHasName ignores the agent and the id", () => {
   assert.equal(fleet.paneOwnHasName({ id: "w1:p1", agent: "agy" }), false);
   assert.equal(fleet.paneOwnHasName({ id: "w1:p1", label: "Deploy" }), true);
