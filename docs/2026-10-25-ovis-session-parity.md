@@ -156,6 +156,7 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `f6adf48` | 320×568 配 260px 键盘再打一份五行草稿，键条底部 11px 被草稿卡盖住：舞台只剩 ~300px（37 条 + 44 回答行 + 44 键行 + 最高 120px 的草稿卡），唯一能让的是轨道，而轨道的**内边距本身也在地板里**——`.chat__lane` 上下 20/28px 共 48px，48+44+44=136 的硬地板撞上舞台只剩 125px 的行，溢出 11px（实测 `keys.bottom` 173 vs `prompt.top` 162.5），`.lens` 的 `overflow: hidden` 正好把它裁在草稿卡边上。改的是空气不是转录：`html.has-keyboard` 下轨道上下各 8px（地板 16），键盘一收立刻回 20/28；实测 320 变成 37..74 / 74..118 / 118..162 / 162..300 首尾相接，120px 的草稿卡仍 `overflow-y: auto` 能滚到第 6 行，390×844 kb=336 逐项未动。**先修的是量尺**：老用例只手设 `--kb-inset`，`visualViewport.height` 还是整窗，`fitComposer` 的 40% 上限就按 568 算成 227px（8 行），量出来的溢出比真机更狠、也永远量不准真机；改成只谎报 visual viewport 高度并派发 `resize`，让 `PromptBar` 自己发布 inset 与 class。新增第六例钉住夹击（`keys.bottom <= prompt.top`、三行首尾相接、草稿卡 ≤120px 且滚动、轨道 padding 8/8、收键盘回 20），把修复撤掉该例以 11px 溢出失败 |
 | `059ba3c` | 横过来打字时，换镜头的开关跟着头一起没了：`(pointer: coarse) and (max-height: 499px)` 把头整行藏掉（4.20），键条用它换来的那 44px 里没有开关的位置——而这块屏**默认就是终端镜头**（宽而粗指针的帧默认 `terminal`），于是「想读成转录」这个动作在打字时彻底不可达。开关改在 `.lens` 里脱离文档流，落在键条居中之后空出来的右翼：844×390 配 210px 键盘实测 `lens` 844×106、`head` 与 `.lens__switch` 都是 0×0，pill `735,69` 99×28（行 `y62 h44`，末键右沿 564，剩下 171px 空档），`document.elementFromPoint(839, 101)` 命中 `button.flip__opt`、往左 1px 命中 `div.keys`，**高度代价 0px**；568×320 配 160px 键盘 pill 落在 `459,49`。门是粗指针 + `max-height: 499` + `min-width: 560` + `has-keyboard` + `:has(.keys)`，桌面/竖屏/没有待选菜单的聊天镜头一概不画。26px 的面上用 `::after` 撑到 38px，`pointerdown` 取消掉，点它不 blur、键盘不掉、光标不动。**回归是测试自己抓到的**：`keymenu-space` 的横屏例点不动 `hide`——`<button class="flip__opt" aria-pressed="true" title="the session's real terminal">term</button> … intercepts pointer events`。键菜单展开时它自己就是那一行，`hide` 正好在同一条右翼上，于是加 `:not(:has(.keymenu__panel))`：面板一开 pill 让位，收起即回。新增 `web/tests/lens-flip.spec.ts` 六例 |
 | `aaeb4f6` | 横过来再弹键盘，键条底部那一截还是被草稿卡吃掉：`4.27` 只把轨道的空气从 48px 压到 16px，可草稿卡按设计能拿 40% 的可视高度，一行变三行时它就从 66px 长到 90px——844×390 配 210px 键盘，`.lens` 只剩 **82px**；568×320 配 160px 剩 **86px**。键条下面那一摞是 8（轨道空气）+44（回答行）+44（键行）=**104px**，差的 18–22px 就被 `.lens` 的 `overflow: hidden` 裁在草稿卡边上：半颗键看得见、一颗也按不到。草稿的份额不能让（读不了的草稿比看不见的会话更糟），让的是行：键盘弹起时 `.lens` 变成 size container，容器查询在 **103px**（比需要的 104px 少一像素）以下才触发——轨道空气归 0、回答行 padding 6→4（芯片裙摆跟着收到 `calc(-4px - var(--rule-w))`，40px 的行仍是 40px 的靶）、键行的 1px 规则从 `border-top` 挪进 `inset` 阴影，于是 40px 的键面正好装进 40px 的行，没有一颗键掉到 4.21 的手指地板以下。实测折叠后 844×390 键条底沿与 `.lens` 底沿**同为 82px**（轨道余 2px）、568×320 键行结束在 86px、轨道留 6px（原来是键条被藏 18px）、844×390 空草稿仍是 106px 的镜头不折叠（44/44 原样）、竖屏 390×844 与 320×568 逐项未动，草稿卡自己一像素没缩（三行仍是 90px）。新增 `web/tests/squeeze-rows.spec.ts` 五例 |
+| `fc74ed9` | 一条回答的尾巴被贴进了操作者的气泡：devin 的回答是纯散文 + 行内代码片，代码片一长就会折行，于是下一行**从第 0 列起**就是芯片底色。`isBandRow` 当时的要求是「填充从文字前开始并覆盖大半行」，`w6:p7` 上 ` tConsoles() / knownPeerHost / fleetSources 。` 填充 **91%**、` laim / Heartbeat / Release / Cancel  全不验。` **79%**、`  web/src/components/session/Markdown.tsx:71   <a ...` **71%**，三行全部被当成 user band，同一个窗口被切成 4 轮、其中 3 轮的操作者气泡是 agent 自己的话，而真正的操作者消息（`❭ /usage`）在别的窗口。判据改成「填充覆盖整行的每一个字形」：真输入框会把消息铺满 pane 宽度，带底色的行**后面不再跟着任何普通墨色**；而折行的代码片一定会被收句的散文接住（实测 71–91%，从没有 100%）。改完 `w6:p7` 从 4 轮回到 1 轮、三个假气泡全消，`w2N:p5` 的真气泡 `❭ /usage`（bg `42;42;42`、填充 100%）照旧开一轮；omp 三个窗口（`w6:p3`、`w8:p4`、`w2T:p1`）与 agy（`wE:pG`）的轮次、thoughts、work、answer 逐项未变（omp 的盒子行本来就是 100% 填充，仍由 `BOX_EDGE_RE` 先收走）。新增 `conversation.test.ts` 一例钉住折行芯片（撤掉修复该例即失败），`test:unit` 330/330 |
 
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
@@ -1499,3 +1500,52 @@ pill 的 `z-index: 3` 压住了它——用户打开的菜单关不掉，而菜�
 `tsc --noEmit` 干净。探针 `/tmp/probe-568c.mjs` 用**真实样式表**（不再注入候选 CSS）复测
 八个尺寸，数值与注入版逐项相同：折叠态 568 轨道 6px / 键行 40@46..86、844 轨道 2px /
 键行 40@42..82、844 空草稿 44/44、两档竖屏逐项未动。
+
+### 4.30 折行的代码片不许替操作者说话（`fc74ed9`）
+
+前面几版都在修手机上的高度，这一条修的是**读错内容**：`devin` 的回答是纯散文，但每处
+`path`、`command`、`fleetPeers[id]` 都带一块行内代码底色（`48;2;0;43;54`）。底色一长就会折行，
+折出来的那一行**从第 0 列就踩着底色开始**，于是它看起来和一个真的输入框带子一模一样。
+
+`isBandRow` 原判据是「填充从文字前开始，且覆盖大半行」——`w6:p7` 的实测：
+
+| 行 | 文本 | 填充 | 判定 |
+| --- | --- | --- | --- |
+| 1 | ` What this is： fleet.go 的 handleFleetHello …` | 60% | 散文 ✓ |
+| 4 | ` Problem：a) peer 名单投毒 …` | 13% | 散文 ✓ |
+| 8 | ` tConsoles() / knownPeerHost / fleetSources 。` | **91%** | **假 user band** ✗ |
+| 12 | ` 6. 共享账本的 claim/release/cancel 不验证节点身份 …` | 48% | 散文 ✓ |
+| 15 | ` laim / Heartbeat / Release / Cancel  全不验。` | **79%** | **假 user band** ✗ |
+| 17 | ` Problem：任何能发帖的人（默认无认证）可： …` | 45% | 散文 ✓ |
+| 20 | ` Fix：claim/heartbeat/release/cancel 与 attest 一样要求签名 …` | 36% | 散文 ✓ |
+
+后果不是画错一个颜色：这三行把同一个窗口切成 4 轮，其中 3 轮的**操作者气泡里是 agent 自己的话**，
+而真正的操作者消息（同一批 pane 里的 `❭ /usage`）被留在后面当 chrome。用
+`/tmp/band.mjs`（按行重算 span/底色、打印 `band=`、`fill=`、`lead=`、`bgs=`）逐行复算才定位到
+「91% 也算大半行」这个洞。
+
+**判据收紧成「填充覆盖整行的每一个字形」**：真的输入框会把消息铺满 pane 宽度，带底色那一行
+**后面不再跟着任何普通墨色**；折行的代码片一定会被收句的散文接住——实测 71%、79%、91%，
+从没有 100%。所以 `filled * 2 >= total` 换成 `filled === total`，一行注释就地说明为什么
+「大半行」不够。这条规则仍然不比颜色（`BOX_EDGE_RE` 那段说过：omp/pi 的盒子正文和输入带
+共用同一个 `48;2;15;18;22`），也没有任何 `agent === "devin"` 分支。
+
+**拿真 pane 复算**（`/tmp/dump-conv.mjs` 直接喂 `herdr pane read --format ansi` 的尾巴）：
+
+| pane | agent | 改前 | 改后 |
+| --- | --- | --- | --- |
+| `w6:p7` | devin | 4 轮，3 个假气泡 | **1 轮**（`user: null`）✓ |
+| `w2N:p5` | devin | 2 轮（`❭ /usage` 真的） | 2 轮，`❭ /usage` 照旧 ✓ |
+| `w6:p3` `w8:p4` `w2T:p1` | omp | 1 轮 + thoughts/work | 逐项未变 ✓ |
+| `wE:pG` | agy | 1 轮 | 未变 ✓ |
+
+omp 的盒子行本来就是 100% 填充（`| …`、`+--- …`），仍然先被 `BOX_EDGE_RE` 收走，不受影响。
+
+**用例**。`conversation.test.ts` 加一例：一段回答里出现折行代码片（`chip("tConsoles() / knownPeerHost / fleetSources")` 后面接 ` 。`），
+断言只有 1 轮、`user` 是那句故意打的中文、`answer` 同时含折行前后的散文。撤掉修复该例失败
+（`ℹ pass 24 / fail 1`），装回去 330/330。同跑 `pick-row` + `squeeze-rows` 9 例 6.9s 全绿、
+`tsc --noEmit` 干净。
+
+这一条属于目标里那句「还要额外支持一些其他 agent」：官方那几个 agent 的输出形状我们早就吃住了，
+真正会让转录读错的是**没见过的渲染习惯**——devin 的行内芯片、agy 的纯文本流。判据只能建在
+「输入框是一个矩形」这种与 agent 无关的形状上，不能建在具体配色或具体 agent 名上。
