@@ -1180,6 +1180,20 @@ body::before {
   white-space: nowrap;
 }
 
+/* herdr can zoom a tab to one pane and offers no RPC to unzoom it, so the
+   header says what happened instead of pretending the other panes are gone.
+   Amber and unbordered: it is a state of the terminal, not the pane's identity,
+   and a third boxed chip next to the agent and the id would read as a third
+   kind of name. */
+.tile__zoom {
+  flex: 0 0 auto;
+  font-family: var(--font-label);
+  font-size: var(--step-micro);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  color: var(--blocked);
+}
+
 /* herdr reports whatever agent a pane actually runs, and that can be a long
    slug (`opencode-gpt5-coder-xhigh`). Keep the chip compact; the pane menu
    shows the full name, including on touch. */
@@ -3454,5 +3468,25 @@ body::before {
   .has-keyboard .sheet--fleet #dispatch-prompt {
     height: 2.4em;
     min-height: 0;
+  }
+}
+
+/* A stacked phone stage gives every pane a 28px header, and its close button
+   is hover-revealed — which on a phone means an invisible control that ends a
+   pane sits in the top-right corner of every pane. Show it, and give it a
+   finger-sized box: the header grows to 34px, still well under the 44px a
+   full row costs, and the tap no longer lands on something it cannot see. */
+@media (pointer: coarse) {
+  .tile__head {
+    padding: 2px 4px 2px 8px;
+  }
+  .tile__close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0;
+    opacity: 1;
   }
 }

@@ -151,3 +151,15 @@ test("tabsOf lists one entry per tab, named by the focused pane", () => {
     ],
   );
 });
+
+test("a header appears when the stage shows fewer tiles than the tab holds", () => {
+  // One pane, one tile: the stage head already says everything.
+  assert.equal(layout.tileHeadVisible(1, 1), false);
+  // Two tiles side by side: the header is what tells them apart.
+  assert.equal(layout.tileHeadVisible(2, 2), true);
+  // herdr zoomed the tab, or "focus" is on: one tile, but three panes hidden.
+  assert.equal(layout.tileHeadVisible(1, 4), true);
+  // A tab whose layout has not arrived yet still gets a header for its tiles.
+  assert.equal(layout.tileHeadVisible(3, 3), true);
+  assert.equal(layout.tileHeadVisible(0, 0), false);
+});

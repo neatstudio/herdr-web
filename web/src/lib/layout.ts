@@ -33,6 +33,18 @@ export type Tile = { id: string; focused: boolean; left: number; top: number; wi
  */
 export type ArrangeMode = "side" | "stack" | "focus";
 
+/**
+ * Whether a tab draws a header over its pane. Two tiles always do — the header
+ * is what tells them apart and carries each pane's close button. A tab with
+ * more panes than tiles shown (herdr zoomed it, or the operator picked "focus")
+ * keeps it too: it is the only thing left naming the visible pane and saying
+ * that the rest still exist. A tab of one pane stays bare, because the stage
+ * head above already says where it is and what state it is in.
+ */
+export function tileHeadVisible(tileCount: number, tabPaneCount: number): boolean {
+  return tileCount > 1 || tabPaneCount > 1;
+}
+
 export function arrangeTiles(
   layout: PaneLayout | null,
   mode: ArrangeMode,

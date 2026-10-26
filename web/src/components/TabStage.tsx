@@ -12,7 +12,14 @@ import {
 } from "@/lib/fleet";
 import type { HerdrWorkspace } from "@/lib/herdr";
 import { useRef } from "react";
-import { splitsOf, type ArrangeMode, type PaneLayout, type SplitHandle, type Tile } from "@/lib/layout";
+import {
+  splitsOf,
+  tileHeadVisible,
+  type ArrangeMode,
+  type PaneLayout,
+  type SplitHandle,
+  type Tile,
+} from "@/lib/layout";
 import { Scope } from "@/components/Scope";
 import { PROMPT_ID, keyboardIsPrimary } from "@/lib/focus";
 import { longPressHandlers } from "@/lib/press";
@@ -112,6 +119,12 @@ export function TabStage({
   onClosePane,
 }: Props) {
   const names = new Map(workspaces.map((workspace) => [workspace.id, workspace.name]));
+  // A tab can hold more panes than the stage is showing: herdr zooms a tab to
+  // one pane, and "focus" mode is the operator asking for the same. Either way
+  // the header is the only thing left that names the visible pane, counts the
+  // hidden ones and offers to close it, so it stays.
+  const tabPaneCount = layout?.panes.length ?? tiles.length;
+  const showHead = tileHeadVisible(tiles.length, tabPaneCount);
 
   return (
     <div className="tiles" data-arrange={mode} data-count={tiles.length}>
@@ -161,7 +174,7 @@ export function TabStage({
               }
             }}
           >
-            {tiles.length > 1 && (
+            {showHead && (
             <header
               className="tile__head"
               // A right-click targets the pane's menu, like the tab.
@@ -188,12 +201,20 @@ export function TabStage({
                   remote
                 </span>
               )}
+              {layout?.zoomed === true && (
+                <span
+                  className="tile__zoom"
+                  title={`herdr has this tab zoomed: 1 of ${tabPaneCount} panes on screen. Unzoom it in herdr to see the rest.`}
+                >
+                  zoom 1/{tabPaneCount}
+                </span>
+              )}
               <span className="tile__spacer" />
               <span className="tile__status" title={pane.agentStatus ?? undefined}>
                 {statusChip(pane.agentStatus)}
               </span>
               {/* Closing is per pane, so it belongs on the pane's own header.
-                  A single-pane tab has no header; the menu covers that case. */}
+                  A tab of one pane has no header; the pane menu covers it. */}
               <button
                 type="button"
                 className="tile__close"
@@ -239,7 +260,14 @@ export function TabStage({
                       {statusLabel(pane.agentStatus)}
                     </span>
                   )}
-                  <span className="scope__idle-hint">click to read this pane</span>
+                  {/* herdr's zoom decides which pane is on screen, not
+                      which pane the prompt sends to; when those differ, say
+                      so instead of leaving a stage that looks active. */}
+                  <span className="scope__idle-hint">
+                    {layout?.zoomed === true && activePaneId !== null && activePaneId !== tile.id
+                      ? `click to work here — the prompt sends to ${shortPaneId(activePaneId)}`
+                      : "click to read this pane"}
+                  </span>
                 </div>
               </div>
             )}
