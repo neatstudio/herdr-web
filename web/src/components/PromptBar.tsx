@@ -36,7 +36,10 @@ import {
   mentionItems,
   mentionQuery,
   readDraft,
+  type SendOutcome,
+  type SendTrouble,
   scoreMatches,
+  sendTrouble,
   slashQuery,
   writeDraft,
   type ComposerAction,
@@ -91,12 +94,16 @@ function canType(text: string): boolean {
  * against herdr 0.9.0: text with a newline arrives as `…0a`, the "Enter" key
  * arrives as `0d`. So the paste goes out without a newline and Enter follows it
  * as its own request, which the daemon delivers as a key press.
+ *
+ * Two requests mean the pair can stop between them, so the caller is told which
+ * half landed: the text is in the pane and only Enter is missing, or nothing at
+ * all arrived — never a bare "failed", which cannot be retried safely.
  */
-async function pasteThenSubmit(paneId: string, line: string): Promise<boolean> {
+async function pasteThenSubmit(paneId: string, line: string): Promise<SendOutcome> {
   if (!(await sendPaneText(paneId, line, false))) {
-    return false;
+    return "unreached";
   }
-  return sendPaneKeys(paneId, ["Enter"]);
+  return (await sendPaneKeys(paneId, ["Enter"])) ? "sent" : "unsubmitted";
 }
 
 /**
@@ -161,6 +168,8 @@ export function PromptBar({
   const [dropping, setDropping] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [rejected, setRejected] = useState<AttachmentRejection[]>([]);
+  /** A send that stopped halfway: what it was and what the pane now holds. */
+  const [trouble, setTrouble] = useState<SendTrouble | null>(null);
   const history = useRef<string[]>([]);
   const historyIndex = useRef(-1);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -193,11 +202,11 @@ export function PromptBar({
   const note =
     rejected.length > 0
       ? rejectionNote(rejected)
-      : failed.length === 0
-        ? ""
-        : failed.length === 1
+      : failed.length > 0
+        ? failed.length === 1
           ? `could not attach ${failed[0]?.file.name ?? "file"}`
-          : `could not attach ${failed.length} files`;
+          : `could not attach ${failed.length} files`
+        : (trouble?.note ?? "");
 
   /**
    * Paths this client can offer on "@": what was uploaded in this session and
@@ -379,6 +388,7 @@ export function PromptBar({
     setRestored(draft.trim() !== "");
     setMenuClosed(false);
     setRaw(false);
+    setTrouble(null);
     pendingCaret.current = { at: draft.length, length: draft.length };
   }, [paneId, store]);
 
@@ -566,13 +576,19 @@ export function PromptBar({
       return;
     }
     setBusy(true);
+    setTrouble(null);
     try {
       const delivered = canType(line)
         ? await typePaneText(paneId, line, false)
         : await sendPaneText(paneId, line, false);
       if (!delivered) {
+        setTrouble(sendTrouble("unreached", paneId));
         return;
       }
+      // The line is in the pane now. Raw mode takes over even if the key that
+      // completes it did not land: the box must not keep a copy, because the
+      // next send would type the same line into the pane twice — and the key it
+      // needs is one keystroke away, since raw mode forwards every key.
       if (keys.length > 0) {
         await sendPaneKeys(paneId, keys);
       }
@@ -596,15 +612,24 @@ export function PromptBar({
       return;
     }
     setBusy(true);
+    setTrouble(null);
     try {
       // Typed input keeps a TUI's own menus alive; anything a key cannot carry
       // (non-ASCII, a pasted block) goes out as text, and is submitted by the
       // key that follows it.
-      const delivered = canType(line)
-        ? await typePaneText(paneId, line)
+      const outcome: SendOutcome = canType(line)
+        ? (await typePaneText(paneId, line))
+          ? "sent"
+          : "unreached"
         : await pasteThenSubmit(paneId, line);
-      if (!delivered) {
-        return;
+      const fallout = sendTrouble(outcome, paneId);
+      if (fallout !== null) {
+        setTrouble(fallout);
+        if (fallout.keepsDraft) {
+          // Nothing arrived, so the text stays where the operator can send it
+          // again; it is not history yet.
+          return;
+        }
       }
       if (history.current[history.current.length - 1] !== line) {
         history.current.push(line);
@@ -616,6 +641,27 @@ export function PromptBar({
       // Clear only what was sent: a slow POST must not wipe text typed after
       // Enter was pressed.
       setValue((current) => (current === text ? "" : current));
+    } finally {
+      setBusy(false);
+      inputRef.current?.focus();
+    }
+  }
+
+  /**
+   * A paste landed but its Enter did not: send the key on its own.
+   *
+   * The pane's line editor already holds the message, so re-sending it would
+   * type it a second time; the note's button finishes the send instead.
+   */
+  async function resubmit(): Promise<void> {
+    if (busy) {
+      return;
+    }
+    setBusy(true);
+    try {
+      if (await sendPaneKeys(paneId, ["Enter"])) {
+        setTrouble(null);
+      }
     } finally {
       setBusy(false);
       inputRef.current?.focus();
@@ -944,6 +990,11 @@ export function PromptBar({
               retry
             </button>
           )}
+          {failed.length === 0 && trouble?.action === "enter" && (
+            <button type="button" className="prompt__note-act" onClick={resubmit}>
+              send ⏎
+            </button>
+          )}
           <button
             type="button"
             className="prompt__note-act"
@@ -955,6 +1006,7 @@ export function PromptBar({
                 return;
               }
               setRejected([]);
+              setTrouble(null);
             }}
           >
             {failed.length > 0 ? "remove" : "dismiss"}

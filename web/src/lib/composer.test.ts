@@ -16,6 +16,7 @@ import {
   mentionQuery,
   readDraft,
   scoreMatches,
+  sendTrouble,
   slashQuery,
   writeDraft,
   type ComposerItem,
@@ -359,4 +360,28 @@ test("a viewport the browser over-reports stops at the console floor", () => {
 test("nonsense measurements never move the shell", () => {
   assert.equal(keyboardInset(Number.NaN, 400), 0);
   assert.equal(keyboardInset(844, Number.POSITIVE_INFINITY), 0);
+});
+
+test("a send that landed says nothing", () => {
+  assert.equal(sendTrouble("sent", "w2:p1"), null);
+});
+
+test("a paste that never arrived keeps the draft and offers the whole send again", () => {
+  // The message did not leave the box, so the operator must not lose it; the
+  // note says which pane it was for and the button repeats the send.
+  assert.deepEqual(sendTrouble("unreached", "w2:p1"), {
+    keepsDraft: true,
+    note: "could not reach w2:p1, message kept",
+    action: "retry",
+  });
+});
+
+test("a paste whose Enter was lost is already in the pane, so only the key is offered", () => {
+  // Measured against herdr 0.9.0: paste and Enter are two requests. Reporting
+  // this as unsent and retrying the text would type the message twice.
+  assert.deepEqual(sendTrouble("unsubmitted", "w6:p3"), {
+    keepsDraft: false,
+    note: "in w6:p3, Enter did not land",
+    action: "enter",
+  });
 });

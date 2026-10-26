@@ -408,3 +408,43 @@ export const APP_ACTIONS: readonly ComposerItem[] = [
   { action: "workspace", value: "/workspace", label: "workspace", kind: "fleet", hint: "switch workspace" },
   { action: "stop", value: "/stop", label: "stop", kind: "pane", hint: "interrupt what is running" },
 ];
+
+/* --------------------------------------------------------- send outcomes */
+
+/**
+ * What a send that needs two requests actually did.
+ *
+ * Typing a line is one `/keys` request, Enter included, so it either lands or
+ * it does not. Text a key cannot carry goes out as a paste with an Enter key
+ * behind it: two requests, and the pair can stop between them. The paste can
+ * arrive while the key does not — a phone that loses the network for a second
+ * is enough — and the pane is then holding the message in its line editor with
+ * nothing sent. Calling that "sent" is a lie, and retrying it wholesale types
+ * the message twice, so the outcome names each half.
+ */
+export type SendOutcome = "sent" | "unreached" | "unsubmitted";
+
+export type SendTrouble = {
+  /** The draft has to stay in the box: no part of the message reached the pane. */
+  keepsDraft: boolean;
+  /** What the composer says, naming the pane it happened to. */
+  note: string;
+  /** The note's button: send the whole message again, or only the missing key. */
+  action: "retry" | "enter";
+};
+
+/**
+ * The sentence for a send that did not finish, or null when it did.
+ *
+ * Short enough for a phone, and it always names the pane, because on a phone
+ * the composer can be pointed at a pane the operator is not looking at.
+ */
+export function sendTrouble(outcome: SendOutcome, target: string): SendTrouble | null {
+  if (outcome === "sent") {
+    return null;
+  }
+  if (outcome === "unsubmitted") {
+    return { keepsDraft: false, note: `in ${target}, Enter did not land`, action: "enter" };
+  }
+  return { keepsDraft: true, note: `could not reach ${target}, message kept`, action: "retry" };
+}
