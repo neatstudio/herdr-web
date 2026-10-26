@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { pickerKeyName, isTypingTarget, PICKER_EVENT_KEYS } from "./pickerKeys.ts";
+import {
+  pickerKeyName,
+  isTypingTarget,
+  showsPicker,
+  PICKER_EVENT_KEYS,
+} from "./pickerKeys.ts";
 
 test("the arrows, Enter and Escape reach a blocked pane", () => {
   assert.equal(pickerKeyName({ key: "ArrowUp" }, { tagName: "BODY" }), "Up");
@@ -54,4 +59,64 @@ test("only the picker's keys are taken", () => {
     "Enter",
     "Escape",
   ]);
+});
+
+test("a menu herdr never reported as blocked still shows its bar", () => {
+  // The three shapes the agents on this machine actually draw. Codex and
+  // Claude Code answer with `blocked`; a third-party agent answers with
+  // `working` and this is the only thing left to read.
+  assert.equal(
+    showsPicker(
+      "  Do you want to proceed?\n" +
+        "  ❯ 1. Yes\n" +
+        "    2. Yes, and don't ask again for bash\n" +
+        "    3. No\n\n" +
+        "  Esc to cancel · Tab to amend",
+    ),
+    true,
+    "claude code",
+  );
+  assert.equal(
+    showsPicker(
+      "  › 1. Yes, proceed\n" +
+        "    2. No, and tell Codex what to do differently\n\n" +
+        "  Press enter to confirm or esc to cancel",
+    ),
+    true,
+    "codex",
+  );
+  assert.equal(showsPicker("  [1] keep   [2] skip   [3] edit   esc cancel"), true, "inline row");
+  // Colour, box drawing and a gutter are all just noise to the reader.
+  assert.equal(
+    showsPicker(
+      "\u001b[2m│\u001b[0m \u001b[36m❯ 1.\u001b[0m keep\n" +
+        "│   2. skip\n" +
+        "│\n" +
+        "│ \u001b[2m↑/↓ to move · Enter to select\u001b[0m",
+    ),
+    true,
+    "ansi and box",
+  );
+});
+
+test("prose about a menu is not a menu", () => {
+  // An answer that quotes a menu must not summon a key bar: the reader is
+  // reading, not choosing.
+  assert.equal(showsPicker("The prompt asks:\n1. Yes\n2. No\n"), false, "quoted list");
+  assert.equal(showsPicker("Esc to cancel\n"), false, "hint without options");
+  assert.equal(showsPicker("1. Yes\n2. No\n\nThat is what it would ask."), false, "trailing prose");
+  assert.equal(showsPicker(""), false, "empty pane");
+  assert.equal(showsPicker("\n\n\n"), false, "blank pane");
+});
+
+test("a menu the agent already answered is history, not a question", () => {
+  // The options stay inside the tail, but the hint is nine lines up: that menu
+  // was answered and the pane has moved on.
+  const answered = [
+    "❯ 1. Yes",
+    "  2. No",
+    "Esc to cancel",
+    ...Array.from({ length: 9 }, (_, i) => `▸ ran tool ${i + 1}`),
+  ].join("\n");
+  assert.equal(showsPicker(answered), false);
 });

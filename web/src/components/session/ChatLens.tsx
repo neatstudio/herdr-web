@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { deriveConversation } from "@/lib/conversation";
 import { sendPaneKeys } from "@/lib/herdr";
 import { PICKER_BAR_KEYS, emptyLatches, type KeyLatch } from "@/lib/keybar";
-import { pickerKeyName } from "@/lib/pickerKeys";
+import { pickerKeyName, showsPicker } from "@/lib/pickerKeys";
 import { usePaneRead } from "@/lib/usePaneRead";
 import { KeyBar } from "./KeyBar";
 import { TurnList } from "./TurnList";
@@ -51,6 +51,11 @@ export function ChatLens({ paneId, status, onOpenTerminal }: ChatLensProps) {
   // the terminal lens the pane itself takes the answer; here the transcript is
   // a document, so the answer has to come from the key bar below it.
   const blocked = live === "blocked";
+  // herdr only says `blocked` for the agents it knows how to read. A
+  // third-party agent can draw a menu and report `working`, and on a phone the
+  // bar below is the only keyboard that can answer it — so the snapshot gets a
+  // second opinion.
+  const picker = blocked || showsPicker(read.text);
 
   // The pane snapshot has no timestamps, so the only duration available is the
   // one we observe: from the first snapshot that carried the running turn.
@@ -85,14 +90,14 @@ export function ChatLens({ paneId, status, onOpenTerminal }: ChatLensProps) {
     }
     // The key bar takes 48px off the lane when it appears; that is a resize,
     // and the reader was at the bottom.
-  }, [read.text, turns.length, blocked]);
+  }, [read.text, turns.length, picker]);
 
   // The arrows have to work for a keyboard, not only for the bar. Capturing on
   // the window takes the press before the page's own shortcut that pulls the
   // caret into the composer, so Enter confirms the picker instead of jumping
   // away from it; every key this does not take behaves exactly as before.
   useEffect(() => {
-    if (!blocked) {
+    if (!picker) {
       return;
     }
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -112,7 +117,7 @@ export function ChatLens({ paneId, status, onOpenTerminal }: ChatLensProps) {
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [blocked, paneId]);
+  }, [picker, paneId]);
 
   // The composer grows as the operator writes, which takes height off the lane.
   // A reader who was at the bottom stays there, exactly as if a poll had landed:
@@ -193,7 +198,7 @@ export function ChatLens({ paneId, status, onOpenTerminal }: ChatLensProps) {
           latest ↓
         </button>
       )}
-      {blocked && (
+      {picker && (
         <KeyBar
           paneId={paneId}
           keys={PICKER_BAR_KEYS}
