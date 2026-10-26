@@ -3671,3 +3671,64 @@ body::before {
     outline-offset: -1px;
   }
 }
+
+/* ------------------------------------------------------------------------
+   The last inch: rows that fold when the lens itself runs out of height.
+
+   A landscape phone with the keyboard up hands the lens whatever the composer
+   did not take, and the composer may take 40% of the visual viewport — so a
+   three-line draft on an 844x390 screen leaves the lens 82px, and on 568x320
+   with a 160px keyboard it leaves 86px. Under the transcript the chat stack is
+   four rows deep: 8px of lane air, a 44px answer row, a 44px key row — 104px.
+   The last 18-22px of the key row were therefore painted under the composer,
+   half visible and not hittable (measured: 844 keys bottom 104 vs lens bottom
+   82).
+
+   The composer's share is the promise that wins here (a draft you cannot read
+   is worse than a session you cannot see), so the rows give instead — but only
+   when the lens is genuinely short, which is what the container query asks:
+   44px rows while the lens has 104px or more, folded rows below that. The lane
+   drops its 8px air (it is empty at that point), the answer row pays 4px of
+   padding instead of 6 (the chip skirt still reaches the row's edge, so the
+   target stays 40px), and the key row takes its 1px rule out of the box and
+   paints it as an inset shadow instead — 40px faces in a 40px row, so nothing
+   shrinks below the fingertip floor the chips already set.
+
+   Measured after folding: 844x390 + 210px keyboard ends at the lens edge
+   exactly (keys bottom 82, lens bottom 82, 2px of lane); 568x320 + 160px
+   keyboard keeps 6px of lane instead of hiding 18px of keys. The query is
+   scoped to the short coarse frame and the keyboard, so portrait phones and
+   the 44px rows on a roomy sideways screen are untouched.
+*/
+@media (pointer: coarse) and (max-height: 499px) {
+  html.has-keyboard .lens {
+    container-name: lens;
+    container-type: size;
+  }
+
+  @container lens (max-height: 103px) {
+    html.has-keyboard .chat__lane {
+      padding-top: 0;
+      padding-bottom: 0;
+    }
+
+    html.has-keyboard .chat__pick {
+      padding-top: 4px;
+      padding-bottom: 4px;
+    }
+
+    /* 4px of padding plus the 1px rule overshoots the row edge by one and the
+       row clips it: the 32px face still answers across the whole 40px row. */
+    html.has-keyboard .chat__pickopt::after {
+      inset: calc(-4px - var(--rule-w)) -2px;
+    }
+
+    html.has-keyboard .lens .keys {
+      min-height: 40px;
+      padding-top: 0;
+      padding-bottom: 0;
+      border-top: 0;
+      box-shadow: inset 0 var(--rule-w) 0 var(--ui-border, var(--rule));
+    }
+  }
+}
