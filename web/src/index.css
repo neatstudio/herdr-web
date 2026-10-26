@@ -3142,3 +3142,98 @@ body::before {
   line-height: 1.45;
   white-space: pre-wrap;
 }
+
+/* This block is last in the stylesheet on purpose: `.sheet--dialog .newws__field
+   input` declares a 34px `min-height` far above with the same specificity, so a
+   coarse-only override written next to the desktop rule is a silent no-op.
+   What it pays off: the fine step is smaller than the body step the controls
+   used to inherit, so every widget sized by its own padding or line box now
+   falls under a thumb. The masthead's pseudo-element reach does not transfer —
+   a `<button>` clips its generated content to its own box, so a `::before`
+   inset only hit-tests where the button already was (`elementFromPoint` showed
+   every point past the edge falling through). Real boxes grow instead. */
+@media (pointer: coarse) {
+  /* Fields are 34px because that is what a two-line label + input needs on a
+     desktop. On a fingertip it is the difference between a tap and a miss. */
+  .newws__field input,
+  .newws__field textarea,
+  .newws__field select {
+    min-height: 44px;
+  }
+
+  /* The strategy toggle is a choice, not a caption: 23px of text was its box. */
+  .dispatch__strategy button {
+    min-height: 44px;
+  }
+
+  /* A machine row is the target, so the row is the box. The checkbox grows with
+     it — 13px was the browser default, and it read as a stray dot. The box keeps
+     to the first line, so a wrapped detail does not push it down the row. */
+  .dispatch__targets label {
+    min-height: 44px;
+    align-items: flex-start;
+    padding: 13px 0;
+  }
+
+  .dispatch__targets label input {
+    width: 18px;
+    height: 18px;
+  }
+
+  /* A 44px row can afford the second line, and on a phone the ellipsis was
+     eating the one thing that decides the tap: which agent the machine
+     reports. The desktop row stays one line, as documented above it. */
+  .dispatch__targets .newws__dim {
+    white-space: normal;
+    overflow: visible;
+    overflow-wrap: anywhere;
+  }
+
+  /* "stop" keeps to the end of the host line; the line grows to hold it and
+     centers around it, so the status still reads beside it, not above it. */
+  .dispatch__line {
+    align-items: center;
+  }
+
+  .dispatch__line .dispatch__stop {
+    min-height: 44px;
+    padding: 0 10px;
+  }
+
+  /* Disclosure rows are how the board and the legacy list open at all: the
+     summary is the whole control, so it is the whole 44px. `padding` instead of
+     a flex box, because `summary`'s marker is drawn as a list item and goes
+     away under `display: flex`. */
+  .dispatch__entry summary,
+  .hostpanel__legacy summary {
+    min-height: 44px;
+    padding: 13px 0;
+  }
+
+  /* One action per row inside the legacy list: two reach-sized buttons stacked
+     in one 22px line would overlap each other. */
+  .hostpanel__act {
+    min-height: 44px;
+  }
+
+  /* Panel and sheet heads: the only way back out of either surface. */
+  .hostpanel__button,
+  .hostpanel__close,
+  .sheet__close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+  }
+
+  .hostpanel__button,
+  .hostpanel__close {
+    min-width: 44px;
+  }
+
+  .hostpanel__close,
+  .sheet__close {
+    min-width: 44px;
+    font-size: 22px;
+  }
+}
