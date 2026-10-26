@@ -54,6 +54,42 @@ export function SessionStage({ paneId, status, lens, theme, onLens }: SessionSta
           <TerminalLens paneId={paneId} status={status} theme={theme} />
         )}
       </div>
+      {/* The switch the header carries, for the one frame that has no header.
+          A phone on its side gives the lenses 180px with the keyboard up and
+          the identity row above them is what pays for the key row; the price is
+          that the switch is not in the DOM's visible tree while typing, and the
+          operator is exactly then most likely to want the other lens (a TUI
+          menu needs the terminal, an answer needs the transcript). The key row
+          is centred, so its flanks are empty: the same two words ride there,
+          costing the body nothing. `index.css` decides *when* — only coarse,
+          short frames with a key row and the keyboard up. */}
+      <div
+        className="flip"
+        role="group"
+        aria-label="session view"
+        // Cancelling the pointerdown keeps the composer's focus, so flipping
+        // lenses does not drop the soft keyboard (and with it this control).
+        onPointerDown={(event) => event.preventDefault()}
+      >
+        <button
+          type="button"
+          className="flip__opt"
+          aria-pressed={lens === "chat"}
+          title="read this session as a transcript"
+          onClick={() => onLens("chat")}
+        >
+          chat
+        </button>
+        <button
+          type="button"
+          className="flip__opt"
+          aria-pressed={lens === "terminal"}
+          title="the session's real terminal"
+          onClick={() => onLens("terminal")}
+        >
+          term
+        </button>
+      </div>
     </div>
   );
 }

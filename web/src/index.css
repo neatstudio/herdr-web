@@ -3593,3 +3593,81 @@ body::before {
     scroll-padding-right: var(--lens-head);
   }
 }
+
+/* The lens switch for the one frame that has no header to hold it. A phone on
+   its side with the keyboard up spends its 180px on four rows — a sliver of
+   transcript, the answer chips, the key row, the composer — and the header's
+   36px went to the key row, switch included. That is fine for reading and bad
+   for the one action a keyboard cannot offer: the other lens. Ovis keeps its
+   switch visible at every size; here it comes back at zero cost, because the
+   key row is centred and its flanks are empty at landscape width (6 keys fill
+   x 280..564 of 844 at 390x844 sideways, 7 keys fill 588..1176 of 1688 at 2x).
+
+   So the control is a child of `.lens`, out of the flow, sitting in the key
+   row's trailing empty bay: bottom 9px of a 44px row, 26px face, so its box is
+   the row's own centre line. It only ever appears where it is needed —
+   coarse pointer, short frame (the landscape gate above), keyboard up, and a
+   key row present (`:has(.keys)`, which both lenses render) — so desktop and
+   portrait pay not one line for it. The chat lens without a waiting menu has no
+   key row and therefore no pill: there the keys themselves are what the row is
+   for, and the transcript is one tap away from the switch once the keyboard is
+   dismissed. The keys menu, when it is open, *is* the row and ends in its own
+   `hide` control in exactly that trailing bay; the pill steps out for as long as
+   the panel is up rather than covering the way back. */
+.flip {
+  display: none;
+}
+
+@media (pointer: coarse) and (max-height: 499px) and (min-width: 560px) {
+  .has-keyboard .lens:has(.keys):not(:has(.keymenu__panel)) > .flip {
+    position: absolute;
+    right: 10px;
+    bottom: 9px;
+    z-index: 3;
+    display: flex;
+    align-items: stretch;
+    border: var(--rule-w) solid var(--rule-strong);
+    border-radius: 6px;
+    background: var(--surface);
+  }
+
+  .flip__opt {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 26px;
+    padding: 0 9px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    font-family: var(--font-label);
+    font-size: var(--step-micro);
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+    cursor: pointer;
+  }
+
+  /* 26px of face inside a 44px row: the skirt takes the target to 38px without
+     reaching the composer's hairline below or the chips above. */
+  .flip__opt::after {
+    content: "";
+    position: absolute;
+    inset: -6px -2px;
+  }
+
+  /* Inverted, not tinted: over a live terminal a 9.5px uppercase word needs a
+     block of contrast to read as "this one", and ink-on-paper is the one pair
+     both themes already define. */
+  .flip__opt[aria-pressed="true"] {
+    background: var(--ink);
+    color: var(--paper);
+  }
+
+  .flip__opt:focus-visible {
+    outline: 1px solid var(--ink);
+    outline-offset: -1px;
+  }
+}
