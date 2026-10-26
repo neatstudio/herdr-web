@@ -131,7 +131,7 @@ export function PickerSheet({
                     setView("agents");
                   }}
                 >
-                  <span className="srow__name">
+                  <span className="srow__name" title={workspace.name}>
                     {workspace.name}
                     <span className="row__id">
                       {count} {count === 1 ? "pane" : "panes"}
@@ -164,10 +164,14 @@ export function PickerSheet({
                   data-pane-id={pane.id}
                   data-tone={toneOf(pane.agentStatus)}
                   aria-current={pane.id === selectedPaneId ? "true" : undefined}
-                  title={note}
+                  title={`${paneRowName(pane, workspaceName)} — ${pane.id} (${workspaceName})${
+                    note === undefined ? "" : ` · ${note}`
+                  }`}
                   onClick={() => onPane(pane)}
                 >
-                  <span className="srow__agent">{paneAgent(pane) || "shell"}</span>
+                  <span className="srow__agent" title={paneAgent(pane) || "shell"}>
+                    {paneAgent(pane) || "shell"}
+                  </span>
                   <span className="srow__name">
                     {paneRowName(pane, workspaceName)}
                     <span className="row__id">{workspaceName}</span>

@@ -184,7 +184,12 @@ function Agents({ panes, workspaces, selectedPaneId, onPane, onPaneMenu }: Props
                 {...longPressHandlers({ onLongPress: (x, y) => onPaneMenu(pane, x, y) })}
               >
                 {/* Status is the colour of the name, not a mark beside it. */}
-                <span className="row__agent">{agent === "" ? "shell" : agent}</span>
+                {/* The agent column is 84px: the pane title is the identity,
+                    but a long detected agent (`opencode-gpt-5-coder`) still
+                    ends in an ellipsis, so the string stays reachable. */}
+                <span className="row__agent" title={agent === "" ? "shell" : agent}>
+                  {agent === "" ? "shell" : agent}
+                </span>
                 <span className="row__name">{paneRowName(pane, workspaceName)}</span>
                 <span className="row__workspace" title={workspaceName}>
                   {workspaceName}

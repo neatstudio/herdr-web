@@ -2252,6 +2252,22 @@ body::before {
   font-size: var(--step-name);
 }
 
+/* On a desk the sheet is the whole screen: 1 300px of pane name sat beside a
+   4rem agent column, and `opencode-gpt-5-coder` — the one word that tells two
+   rows apart — was cut to `opencode…`. The width is there, so the agent takes
+   it, and steps up from the micro step because it is an identity here rather
+   than a caption. The phone column is narrower — see the last rule in this
+   file — but a tablet is wide enough to keep this one. */
+@media (min-width: 700px) {
+  .sheet .srow:not(.srow--space) {
+    grid-template-columns: 10rem minmax(0, 1fr);
+  }
+
+  .sheet .srow__agent {
+    font-size: var(--step-fine);
+  }
+}
+
 /* The pane picker button is only useful where the columns are hidden. */
 .stage__pick {
   display: none;
@@ -3239,20 +3255,11 @@ body::before {
 }
 
 /* The picker sheet is the phone's whole navigation — one row per pane — so a
-   30px row is a miss on the thing you came to tap. The agent column was also
-   4rem at the micro step: `opencode…`, `claude-c…`, the one word that tells two
-   rows apart, truncated while the row had width to spare. Rows give the agent
-   the thumb and the name the width, and the agent steps up from micro to fine
-   because it is an identity here, not a caption. Scoped to `pointer: coarse`
+   30px row is a miss on the thing you came to tap. Scoped to `pointer: coarse`
    because the desk picks panes with a mouse and keeps its density. */
 @media (pointer: coarse) {
   .sheet .srow {
     min-height: 44px;
-  }
-
-  /* A space row has one column; two would fight the single-column rule above. */
-  .sheet .srow:not(.srow--space) {
-    grid-template-columns: 5.25rem minmax(0, 1fr);
   }
 
   .sheet .srow__agent {
@@ -3285,6 +3292,16 @@ body::before {
     min-width: 44px;
     padding: 0;
     font-size: 20px;
+  }
+}
+
+/* A 390px sheet cannot spend 160px on the agent column — the name beside it is
+   what identifies the pane. Above 700 the desk rule gives the agent the width,
+   which a tablet also has: `@media (min-width: 700px)` is not pointer-gated, so
+   an iPad keeps it and only the phone narrows. */
+@media (pointer: coarse) and (max-width: 699px) {
+  .sheet .srow:not(.srow--space) {
+    grid-template-columns: 5.25rem minmax(0, 1fr);
   }
 }
 
