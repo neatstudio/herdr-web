@@ -777,6 +777,50 @@
   overscroll-behavior: contain;
 }
 
+/*
+ * Long lines in a fenced or verbatim block scroll sideways inside their own box.
+ * A phone shows 366px of a 938px line and the panel edge slices the glyph in
+ * half, which reads as "the line ends here"; there is no scrollbar to say
+ * otherwise, and a scrollbar on a 44px-tall block would be in the way anyway.
+ * Fading the edge that still has text behind it is the convention `.chat__pick`
+ * uses one layer up. The attribute is set by ChatLens from the box's own scroll
+ * metrics — a mask cannot be written against a state CSS cannot see.
+ *
+ * The fade is a mask on the block itself, not an overlay: `.chat__code` owns the
+ * panel background, so only the glyphs dim and the block keeps its shape. 12px
+ * of it is the block's own padding; 24px right / 10px left is glyph, enough that
+ * a half-shown character looks faded rather than broken.
+ */
+.chat__code-body[data-edges="more"],
+.chat__pre[data-edges="more"] {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent 100%);
+  mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent 100%);
+}
+
+.chat__code-body[data-edges="back"],
+.chat__pre[data-edges="back"] {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 22px);
+  mask-image: linear-gradient(to right, transparent 0, #000 22px);
+}
+
+.chat__code-body[data-edges="both"],
+.chat__pre[data-edges="both"] {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 22px,
+    #000 calc(100% - 36px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 22px,
+    #000 calc(100% - 36px),
+    transparent 100%
+  );
+}
+
 /* ------------------------------------------------------------------- touch */
 
 @media (hover: none) {

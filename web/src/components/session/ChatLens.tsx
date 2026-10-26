@@ -169,6 +169,57 @@ export function ChatLens({ paneId, status, onOpenTerminal }: ChatLensProps) {
     lane.scrollTop = lane.scrollHeight;
   };
 
+  // A fenced block or a verbatim block is `white-space: pre` with a sideways
+  // scroll, so a long line is not cut off — but nothing says it continues. On a
+  // phone the panel edge falls mid-glyph and reads as the end of the line, and
+  // the block has no scrollbar to hint otherwise. The boxes therefore report
+  // which side still has text behind it, and CSS fades exactly that edge, the
+  // same convention the answer row above already borrowed from the tab strip.
+  // It is an attribute rather than state: there can be a dozen blocks in the
+  // lane, each with its own scroll offset, and only the one being swiped changes.
+  useEffect(() => {
+    const lane = laneRef.current;
+    if (lane === null) {
+      return;
+    }
+    const paint = () => {
+      const boxes = lane.querySelectorAll<HTMLElement>(".chat__code-body, .chat__pre");
+      for (const box of Array.from(boxes)) {
+        const back = box.scrollLeft > 2;
+        // `scrollWidth` counts the block's own 24px of padding and rounds, so a
+        // line that just fits can still report 2-3px of overflow. Two glyphs of
+        // a 12px mono line is the smallest gap worth asking a reader to swipe
+        // for; below it the fade would dim legible text to hide 2px.
+        const wider = box.scrollWidth - box.clientWidth > 16;
+        const more = wider && box.scrollLeft + box.clientWidth < box.scrollWidth - 2;
+        const edges = back ? (more ? "both" : "back") : more ? "more" : "";
+        if ((box.dataset.edges ?? "") === edges) {
+          continue;
+        }
+        if (edges === "") {
+          delete box.dataset.edges;
+        } else {
+          box.dataset.edges = edges;
+        }
+      }
+    };
+    paint();
+    // `scroll` does not bubble, so it is taken on the way down: one listener
+    // covers every block, including the ones the next render adds.
+    lane.addEventListener("scroll", paint, true);
+    if (typeof ResizeObserver === "undefined") {
+      return () => lane.removeEventListener("scroll", paint, true);
+    }
+    // A rotation or a wider frame changes both the box and its content width;
+    // the lane's own box is the one box that changes in every case.
+    const observer = new ResizeObserver(paint);
+    observer.observe(lane);
+    return () => {
+      lane.removeEventListener("scroll", paint, true);
+      observer.disconnect();
+    };
+  }, [read.text]);
+
   // A menu longer than the phone is wide turns its answer row into a sideways
   // scroll, and the chip at the screen edge is cut mid-glyph: that reads as a
   // clipped box, not as "there is more". Only the row knows whether anything is
