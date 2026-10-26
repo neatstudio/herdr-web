@@ -13,6 +13,8 @@ export type MenuTarget = {
   y: number;
   /** The current name, so Rename starts from it; "" when there is none. */
   name?: string;
+  /** The full agent slug, shown because the tile header has to clip it. */
+  agent?: string;
 };
 
 type Props = {
@@ -168,7 +170,8 @@ export function TargetMenu({
 
   const width = renaming ? 300 : 240;
   const itemHeight = 34;
-  const height = renaming ? 62 : items.length * itemHeight + 8;
+  const agentRow = !renaming && kind === "pane" && target.agent ? 34 : 0;
+  const height = renaming ? 62 : items.length * itemHeight + 8 + agentRow;
   const left = Math.max(4, Math.min(target.x, window.innerWidth - width - 4));
   const top = Math.max(4, Math.min(target.y, window.innerHeight - height - 4));
 
@@ -185,6 +188,12 @@ export function TargetMenu({
       // replaced the clicked node, so a "contains" check cannot be trusted.
       onClick={(event) => event.stopPropagation()}
     >
+      {!renaming && kind === "pane" && target.agent ? (
+        <div className="menu__agent">
+          <span>agent</span>
+          <strong>{target.agent}</strong>
+        </div>
+      ) : null}
       {renaming ? (
         <form
           className="menu__rename"

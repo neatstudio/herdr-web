@@ -78,6 +78,8 @@ function paneTarget(pane: HerdrPane | AgentPane, x: number, y: number): MenuTarg
     y,
     // The rename field starts from the operator's own label, if there is one.
     name: pane.label ?? "",
+    // The tile header clips this; the menu is where touch users see it whole.
+    agent: paneAgent(pane),
   };
 }
 

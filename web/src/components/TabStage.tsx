@@ -15,6 +15,7 @@ import { useRef } from "react";
 import { splitsOf, type ArrangeMode, type PaneLayout, type SplitHandle, type Tile } from "@/lib/layout";
 import { Scope } from "@/components/Scope";
 import { PROMPT_ID, keyboardIsPrimary } from "@/lib/focus";
+import { longPressHandlers } from "@/lib/press";
 import type { DisplayMode } from "@/lib/theme";
 
 /** How far a pointer must travel before herdr is asked for one of its steps. */
@@ -163,14 +164,18 @@ export function TabStage({
             {tiles.length > 1 && (
             <header
               className="tile__head"
-              // A right-click on the header targets the pane's menu, like the tab.
+              // A right-click targets the pane's menu, like the tab.
               onContextMenu={(event) => {
                 event.preventDefault();
                 onMenu(pane, event.clientX, event.clientY);
               }}
             >
               {agent !== "" && !paneNameRepeatsAgent(pane, workspaceName) && (
-                <span className="tile__agent" title={agent}>
+                <span
+                  className="tile__agent"
+                  title={agent}
+                  {...longPressHandlers({ onLongPress: (x, y) => onMenu(pane, x, y) })}
+                >
                   {agent}
                 </span>
               )}

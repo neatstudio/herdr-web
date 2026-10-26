@@ -805,6 +805,40 @@ test("a split labels each tile, because one tab holds several panes", async ({ p
   await expect(page.locator(".tile__head")).toHaveCount(2);
 });
 
+test("a long agent slug is clipped to one header line and readable in the pane menu", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await installBridge(page, {
+    panes: [
+      {
+        id: "w1:p1", workspaceId: "w1", tabId: "w1:t1", focused: true, cwd: "/tmp/web",
+        agentStatus: "working", displayAgent: "opencode-gpt5-coder-xhigh",
+      },
+      {
+        id: "w1:p2", workspaceId: "w1", tabId: "w1:t1", focused: false, cwd: "/tmp/web",
+        agentStatus: "idle", agent: "claude",
+      },
+    ],
+    splitWith: ["w1:p2"],
+  });
+  await page.goto("/");
+  await page.locator('.side--spaces [data-workspace-id="w1"]').click();
+  await expect(page.locator(".tile__head")).toHaveCount(2);
+
+  const chip = page.locator('.tile[data-pane-id="w1:p1"] .tile__agent');
+  await expect(chip).toHaveAttribute("title", "opencode-gpt5-coder-xhigh");
+  expect(await chip.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
+  const heights = await page.locator(".tile__head").evaluateAll((heads) =>
+    heads.map((head) => head.getBoundingClientRect().height),
+  );
+  expect(new Set(heights).size).toBe(1);
+
+  const box = (await chip.boundingBox()) ?? { x: 0, y: 0 };
+  await chip.dispatchEvent("touchstart", {
+    touches: [{ identifier: 1, clientX: box.x + 5, clientY: box.y + 5 }],
+  });
+  await expect(page.locator('[role="menu"]')).toContainText("opencode-gpt5-coder-xhigh");
+});
+
 test("a split has no edge to drag on a phone, because it stacks", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 780 });
   await installBridge(page, { splitWith: ["w1:p2"] });

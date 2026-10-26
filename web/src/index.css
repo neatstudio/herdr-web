@@ -1135,19 +1135,24 @@ body::before {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
-/* herdr reports whatever agent a pane actually runs, and that can be a long
-   slug (`opencode-gpt5-coder-xhigh`). The header is a fixed-height strip, so
-   the chip truncates: without this it wrapped inside its own box and doubled
-   the height of that pane's header only, which broke a split's alignment. The
-   full name is on the element's title. */
-.tile__agent {
-  padding: 1px 5px 0;
-  border: var(--rule-w) solid var(--rule-strong);
+/* A tile header is one strip: every label clips rather than wraps, so a long
+   agent slug cannot make one pane's header taller than its neighbour's. */
+.tile__agent,
+.tile__name,
+.tile__status {
   min-width: 0;
-  max-width: 14ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* herdr reports whatever agent a pane actually runs, and that can be a long
+   slug (`opencode-gpt5-coder-xhigh`). Keep the chip compact; the pane menu
+   shows the full name, including on touch. */
+.tile__agent {
+  padding: 1px 5px 0;
+  border: var(--rule-w) solid var(--rule-strong);
+  max-width: 14ch;
   font-family: var(--font-label);
   font-weight: 500;
 }
@@ -1161,9 +1166,6 @@ body::before {
 }
 
 .tile__name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-size: var(--step-name);
 }
 
@@ -1176,11 +1178,7 @@ body::before {
 /* A tile header is a fixed strip; an unrecognised status is clipped, not
    allowed to widen the header. */
 .tile__status {
-  min-width: 0;
   max-width: 12ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* The split edge. herdr moves it in its own large steps and clamps at a
@@ -1659,6 +1657,24 @@ body::before {
 
 .menu__item:hover span:last-child {
   color: var(--paper);
+}
+
+.menu__agent {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 7px 11px;
+  border-bottom: var(--rule-w) solid var(--rule);
+  font-size: var(--step-micro);
+  color: var(--ink-faint);
+}
+
+.menu__agent strong {
+  overflow-wrap: anywhere;
+  font-family: var(--font-label);
+  font-weight: 500;
+  color: var(--ink);
 }
 
 .menu__rename {
@@ -3400,5 +3416,29 @@ body::before {
   .newws__field textarea,
   .newws__field select {
     font-size: 16px;
+  }
+}
+
+/* A landscape phone keeps 140px of sheet above the keyboard, and the pinned
+   submit takes 44 of them. Those boxes used to be 12.5px text; at the 16px iOS
+   does not zoom on, the four-row dispatch prompt alone is 86px — so the field
+   grew straight through the bar, and the one thing you were typing stayed
+   hidden under the button you were about to press. Three small concessions buy
+   the prompt two visible lines and leave the bar where it is: the body drops
+   its 12px top padding (the head's rule is right above it), the prompt's label
+   goes (the placeholder repeats it word for word), and the textarea is capped
+   at two lines and scrolls internally. Scoped to `has-keyboard`, so a
+   landscape phone without the keyboard keeps the full four-row form. */
+@media (pointer: coarse) and (max-height: 499px) {
+  .has-keyboard .sheet--fleet .sheet__body {
+    padding-top: 6px;
+    padding-bottom: 0;
+  }
+  .has-keyboard .sheet--fleet .newws__field:has(#dispatch-prompt) > span {
+    display: none;
+  }
+  .has-keyboard .sheet--fleet #dispatch-prompt {
+    height: 2.4em;
+    min-height: 0;
   }
 }
