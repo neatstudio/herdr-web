@@ -144,6 +144,7 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `a3cc97b` | 桌面上的 tab 条一溢出，够不着的就不只是最后一个 tab：`white-space: nowrap` 让每个 tab 的自动最小宽度等于整个名字，tab 从不收缩、溢出的是条本身——而桌面条把滚动条藏了（`.strip::-webkit-scrollbar { display: none }`），鼠标滚轮也不滚横向，于是 1024px 下八个 139px 的 tab 在 848px 的条里多出 292px，最后几个落在右边界外、任何指针手势都够不着；`+` 的 sticky 只写在窄屏块里，同一个原因下它也一起越界（1286–1316）。让名字走省略号（`.tab__name` 早就会）之后 tab 可缩到 88px，下限 5.5rem 保住序号/编号/状态点，八个 tab 以 102px 全部上屏（848 == 848）；`+` 的固定从窄屏块提到基础规则（桌面同样需要），仍然溢出的情形（1024 下 12 个 tab：1087 > 848）由 `strip--more` 在固定钮左缘补一道阴影，说明底下还有 |
 | `8ca78a4` | herdr 的 zoom 让舞台失去了解释自己的能力：`arrangeTiles` 在 `layout.zoomed` 时只返回一格，`arrangeable` 又同时把排列开关藏掉，而 tile 头的闸门是 `tiles.length > 1`——于是一个装着 4 个 pane 的 tab、屏幕上 1 格、头上没名字、没有关闭入口、也没有一句话说另外 3 格去哪了。闸门改成 `tileHeadVisible(tileCount, tabPaneCount)`（多于一格，或该 tab 的 pane 多于显示的格），`layout.zoomed` 时在头里补一句 `zoom 1/4`（琥珀、无框、`--step-micro`，因为 herdr 没有 unzoom RPC，它只能陈述不是按钮）；显示的格恰好不是输入目标时，空态从 `click to read this pane` 改读 `click to work here — the prompt sends to pD`；顺带触摸平板的头从 28px 长到 37px、× 从悬停才显示改成常显 32×32（手机走透镜不渲染tile，所以只命中 iPad 尺寸的帧） |
 | `3b29472` | 一条非 ASCII（或带换行）的草稿只停在 pane 的输入框里，发不出去：这类文字一个键带不动，走的是粘贴路径，而 `pane.send_text` 会把行尾的 `"\n"` 一起写进 pane；在 raw 模式的 TUI 里那个换行是 LF，行编辑器读成「在草稿里换行」（Ctrl+J），于是文字留在 prompt、永远不提交。隔离会话里用一个只打印收到字节的 pane 量到 herdr 0.9.0：带换行的 `pane.send_text` 到达 `61 0a`，`Enter` 键到达 `0d`。改成粘贴不带换行、紧接一次独立的 `Enter` 键；ASCII 的打字路径本来就以那个键收尾，不动 |
+| `7ee9b35` | 两条请求的发送只有一个「成/不成」的答案：一个键带不动的文字走「粘贴 + 单独一个 Enter」，是两个 HTTP 请求，中间能断——粘贴到了、键丢了，输入框就把 pane 里已经有的那行留着，下一次发送会打两遍；粘贴根本没到，屏幕上却什么也不说。发送结果改成三态 `sent / unreached / unsubmitted`，卡片那行 note 讲清落在哪一半：没到是 `could not reach w2:p1, message kept`（草稿留着、不进历史），到了但键丢了是 `in w2:p1, Enter did not land`（清空输入框，并给一颗只发 Enter 的 `send ⏎`，绝不重打文字）；`handOff` 的 Tab 丢了同样交出文字改走 raw 模式，下一键就能补完。新增 `web/tests/prompt-send.spec.ts` 三条用例，把两半分别打到失败 |
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
 `resolveLens` 的三例）；
@@ -961,3 +962,49 @@ Python 读字节程序，只回显十六进制）：
 （**不再带 `\n`**）、再 `POST …/keys {"keys":["Enter"]}`，三条 prompt 用例全过
 （`enter types the line key by key and keeps history` 与
 `tab hands the line to the pane so completion continues there` 未受影响）。
+
+### 4.19 两条请求的发送，断了怎么讲（`7ee9b35`）
+
+`3b29472` 把「粘贴 + Enter」从一个带换行的字符串拆成了两次调用，这件事通了，但
+它把两次调用的结果又压回一个 `boolean`：`delivered = await pasteThenSubmit(...)`。
+两次请求就意味着一对发送可以在中间断掉，而一个布尔值说不出断在哪。两种断法，两种
+完全不同的补救：
+
+- **粘贴没到**：pane 里什么都没有。这时文字必须留在输入框里，而且不能进历史——它
+  还没发出去。旧代码 `return` 了，框里文字在，但屏幕上没有任何解释：第二次按回车
+  看起来也是「没反应」。
+- **粘贴到了，Enter 丢了**：文字已经在 pane 的行编辑器里。旧代码同样 `return`，框里
+  于是还留着同一段文字——再按一次回车就会把这段字打第二遍（TUI 的行编辑器不清空）。
+  这是比第一种更坏的失败：它不报错，还会写坏输入。
+
+所以发送结果改成三态，`web/src/lib/composer.ts` 新增纯函数：
+
+```ts
+export type SendOutcome = "sent" | "unreached" | "unsubmitted";
+export function sendTrouble(outcome: SendOutcome, target: string): SendTrouble | null
+```
+
+- `sent` → `null`，什么都不说。
+- `unreached` → `{ keepsDraft: true, note: "could not reach w2:p1, message kept", action: "retry" }`。
+- `unsubmitted` → `{ keepsDraft: false, note: "in w2:p1, Enter did not land", action: "enter" }`。
+
+`keepsDraft` 是这张表唯一真正的分岔：它决定 `send()` 在什么情况下提前返回、让框里的
+字留着。`PromptBar` 只多一个 `trouble` 状态，note 的拼装顺序仍是「被拒的附件 → 上传
+失败的附件 → 发送中断」，一次只讲一件最该讲的事；换 pane 时清掉（那是上一个 pane 的
+事）。`action: "enter"` 时 note 旁边多一颗 `send ⏎`，`resubmit()` 只调
+`sendPaneKeys(paneId, ["Enter"])`，**不重发文字**——这正是上面第二种断法唯一安全的
+补法。
+
+`handOff`（Tab 补全 / `/` 菜单）反着来：文字已经进 pane 就一定要交出输入框、切进 raw
+模式，哪怕末尾那个键没送到。留着副本才是危险的那个选择；键丢了下一键就能补，而重复
+打字不可逆。
+
+验证：`npx tsc --noEmit -p web` 干净；`test:unit` 329/329（`composer.test.ts` 新增
+三例钉住三态与两句话）；`npm --prefix web run build` 通过；新增浏览器用例
+`web/tests/prompt-send.spec.ts` 3/3——粘贴到、键丢：断言 `POST …/input` 只发一次、
+框被清空、`send ⏎` 点下去 `POST …/keys {"keys":["Enter"]}` 恰好补一次且文字没有
+第二次 `POST`；粘贴没到：`could not reach`、草稿还在、`/keys` 一次没发、再按回车
+就成功；ASCII 打字路径的 `/keys` 失败同样保住草稿。
+`web/tests/app.spec.ts` 80 过、8 条失败（`#herdr-feed-text` 相关）——在干净 `HEAD`
+的临时 worktree 上逐条复现，同样是 8 条失败：那是手机帧把 Scope 换成 `SessionStage`
+的既有遗留，与本次改动无关。
