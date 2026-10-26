@@ -3237,3 +3237,53 @@ body::before {
     font-size: 22px;
   }
 }
+
+/* The picker sheet is the phone's whole navigation — one row per pane — so a
+   30px row is a miss on the thing you came to tap. The agent column was also
+   4rem at the micro step: `opencode…`, `claude-c…`, the one word that tells two
+   rows apart, truncated while the row had width to spare. Rows give the agent
+   the thumb and the name the width, and the agent steps up from micro to fine
+   because it is an identity here, not a caption. Scoped to `pointer: coarse`
+   because the desk picks panes with a mouse and keeps its density. */
+@media (pointer: coarse) {
+  .sheet .srow {
+    min-height: 44px;
+  }
+
+  /* A space row has one column; two would fight the single-column rule above. */
+  .sheet .srow:not(.srow--space) {
+    grid-template-columns: 5.25rem minmax(0, 1fr);
+  }
+
+  .sheet .srow__agent {
+    font-size: var(--step-fine);
+  }
+
+  /* The Agents/Spaces switch is the other half of navigating by thumb here, and
+     34px of text with a 2px underline was the box. The underline still marks
+     the live tab; the row now also carries the tap. */
+  .sheet__view {
+    min-height: 44px;
+    font-size: var(--step-fine);
+  }
+
+  /* The filter is the fastest way through 13 rows and it was 27px of input with
+     14px of "×" beside it. Both grow; the field keeps its text clear of the
+     clear button by giving it the button's width as padding. */
+  .col__input {
+    min-height: 44px;
+    padding-right: 46px;
+  }
+
+  .col__clear {
+    top: 0;
+    right: 0;
+    bottom: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    padding: 0;
+    font-size: 20px;
+  }
+}
