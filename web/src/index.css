@@ -3490,3 +3490,17 @@ body::before {
     opacity: 1;
   }
 }
+
+/* A phone held sideways hands the app 180px once the soft keyboard is up
+   (390 - 210). The tab strip was spending 37 of them — a fifth of the visible
+   screen — to name the focused pane, which the composer already names in its
+   placeholder (`send to w2:p1`), while the key row it pushed off the bottom is
+   the one thing the soft keyboard cannot replace: Esc, Tab and the arrows. On a
+   short coarse screen the strip steps aside for the keyboard's lifetime, and
+   the terminal takes the space: one row becomes four. Portrait keyboards are
+   tall but the screen is taller, so the identity row stays there. */
+@media (pointer: coarse) and (max-height: 499px) {
+  .has-keyboard .shell.is-narrow .stage--lens > .strip {
+    display: none;
+  }
+}
