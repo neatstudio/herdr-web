@@ -3732,3 +3732,38 @@ body::before {
     }
   }
 }
+
+/* The transcript layout switch used to float over the text on a wide pointer:
+   at 1280x800 the AUTO/WRAP/EXACT/FIT faces cover y 142..162 while line one
+   starts at 148, and because the bar is 35% opaque at rest the characters
+   underneath show through it. Reserving scroll padding does not fix that — a
+   padded scroll box still paints its content in the padding band once the
+   transcript is scrolled, and it is always scrolled, because the view follows
+   the tail: measured, a line box sits at y141 with a 30px top padding and the
+   bar at y142. So give the control a real grid row instead, the way the narrow
+   frame already does ("the transcript starts below it rather than under it"):
+   the bar takes the first auto row, the blocked notice the second, the scroll
+   box the third. 24px of a 537px tile is one wrapped line of chrome and no line
+   is ever under anything. Scoped to a fine pointer above 900px; the coarse and
+   narrow blocks own the full-width 44px bar for touch. */
+@media (pointer: fine) and (min-width: 901px) {
+  .scope:has(> .scope__scroll) {
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+
+  .scope:has(> .scope__scroll) > .scope__notice {
+    grid-row: 2;
+  }
+
+  .scope:has(> .scope__scroll) > .scope__display {
+    position: static;
+    grid-row: 1;
+    justify-content: flex-end;
+    padding: 2px var(--pad);
+    opacity: 1;
+  }
+
+  .scope:has(> .scope__scroll) > .scope__scroll {
+    grid-row: 3;
+  }
+}
