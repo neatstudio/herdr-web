@@ -27,10 +27,10 @@ import { TerminalLens } from "./TerminalLens";
  *
  * The `narrow` gate that puts this stage on screen is App's, and it is
  * narrower than Ovis's 768px on purpose: herdr-web's own breakpoints already
- * switch the shell to one column at 900px and stack the tiles at 720px, so the
- * lens has to be available before the desktop mirror disappears. It also
- * widens to 900px on a coarse pointer, because a landscape phone is exactly
- * that width and needs the lens more than a mouse-driven window does.
+ * fold the shell's rails at 900px wide, so the lens has to be available before
+ * the desktop mirror stops fitting. The gate is a short side (lib/frame.ts),
+ * not a width: it is what keeps a landscape phone (932x430) in the lens and a
+ * portrait tablet (820x1180) on the stage, whichever way either is turned.
  */
 export type SessionStageProps = {
   paneId: string;

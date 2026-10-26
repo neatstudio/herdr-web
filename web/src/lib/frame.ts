@@ -10,27 +10,33 @@
  *
  * - Upright, a phone is 320-430 wide, and 720 is already generous: no current
  *   phone comes near it, and a squeezed desktop window below it wants the
- *   stacked layout too.
+ *   stacked layout too. This clamp is about width, because a window squeezed
+ *   narrow is the same problem whatever is pointing at it.
  * - Sideways, an iPhone 14 Pro Max is 932x430 and a Galaxy S23 Ultra is 915x412.
- *   Both are wider than the 900px the touch rule used to stop at, so they were
+ *   Both are wider than the 900px a width-only touch rule stops at, so they were
  *   handed the desktop stage: 178px tiles, a 150px terminal, the rails and the
- *   render bar inside 430px of height. The rule that actually identifies them
- *   is height, not width — a phone held sideways is shorter than any window
- *   anyone types into. Touching that is what the second clamp is for.
+ *   render bar inside 430px of height.
  *
- * 500px sits between those phones (375-440 tall sideways) and a tablet held
- * sideways (768 tall on an iPad mini, 834 on an Air), which keeps the desktop
- * stage on the tablet.
+ * The measurement that separates a phone from a tablet is the *short* side, not
+ * the width. Every phone herdr-web runs on is 480px or less across its narrow
+ * axis whichever way it is turned; the smallest tablet anyone brings is an iPad
+ * mini at 744. Measuring height alone caught a landscape phone but missed the
+ * portrait side of the same phone-shaped decision, and width alone put half the
+ * tablets on the phone layout: an 820x1180 iPad in portrait is under the 900px
+ * touch width, so it got the lens and the finger composer, and turning it
+ * sideways — same device, same hand — rebuilt the console as the desktop stage.
+ * A layout that flips when the tablet is rotated is a bug in the rule, not a
+ * feature of the postures. The short side says "phone" once per device.
+ *
+ * 500px sits between the phones (320-480 on the short side) and the tablets
+ * (744 and up), so the clamp is read on whichever side is narrower.
  */
 
 /** Narrower than this, any pointer: a window squeezed to phone width. */
 export const COMPACT_WIDTH = 720;
 
-/** Narrower than this, and touching: the touch stylesheet folds here. */
-export const TOUCH_WIDTH = 900;
-
-/** Shorter than this, and touching: a phone on its side, never a tablet. */
-export const TOUCH_HEIGHT = 500;
+/** The longest a phone's short side gets; tablets start at 744. */
+export const TOUCH_SIDE = 500;
 
 /**
  * Whether this frame gets the phone layout: the lens instead of the tab stage,
@@ -45,5 +51,5 @@ export function compactFrame(width: number, height: number, coarse: boolean): bo
   if (width <= COMPACT_WIDTH) {
     return true;
   }
-  return coarse && (width <= TOUCH_WIDTH || height <= TOUCH_HEIGHT);
+  return coarse && Math.min(width, height) <= TOUCH_SIDE;
 }

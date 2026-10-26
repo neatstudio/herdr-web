@@ -2393,7 +2393,10 @@ body::before {
    it is wider than 900px — a big phone held sideways is 932x430. The height
    arm is the one lib/frame.ts uses to give those frames the lens; the fold has
    to agree or the lens renders beside a 176px workspace rail. 500px is between
-   the tallest phone on its side (440) and an iPad mini (768). */
+   the tallest phone on its side (480) and an iPad mini (744). The width arm
+   above still folds a portrait tablet's rails while lib/frame.ts keeps that
+   tablet on the stage: the folds are shared with the desktop chrome, and a
+   folded rail is the right trade there too. */
 @media (max-width: 900px), (pointer: coarse) and (max-height: 500px) {
   .body {
     grid-template-columns: minmax(0, 1fr);

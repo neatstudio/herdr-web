@@ -290,12 +290,13 @@ export function App() {
   }, [paneId, paneKnown]);
 
   // Side by side needs width; below this the panes stack instead. A touch
-  // screen is compact up to 900px — the stylesheet folds the sidebar and grows
-  // the controls there — so the lens gate has to agree with it, or a phone held
-  // sideways (844x390) is handed the desktop tab strip, the AUTO/WRAP/EXACT/FIT
-  // bar and a ~130px terminal between them instead of a readable lens. A big
-  // phone sideways is wider than that 900px (932x430, 915x412), so the rule
-  // also measures height; lib/frame.ts owns the numbers and the reasoning.
+  // screen gets the lens when its *short* side is phone-sized — a phone held
+  // sideways (844x390, 932x430) was otherwise handed the desktop tab strip, the
+  // AUTO/WRAP/EXACT/FIT bar and a ~130px terminal between them. Width alone
+  // cannot say that: it folds a portrait tablet and then rebuilds the console
+  // as the stage when the same tablet is turned. lib/frame.ts owns the rule and
+  // the reasoning; the stylesheet's own folds at 900px wide / 500px tall on a
+  // coarse pointer are shared with the desktop chrome and stay.
   useEffect(() => {
     const pointer = window.matchMedia("(pointer: coarse)");
     const apply = (): void =>
