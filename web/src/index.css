@@ -2349,33 +2349,6 @@ body::before {
   .masthead__version {
     display: none;
   }
-
-  /* Tabs overflow on a phone, so "+" rides the right edge rather than the end
-     of the tab list, where it would sit off screen most of the time. */
-  .tab--new {
-    position: sticky;
-    right: 0;
-    background: var(--surface);
-    border-left: var(--rule-w) solid var(--rule);
-  }
-
-  /* Leave the pinned "+" its room when the strip scrolls a tab into view, and
-     stop one long terminal title from taking the whole strip. */
-  .strip {
-    scroll-padding-right: 44px;
-  }
-
-  /* Two tabs on a 390px phone overran the strip, and a tab overrun scrolls
-     behind the pinned "+" — the next tab was sheared mid-glyph, which reads as
-     a broken letter rather than as "there is more to the right". Tabs give up
-     width before the strip scrolls, so their names end in an ellipsis instead.
-     The floor keeps four tabs' worth of index and status legible; past that
-     the strip does scroll, which the left fade already announces. */
-  .tab {
-    flex: 0 1 auto;
-    min-width: 5.5rem;
-    max-width: 66vw;
-  }
 }
 
 @media (max-width: 900px) {
@@ -2467,6 +2440,39 @@ body::before {
   .statusline {
     gap: 8px;
     overflow: hidden;
+  }
+
+  /* Tabs overflow on a phone, so "+" rides the right edge rather than the end
+     of the tab list, where it would sit off screen most of the time. Width is
+     the wrong gate for this rule: a phone held sideways is 844px wide, and
+     nine panes there overflowed the strip by 73px with the pinned "+" 43px
+     past the right edge — a button nobody can reach without first scrolling
+     the strip is not pinned. It holds everywhere the strip is the phone's only
+     tab list. */
+  .tab--new {
+    position: sticky;
+    right: 0;
+    background: var(--surface);
+    border-left: var(--rule-w) solid var(--rule);
+  }
+
+  /* Leave the pinned "+" its room when the strip scrolls a tab into view, and
+     stop one long terminal title from taking the whole strip. */
+  .strip {
+    scroll-padding-right: 44px;
+  }
+
+  /* Two tabs on a 390px phone overran the strip, and a tab overrun scrolls
+     behind the pinned "+" — the next tab was sheared mid-glyph, which reads as
+     a broken letter rather than as "there is more to the right". Tabs give up
+     width before the strip scrolls, so their names end in an ellipsis instead.
+     The floor keeps four tabs' worth of index and status legible; past that
+     the strip does scroll, which the left fade already announces. Nine panes
+     in landscape fit this way (792px of tabs + the 44px "+" in 844px). */
+  .tab {
+    flex: 0 1 auto;
+    min-width: 5.5rem;
+    max-width: 66vw;
   }
 }
 
