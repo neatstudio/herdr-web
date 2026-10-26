@@ -117,6 +117,7 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `690f11a` | 横屏里那个钉住的 `+` 其实点不到：9 个 tab 时整条 844px 装满，`+` 本该 `position: sticky; right: 0` 永远露在右沿，可这两条规矩写在 `max-width: 700px` 里，844×390 恰好落在 700–900 之间——`+` 退回普通 flex 项，被挤出右边界 43px（条子要多滚 73px 才看得见它）。挪进 900px 那一块（和 `.tab{min-width: 5.5rem; max-width: 66vw}`、`scroll-padding-right: 44px` 一起）：900px 正是「标签条是手机唯一 tab 列表」的分界。改后 390/700/768/844 四种视口 `+` 都贴在右沿内侧（844 是 `[800,844]`），700–900px 的桌面窗口也让 tab 收窄而不是把条子撑出屏幕 |
 | `e7be773` | 分屏里没被选中的 tile 只写一句 `click to read this pane`，白空掉一整块——那里该回答的是「这是哪个 pane、在哪个目录跑」。它不能读：只有 active tile 读 pane，否则每次轮询都会把每一格的转录拉一遍。正文因此只用 fleet 快照已有的东西：完整 pane id（头部只印短 id，且只在 pane 自己有名字时才印）、目录末两段（`tailPath(cwd, 2)`——末两段才分得清同一个 repo 的两份 checkout，完整路径留在 tooltip）、以及 `statusNote()`：只有 herdr 报了个本 console 不认识的词才印，因为那种词在头部芯片里会被截到 12 字；已知状态头部已经说过，不重复。四行都是 `--step-label` 10.5px，`.scope__idle` 仍是原来那个 flex/full-height 容器，`App.tsx` 里「no pane selected」那条带 `<strong>` 的空态一字未动 |
 | `8974530` | 手机上的聊天 lens 原来只给「herdr 认得出的 agent」开：`hasAgent` 为假时 `drawnLens` 被硬改成 `terminal`、切换器也不画。可 herdr 只认识它认识的 agent——套在 wrapper 脚本里、被 `npm run` 拉起、或刚出的新二进制都报成 shell（`agent: ""`），这种 pane 在手机上就被钉死在 46 列的 xterm 里，恰好是这一宽度唯一读不了的东西。agent 名于是退回只决定**默认**：切换器对每个 pane 都画，每 pane 存过的选择由 `resolveLens()` 优先（`resolveLens("chat", false) === "chat"`），刷新后仍开聊天；prompt 上的 shell 默认照旧是终端，它的文档视图就是回滚读成 prose，空态照旧给 `Open terminal` |
+| `aa88ff0` | 手机上手边的菜单按不到：键条原来只认 herdr 报的 `blocked`，而 herdr 只对它认识的 agent 报 blocked——第三方 agent 画完菜单仍是 `working`，方向键、`↵`、`esc` 就全都没有。改成内容自己出第二意见：`showsPicker(text)` 去 ANSI、逐行去掉竖线/箭头前缀，取末 12 行数选项标记（`[1]`、`(2)`、`3.`）≥2 个、且末 6 行里有一句确认/取消提示，两条都中才出键条；宁可漏判，因为误判会把方向键从正在打字的输入框里抢走。`ChatLens` 的重钉滚动、键盘捕获、键条渲染三处共用这一个判断 |
 
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 293，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
@@ -214,6 +215,19 @@ Esc 后 bar 消失、放大镜回来、装饰清零；`700x800` 细指针（`TOU
 `scrollWidth - clientWidth` 全 0；1440×900 桌面照旧没有切换器、没有 `.chat`、没有 xterm
 （桌面本来就没有 lens）。截图 `shell-phone-dark-term.png`、`shell-phone-dark-chat.png`、
 `shell-small-dark-chat.png`。
+
+键条这条的验证：`npm --prefix web run typecheck` 干净；`test:unit` 296/296（`pickerKeys.test.ts`
+三例：claude/codex/内联菜单/带 ANSI 方框都认得出，正文里的编号列表与只有提示的段落不算，
+菜单后面跟着九行工具日志时算历史消息而不是问题）；`npm run build` 通过；
+`/tmp/probe-picker-bar.mjs`（390×844 × 明暗，每个用例独立 context，pane 靠 `herdr:pane` 预设
+而不是靠切 tab）：`wE:pI`（opencode 报 `running`、转录末尾是菜单）键条 390×44，聊天道
+603→559（键条真的让出 44px，不是压在上面），点 `esc` 发出 `{"keys":["esc"]}`；`wE:pF`
+（正文有编号列表、没有提示）没有键条；`wE:pG`（herdr 报 blocked）照旧有键条。软键盘弹起
+（`--kb-inset: 336px`、`html.has-keyboard`）：masthead 0、标签条 37、聊天道 397、键条仍 44 高、
+草稿卡 66、页面溢出 0,0。截图 `picker-dark-picker.png`、`picker-dark-picker-kb.png`、
+`picker-light-picker.png`。全量 e2e：78 通过 / 9 失败，8 条是既有失败，第 9 条 `1241`
+单跑通过（全量跑里的摇摆用例）。
+
 
 ## 5. 给服务端的一页需求（若要继续逼近 Ovis）
 
