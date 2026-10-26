@@ -3312,11 +3312,55 @@ body::before {
    was no overflow to reach row 12. Shrinking the sheet to the visual viewport
    gives the list its own scroll and puts every row above the keyboard.
 
-   Portrait only: on a 390px-tall landscape phone the sheet's own chrome is
-   163px (head 63 + views 45 + filter 55), so honouring a 250px keyboard would
-   leave zero rows. There the full sheet with 5 visible rows beats an empty one. */
-@media (pointer: coarse) and (min-height: 500px) {
+   This is not portrait-only. On a 390px-tall landscape phone the keyboard also
+   overlays the bottom, and there the full sheet put the *first* row at 163px —
+   under a keyboard whose top edge is at ~140 — so nothing of the list showed.
+   The sheet follows the visual viewport at both postures; the picker's chrome
+   is what changes in landscape, in the block below. */
+@media (pointer: coarse) {
   .has-keyboard .sheet {
     bottom: var(--kb-inset, 0px);
+  }
+}
+
+/* With 140px left on a landscape phone the picker cannot spend 163px on its own
+   chrome (head 63 + view tabs 45 + filter 55): the list has to start at the top.
+   The tabs go — one of the two lists is reachable by closing and reopening — and
+   the head stops being a row: its title folds away and the close button floats
+   over the right end of the filter line, where a thumb still finds it. The
+   filter keeps a clear button, moved left of the close so the two do not stack. */
+@media (pointer: coarse) and (max-height: 499px) {
+  .has-keyboard .sheet:not(.sheet--fleet):not(.sheet--dialog) .sheet__views {
+    display: none;
+  }
+  .has-keyboard .sheet:not(.sheet--fleet):not(.sheet--dialog) .sheet__head {
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 2;
+    padding: 0;
+    border-bottom: 0;
+    background: transparent;
+  }
+  .has-keyboard .sheet:not(.sheet--fleet):not(.sheet--dialog) .sheet__title {
+    display: none;
+  }
+  .has-keyboard .sheet:not(.sheet--fleet):not(.sheet--dialog) .col__filter {
+    padding-right: 44px;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+  .has-keyboard .sheet:not(.sheet--fleet):not(.sheet--dialog) .col__input {
+    padding-right: 88px;
+  }
+  .has-keyboard .sheet:not(.sheet--fleet):not(.sheet--dialog) .col__clear {
+    right: 44px;
+  }
+  /* The fleet sheet keeps its head row (that is where its close button lives),
+     but 63px of a 140px sheet is a third of the screen: the close button is
+     already 44, so the vertical padding is pure loss. */
+  .has-keyboard .sheet--fleet .sheet__head {
+    padding-top: 0;
+    padding-bottom: 0;
   }
 }
