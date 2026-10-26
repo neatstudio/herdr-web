@@ -2389,7 +2389,12 @@ body::before {
   }
 }
 
-@media (max-width: 900px) {
+/* A touch frame that is too short for the desktop chrome is a phone even when
+   it is wider than 900px — a big phone held sideways is 932x430. The height
+   arm is the one lib/frame.ts uses to give those frames the lens; the fold has
+   to agree or the lens renders beside a 176px workspace rail. 500px is between
+   the tallest phone on its side (440) and an iPad mini (768). */
+@media (max-width: 900px), (pointer: coarse) and (max-height: 500px) {
   .body {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -2521,7 +2526,7 @@ body::before {
    controls come back the moment the keyboard closes. Scoped to the lens
    layout, the only place a phone shows a pane, and to `.is-narrow`, so a
    desktop window with a soft keyboard keeps its chrome. */
-@media (max-width: 900px) {
+@media (max-width: 900px), (pointer: coarse) and (max-height: 500px) {
   /* The shell's three rows are auto/1fr/auto and a hidden masthead would pull
      `.body` up into the auto row, leaving the session at its content height.
      Two rows instead: the session takes the slack, the footer keeps its line. */

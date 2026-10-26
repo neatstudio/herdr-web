@@ -40,6 +40,7 @@ import {
   type AgentPane,
   type PageTheme,
 } from "@/lib/fleet";
+import { compactFrame } from "@/lib/frame";
 import { readStoredLens, resolveLens, storeLens, type Lens } from "@/lib/lens";
 import { readStoredPane, resolveStoredPane, storePane } from "@/lib/selection";
 import { holdCreatedPane, type CreatedPane } from "@/lib/createdPane";
@@ -292,15 +293,22 @@ export function App() {
   // screen is compact up to 900px — the stylesheet folds the sidebar and grows
   // the controls there — so the lens gate has to agree with it, or a phone held
   // sideways (844x390) is handed the desktop tab strip, the AUTO/WRAP/EXACT/FIT
-  // bar and a ~130px terminal between them instead of a readable lens.
+  // bar and a ~130px terminal between them instead of a readable lens. A big
+  // phone sideways is wider than that 900px (932x430, 915x412), so the rule
+  // also measures height; lib/frame.ts owns the numbers and the reasoning.
   useEffect(() => {
-    const query = window.matchMedia(
-      "(max-width: 720px), (pointer: coarse) and (max-width: 900px)",
-    );
-    const apply = (): void => setNarrow(query.matches);
+    const pointer = window.matchMedia("(pointer: coarse)");
+    const apply = (): void =>
+      setNarrow(compactFrame(window.innerWidth, window.innerHeight, pointer.matches));
     apply();
-    query.addEventListener("change", apply);
-    return () => query.removeEventListener("change", apply);
+    // Width, height and pointer type change independently: a window dragged
+    // narrow, a phone turned, a hybrid laptop losing its touchscreen.
+    window.addEventListener("resize", apply);
+    pointer.addEventListener("change", apply);
+    return () => {
+      window.removeEventListener("resize", apply);
+      pointer.removeEventListener("change", apply);
+    };
   }, []);
 
   const activePane = useMemo(
