@@ -263,6 +263,45 @@ chip；`wE:pJ`（claude 报 `running`、八条长路径菜单）八枚 chip 在�
 截图 `picker-dark-picker.png`、`picker-dark-picker-kb.png`、`picker-light-picker.png`、
 `picker-dark-many.png`。
 
+
+### 4.1 桌面舞台：一屏一 pane（`0b24a1f`）
+
+会话区里「一屏只读一个 pane」这件事，两边原本只说了一半：Ovis 天生一屏一个会话，手机上我们
+也早就只剩一个 pane（`stack`）；但桌面双屏/四屏 tab 一放开就是八格。1440×900 的八 pane 布局
+每格 299×318——这正是分屏的意义，也正好是一屏读不完八段转录的原因。这一条把两半接上，
+**只改画法，不动 herdr**：herdr 的 `zoomed`（它自己的放大）照旧，切换器也只在非 `zoomed`
+时出现。
+
+- `lib/layout.ts`：`ArrangeMode` 加 `focus`，`arrangeTiles()` 第三参 `focusPaneId`。选中顺序是
+  请求的那个 pane → herdr 自己的 `focusedPaneId` → 快照里的 `focused` → 第一个 pane。第一条
+  必须在最前：点 tile 只是把「发到哪」切过去，不移动 herdr 的光标，若以 herdr 为准，切换器
+  会放大另一个窗格。`splitsOf()` 在 `focus` 下返回空——整屏一格，没有相邻边可拖。
+- `App.tsx`：`stageMode = narrow ? "stack" : stageFocus ? "focus" : "side"`；`arrangeable` 只在
+  「桌面 + 拿到 layout + 未 zoomed + 多于一个 pane」时画切换器。手机和单 pane tab 都不画：
+  手机已经只剩一个 pane，单 pane 再用一个 ONE 说一遍是噪音。
+- `ArrangeSwitch.tsx`：两个字 `grid` / `one`，`role="group" aria-label="pane arrangement"`，
+  沿用透镜切换器（`.lens__switch` / `.lens__opt`）的视觉与接住区，放在 `.stage__head` 的
+  spacer 之后——和右上角 LIGHT/DARK 同一套语言，46px 的头不增高。
+- `index.css`：`focus` 的 tile 与 `side` 一样绝对定位（一格里没有第二格可分）。
+
+实测（`/tmp/probe-focus.mjs`，8 pane、`layout.area` 160×60 按 4×2 切、默认 dark）：
+
+| 视口 | grid 时每格 | 切 one 后整屏 tile | 页面溢 |
+| --- | --- | --- | --- |
+| 1440×900 | 299×318 ×8 | 1195×637 | 0,0 |
+| 1280×800（light） | 266×268 ×8 | 1062×537 | 0,0 |
+| 1920×1080 | 412×408 ×8 | 1648×817 | 0,0 |
+
+三档 `tilesOverflow` 都是 `[0,0]`，`.prompt`（896×89）与标签条位置不变，切回 `grid` 八格
+逐位复原；`aria-pressed` 跟着翻，`data-arrange` 由 `side` 变 `focus`、`data-count` 由 8 变 1。
+390×844 手机与 1440×900 单 pane tab 上切换器根本不进 DOM（`arrange: null`）。截图
+`focus-1440x900-dark.png`、`focus-1280x800-light.png`、`focus-1920x1080-dark.png`。
+`test:unit` 318/318（`layout.test.ts` 加三例：整屏一格、回退顺序、没有拖拽边），typecheck 与
+build 干净。
+
+注意 `focus` 只是画，不写 `localStorage`：刷新回到 `grid`，和 PC「默认是真实终端分屏」的
+默认一致。
+
 ## 5. 给服务端的一页需求（若要继续逼近 Ovis）
 
 最小可用集，按依赖排序：
