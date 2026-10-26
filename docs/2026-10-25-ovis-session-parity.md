@@ -78,8 +78,9 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 
 1. **终端内查找**（已做，`c2af03e`）：Ovis 的 `FindBar` 是服务端搜索（它 `scrollback: 0`）；
    herdr 有本地 2000 行，用 `@xterm/addon-search` 即可，不依赖 RPC。
-2. **把答案复制为 markdown / 纯文本**：`TurnList.tsx` 已有逐轮复制，扩一个 `plainText()`
-   （标题、列表、代码围栏、链接）即可，成本一个函数。
+2. **把答案复制为 markdown / 纯文本**（已做，`f421b9c`）：`lib/answerText.ts` 一份
+   `turnCopyText()`，markdown 原样、纯文本去标记；按钮从「只在最后一轮、只给纯文本、手机上
+   还要 hover 才现形」改成每一轮都写两个格式。
 3. **键条自定义**：herdr 目前固定 `KEY_BAR_KEYS`/`PICKER_BAR_KEYS` 两组；Ovis 有 `KeyBarSettings.tsx`
    从 `KEY_BAR_KEYS` 池里选键并排序。要加设置面板 + 持久化，属中等。
 4. **会话内查找**：两边都没有；聊天是 DOM，`window.find` 不可控，自建高亮成本高，暂不排。
@@ -119,8 +120,9 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `8974530` | 手机上的聊天 lens 原来只给「herdr 认得出的 agent」开：`hasAgent` 为假时 `drawnLens` 被硬改成 `terminal`、切换器也不画。可 herdr 只认识它认识的 agent——套在 wrapper 脚本里、被 `npm run` 拉起、或刚出的新二进制都报成 shell（`agent: ""`），这种 pane 在手机上就被钉死在 46 列的 xterm 里，恰好是这一宽度唯一读不了的东西。agent 名于是退回只决定**默认**：切换器对每个 pane 都画，每 pane 存过的选择由 `resolveLens()` 优先（`resolveLens("chat", false) === "chat"`），刷新后仍开聊天；prompt 上的 shell 默认照旧是终端，它的文档视图就是回滚读成 prose，空态照旧给 `Open terminal` |
 | `aa88ff0` | 手机上手边的菜单按不到：键条原来只认 herdr 报的 `blocked`，而 herdr 只对它认识的 agent 报 blocked——第三方 agent 画完菜单仍是 `working`，方向键、`↵`、`esc` 就全都没有。改成内容自己出第二意见：`showsPicker(text)` 去 ANSI、逐行去掉竖线/箭头前缀，取末 12 行数选项标记（`[1]`、`(2)`、`3.`）≥2 个、且末 6 行里有一句确认/取消提示，两条都中才出键条；宁可漏判，因为误判会把方向键从正在打字的输入框里抢走。`ChatLens` 的重钉滚动、键盘捕获、键条渲染三处共用这一个判断 |
 | `4afa186` | 菜单的答案原来只能用方向键走过去：键条只有 `esc ↑ ↓ ← → ↵` 六个键，手机上一份三选一的菜单要按三次才选中、四次才确认，而答案本身就是 agent 在等的那个数字。改成把快照里拼出来的答案做成 chips（`parsePickerOptions()` 复用 `showsPicker` 的同一道闸，所以绝不会出现「有键条没 chip」或反之）：`[1] keep [2] skip [3] edit` 一行内联菜单变成三枚 chip，点一下发出 `{"keys":["2"]}`。标签止于内联菜单对齐用的两格以上空档（`1. run step 2. then` 因此是一个答案不是一个），超长标签**中间**截断而不是结尾——答案常是共享前缀的路径，能区分它们的是尾巴（`/Users/gouk…kspace-name-w0`）。键条保留：`esc` 在它手上，且「herdr 报 blocked、快照却没写答案」那种菜单只有键条过得去 |
+| `f421b9c` | 答案带不走：唯一的复制在最后一条上，且只给一行拍平的纯文本；手机更糟——`.chat__meta` 只在 hover/`focus-within` 时 `opacity:1`，拇指既没有 hover 也点不到还没显形的东西，等于这一功能只对桌面有用。改成每一轮都写两个格式：`markdown` 是 agent 原文（标题、围栏、行内代码原封不动），`text` 去标记但**围栏内的内容一个字节不动**（`sh` 块里的 `#` 是注释不是标题，`npm test --watch=false` 原样），操作者自己说的话在两种格式里都原样保留（他打的 `#` 就是他要的）。判断全在 `lib/answerText.ts` 的 `turnCopyText()`：按行扫围栏状态机丢围栏行、只对围栏外的行剥 `#`/`>` 与行内语法，链接 label 与 target 相同只印一次；`TurnList` 拆出 `TurnFooter`，`copied` 记成 `{id, format}`，只把刚点的那一个按钮写成 `copied`（1.5s 后复原），另一格式的标签不被顺手改掉 |
 
-配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 293，含 `fitComposer` 两行起底、
+配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
 `resolveLens` 的三例）；
 `/tmp/probe-enter.mjs`：回车发 `/keys`、`⇧⏎` 只换行、合成 IME 回车不发、发送后焦点仍在草稿；
@@ -128,6 +130,12 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 `/tmp/probe-pc.mjs`：1440×900 草稿 `896×89`、圆角 14、34px 控件、页脚可见，1280×800 与 1024×768 无溢出；
 `probe-card.mjs`：390×844 与 320×700 明暗两色卡高 96、草稿两行、控件簇 2×2 36px；
 线上 5001 复查同尺寸（`live-1440x900-{dark,light}.png`、`live-390x844-dark.png`）。
+`/tmp/probe-copy.mjs`：390×844 手机（明暗两色）两轮各有 `markdown`/`text` 两个按钮，粗指针下
+`min-height` 就是 44px、`.chat__meta` 不再靠 hover（两轮 opacity 均 1），点 `markdown` 拿到
+`## 改好了` 与 ```` ```sh ```` 行、点 `text` 拿到去掉 `#`/反引号的同一段但围栏里的
+`npm test --watch=false` 一字不差，被点的那颗 1.5s 后从 `copied` 复原；720×900 细指针（narrow
+桌面）未 hover 时 `opacity:0`、hover 后第一轮变 1，按钮 24px 高、伪元素向外各撑 10/6px；
+弹键盘后聊天区 603→397px、草稿卡仍是 66px、每一轮两个按钮都还在、页面溢出 0/0。
 `/tmp/probe-code.mjs` 34/34（390×844 手机、700×900 窄桌面）；`probe-diff.mjs` 24/24；
 `probe-composer-fit.mjs` 16/16、`probe-composer-refit.mjs` 8/8；
 `/tmp/probe-keys.mjs`（390×844 与 320×700，明暗两色）：键条 `scrollWidth == clientWidth`，
