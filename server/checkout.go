@@ -16,7 +16,10 @@ import (
 // worktree from it. The orchestrator sends the clone URL and the token env name
 // because the target may not have the repository in its own registry; the token
 // itself is read from the target's environment and never stored in the task.
-var checkoutRefPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
+var (
+	checkoutRefPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
+	tokenEnvPattern    = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+)
 
 // validCheckoutRef keeps a branch or base name from becoming a git option.
 func validCheckoutRef(ref string) bool {
@@ -164,6 +167,9 @@ func (s *Server) prepareCheckout(ctx context.Context, request jobRequest) error 
 	if cloneURL != "" && !validCloneURL(cloneURL) {
 		return fmt.Errorf("clone URL must be https, ssh, or private http")
 	}
+	if !allowedTokenEnv(request.TokenEnv) {
+		return fmt.Errorf("tokenEnv %q is not allowed", request.TokenEnv)
+	}
 	token := checkoutToken(request.TokenEnv)
 
 	info, err := os.Stat(cwd)
@@ -228,9 +234,45 @@ func (s *Server) prepareCheckout(ctx context.Context, request jobRequest) error 
 	return nil
 }
 
+var defaultTokenEnvs = map[string]bool{
+	"GITHUB_TOKEN": true,
+	"GITEA_TOKEN":  true,
+	"GITLAB_TOKEN": true,
+}
+
+// allowedTokenEnv keeps a request from reading an arbitrary process secret into
+// a URL or a provider header. The default set is the provider tokens the repo
+// registry already names; an operator can add names explicitly.
+func allowedTokenEnv(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return true
+	}
+	if !tokenEnvPattern.MatchString(name) {
+		return false
+	}
+	lower := strings.ToLower(name)
+	if strings.HasPrefix(lower, "herdr_web_") ||
+		strings.HasPrefix(lower, "aws_") ||
+		lower == "home" || lower == "path" || lower == "ld_preload" {
+		return false
+	}
+	if defaultTokenEnvs[name] {
+		return true
+	}
+	for _, item := range strings.FieldsFunc(os.Getenv("HERDR_WEB_ALLOWED_TOKEN_ENVS"), func(r rune) bool {
+		return r == ',' || r == ' ' || r == '\n' || r == '\t'
+	}) {
+		if strings.TrimSpace(item) == name {
+			return true
+		}
+	}
+	return false
+}
+
 func checkoutToken(envName string) string {
 	envName = strings.TrimSpace(envName)
-	if envName == "" {
+	if envName == "" || !allowedTokenEnv(envName) {
 		return ""
 	}
 	return strings.TrimSpace(os.Getenv(envName))
@@ -275,6 +317,9 @@ func (s *Server) pushDevBranch(ctx context.Context, event ledgerEvent) error {
 			cloneURL = repo.cloneURL()
 			tokenEnv = repo.TokenEnv
 		}
+	}
+	if !allowedTokenEnv(tokenEnv) {
+		return fmt.Errorf("tokenEnv %q is not allowed", tokenEnv)
 	}
 	if cloneURL == "" {
 		return nil
@@ -325,6 +370,20 @@ func isEmptyDir(path string) (bool, error) {
 	return len(entries) == 0, nil
 }
 
+func gitOutput(ctx context.Context, dir string, args ...string) (string, error) {
+	commandArgs := args
+	if dir != "" {
+		commandArgs = append([]string{"-C", dir}, args...)
+	}
+	command := exec.CommandContext(ctx, "git", commandArgs...)
+	command.Env = gitEnv()
+	output, err := command.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
 func gitRun(ctx context.Context, dir string, args ...string) error {
 	commandArgs := args
 	if dir != "" {
@@ -345,6 +404,14 @@ func gitRun(ctx context.Context, dir string, args ...string) error {
 
 func gitEnv() []string {
 	return append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=")
+}
+
+func (s *Server) workspaceHead(ctx context.Context, workspaceID string) (string, error) {
+	checkout, err := s.workspaceCheckout(ctx, workspaceID)
+	if err != nil {
+		return "", err
+	}
+	return gitOutput(ctx, checkout, "rev-parse", "HEAD")
 }
 
 func (s *Server) workspaceCheckout(ctx context.Context, workspaceID string) (string, error) {

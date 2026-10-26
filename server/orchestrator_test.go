@@ -20,10 +20,7 @@ func TestOrchestratorStartsReview(t *testing.T) {
 		t.Fatal(err)
 	}
 	dev := testLedgerIdentity(t, "dev")
-	devLease, err := console.sharedLedger.Claim(ctx, "o1", sharedledger.RoleDev, dev.NodeID(), time.Hour, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
+	devLease := sharedClaim(t, console.sharedLedger, "o1", sharedledger.RoleDev, dev, 1, time.Hour)
 	if _, err := console.sharedLedger.Attest(ctx, "o1", sharedledger.RoleDev, dev.NodeID(), "abc", "", dev.Sign("o1", sharedledger.RoleDev, "abc", ""), devLease.Version); err != nil {
 		t.Fatal(err)
 	}

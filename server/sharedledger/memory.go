@@ -102,7 +102,7 @@ func (m *Memory) List(_ context.Context, filter Filter) ([]Task, error) {
 	return out, nil
 }
 
-func (m *Memory) Claim(_ context.Context, id string, role Role, node string, lease time.Duration, expectedVersion uint64) (Task, error) {
+func (m *Memory) Claim(_ context.Context, id string, role Role, node string, lease time.Duration, expectedVersion uint64, signature string) (Task, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	task, ok := m.tasks[id]
@@ -117,6 +117,10 @@ func (m *Memory) Claim(_ context.Context, id string, role Role, node string, lea
 	if err := claimAllowed(task, role, node); err != nil {
 		m.tasks[id] = task
 		return Task{}, err
+	}
+	if !VerifyOperation("claim", id, role, node, expectedVersion, int64(lease/time.Second), "", signature) {
+		m.tasks[id] = task
+		return Task{}, ErrSignature
 	}
 	if role == RoleMerge && m.mergeBusyLocked(task) {
 		m.tasks[id] = task
@@ -138,7 +142,7 @@ func (m *Memory) Claim(_ context.Context, id string, role Role, node string, lea
 	return cloneTask(task), nil
 }
 
-func (m *Memory) Heartbeat(_ context.Context, id string, role Role, node string, lease time.Duration) (Task, error) {
+func (m *Memory) Heartbeat(_ context.Context, id string, role Role, node string, lease time.Duration, signature string) (Task, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	task, ok := m.tasks[id]
@@ -146,6 +150,10 @@ func (m *Memory) Heartbeat(_ context.Context, id string, role Role, node string,
 		return Task{}, ErrNotFound
 	}
 	m.expireLocked(&task)
+	if !VerifyOperation("heartbeat", id, role, node, 0, int64(lease/time.Second), "", signature) {
+		m.tasks[id] = task
+		return Task{}, ErrSignature
+	}
 	if !isClaimed(task.State) || task.Role != role || task.Owner != node {
 		m.tasks[id] = task
 		return Task{}, ErrNotOwner
@@ -251,7 +259,7 @@ func (m *Memory) MarkMerged(_ context.Context, id, commit string) (Task, error) 
 	return cloneTask(task), nil
 }
 
-func (m *Memory) Release(_ context.Context, id string, role Role, node, reason string) (Task, error) {
+func (m *Memory) Release(_ context.Context, id string, role Role, node, reason, signature string) (Task, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	task, ok := m.tasks[id]
@@ -259,6 +267,10 @@ func (m *Memory) Release(_ context.Context, id string, role Role, node, reason s
 		return Task{}, ErrNotFound
 	}
 	m.expireLocked(&task)
+	if !VerifyOperation("release", id, role, node, 0, 0, reason, signature) {
+		m.tasks[id] = task
+		return Task{}, ErrSignature
+	}
 	if !isClaimed(task.State) || task.Role != role || task.Owner != node {
 		m.tasks[id] = task
 		return Task{}, ErrNotOwner
@@ -274,7 +286,7 @@ func (m *Memory) Release(_ context.Context, id string, role Role, node, reason s
 	return cloneTask(task), nil
 }
 
-func (m *Memory) FailMerge(_ context.Context, id, node, reason string) (Task, error) {
+func (m *Memory) FailMerge(_ context.Context, id, node, reason, signature string) (Task, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	task, ok := m.tasks[id]
@@ -282,6 +294,10 @@ func (m *Memory) FailMerge(_ context.Context, id, node, reason string) (Task, er
 		return Task{}, ErrNotFound
 	}
 	m.expireLocked(&task)
+	if !VerifyOperation("fail_merge", id, RoleMerge, node, 0, 0, reason, signature) {
+		m.tasks[id] = task
+		return Task{}, ErrSignature
+	}
 	if !isClaimed(task.State) || task.State != MergeQueued || task.Role != RoleMerge || task.Owner != node {
 		m.tasks[id] = task
 		return Task{}, ErrNotOwner
@@ -303,7 +319,7 @@ func (m *Memory) FailMerge(_ context.Context, id, node, reason string) (Task, er
 	return cloneTask(task), nil
 }
 
-func (m *Memory) Cancel(_ context.Context, id string, node, reason string) (Task, error) {
+func (m *Memory) Cancel(_ context.Context, id string, node, reason, signature string) (Task, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	task, ok := m.tasks[id]
@@ -313,6 +329,10 @@ func (m *Memory) Cancel(_ context.Context, id string, node, reason string) (Task
 	if task.State == Cancelled || task.State == Merged {
 		m.tasks[id] = task
 		return Task{}, ErrInvalidState
+	}
+	if !VerifyOperation("cancel", id, "", node, 0, 0, reason, signature) {
+		m.tasks[id] = task
+		return Task{}, ErrSignature
 	}
 	task.State = Cancelled
 	task.Owner = ""

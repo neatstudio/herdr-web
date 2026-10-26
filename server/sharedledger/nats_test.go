@@ -84,7 +84,8 @@ func TestNATSLedgerLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	dev := testIdentity(t, "dev")
-	claimed, err := ledger.Claim(ctx, "n1", RoleDev, dev.NodeID(), time.Minute, task.Version)
+	claimSignature := dev.SignOperation("claim", "n1", RoleDev, dev.NodeID(), task.Version, int64(time.Minute/time.Second), "")
+	claimed, err := ledger.Claim(ctx, "n1", RoleDev, dev.NodeID(), time.Minute, task.Version, claimSignature)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,12 +120,13 @@ func TestNATSConcurrentClaimOnlyOneWins(t *testing.T) {
 
 	results := make(chan error, 2)
 	var wait sync.WaitGroup
-	for _, node := range []string{"node-a", "node-b"} {
-		node := node
+	for _, identity := range []Identity{testIdentity(t, "node-a"), testIdentity(t, "node-b")} {
+		identity := identity
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			_, err := ledger.Claim(ctx, "n2", RoleDev, node, time.Minute, task.Version)
+			signature := identity.SignOperation("claim", "n2", RoleDev, identity.NodeID(), task.Version, int64(time.Minute/time.Second), "")
+			_, err := ledger.Claim(ctx, "n2", RoleDev, identity.NodeID(), time.Minute, task.Version, signature)
 			results <- err
 		}()
 	}

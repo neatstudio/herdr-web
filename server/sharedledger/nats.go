@@ -209,7 +209,7 @@ func (n *NATS) List(ctx context.Context, filter Filter) ([]Task, error) {
 	return out, nil
 }
 
-func (n *NATS) Claim(ctx context.Context, id string, role Role, node string, lease time.Duration, expectedVersion uint64) (Task, error) {
+func (n *NATS) Claim(ctx context.Context, id string, role Role, node string, lease time.Duration, expectedVersion uint64, signature string) (Task, error) {
 	task, entry, err := n.getRaw(ctx, id)
 	if err != nil {
 		return Task{}, err
@@ -229,6 +229,9 @@ func (n *NATS) Claim(ctx context.Context, id string, role Role, node string, lea
 	}
 	if err := claimAllowed(task, role, node); err != nil {
 		return Task{}, err
+	}
+	if !VerifyOperation("claim", id, role, node, expectedVersion, int64(lease/time.Second), "", signature) {
+		return Task{}, ErrSignature
 	}
 	if role == RoleMerge {
 		queued, err := n.List(ctx, Filter{State: MergeQueued})
@@ -259,7 +262,7 @@ func (n *NATS) Claim(ctx context.Context, id string, role Role, node string, lea
 	return cloneTask(task), nil
 }
 
-func (n *NATS) Heartbeat(ctx context.Context, id string, role Role, node string, lease time.Duration) (Task, error) {
+func (n *NATS) Heartbeat(ctx context.Context, id string, role Role, node string, lease time.Duration, signature string) (Task, error) {
 	task, entry, err := n.getRaw(ctx, id)
 	if err != nil {
 		return Task{}, err
@@ -267,6 +270,9 @@ func (n *NATS) Heartbeat(ctx context.Context, id string, role Role, node string,
 	task, err = n.expire(ctx, task, entry)
 	if err != nil {
 		return Task{}, err
+	}
+	if !VerifyOperation("heartbeat", id, role, node, 0, int64(lease/time.Second), "", signature) {
+		return Task{}, ErrSignature
 	}
 	if !isClaimed(task.State) || task.Role != role || task.Owner != node {
 		return Task{}, ErrNotOwner
@@ -380,7 +386,7 @@ func (n *NATS) MarkMerged(ctx context.Context, id, commit string) (Task, error) 
 	return cloneTask(task), nil
 }
 
-func (n *NATS) Release(ctx context.Context, id string, role Role, node, reason string) (Task, error) {
+func (n *NATS) Release(ctx context.Context, id string, role Role, node, reason, signature string) (Task, error) {
 	task, entry, err := n.getRaw(ctx, id)
 	if err != nil {
 		return Task{}, err
@@ -392,6 +398,9 @@ func (n *NATS) Release(ctx context.Context, id string, role Role, node, reason s
 	task, entry, err = n.getRaw(ctx, id)
 	if err != nil {
 		return Task{}, err
+	}
+	if !VerifyOperation("release", id, role, node, 0, 0, reason, signature) {
+		return Task{}, ErrSignature
 	}
 	if !isClaimed(task.State) || task.Role != role || task.Owner != node {
 		return Task{}, ErrNotOwner
@@ -409,7 +418,7 @@ func (n *NATS) Release(ctx context.Context, id string, role Role, node, reason s
 	return cloneTask(task), nil
 }
 
-func (n *NATS) FailMerge(ctx context.Context, id, node, reason string) (Task, error) {
+func (n *NATS) FailMerge(ctx context.Context, id, node, reason, signature string) (Task, error) {
 	task, entry, err := n.getRaw(ctx, id)
 	if err != nil {
 		return Task{}, err
@@ -421,6 +430,9 @@ func (n *NATS) FailMerge(ctx context.Context, id, node, reason string) (Task, er
 	task, entry, err = n.getRaw(ctx, id)
 	if err != nil {
 		return Task{}, err
+	}
+	if !VerifyOperation("fail_merge", id, RoleMerge, node, 0, 0, reason, signature) {
+		return Task{}, ErrSignature
 	}
 	if !isClaimed(task.State) || task.State != MergeQueued || task.Role != RoleMerge || task.Owner != node {
 		return Task{}, ErrNotOwner
@@ -443,13 +455,16 @@ func (n *NATS) FailMerge(ctx context.Context, id, node, reason string) (Task, er
 	return cloneTask(task), nil
 }
 
-func (n *NATS) Cancel(ctx context.Context, id string, node, reason string) (Task, error) {
+func (n *NATS) Cancel(ctx context.Context, id string, node, reason, signature string) (Task, error) {
 	task, entry, err := n.getRaw(ctx, id)
 	if err != nil {
 		return Task{}, err
 	}
 	if task.State == Cancelled || task.State == Merged {
 		return Task{}, ErrInvalidState
+	}
+	if !VerifyOperation("cancel", id, "", node, 0, 0, reason, signature) {
+		return Task{}, ErrSignature
 	}
 	task.State = Cancelled
 	task.Owner = ""

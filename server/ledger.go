@@ -35,6 +35,13 @@ type ledgerEvent struct {
 	CloneURL    string `json:"cloneUrl,omitempty"`
 	TokenEnv    string `json:"tokenEnv,omitempty"`
 	BaseBranch  string `json:"baseBranch,omitempty"`
+	Nonce       string `json:"nonce,omitempty"`
+}
+
+type jobResult struct {
+	Status string `json:"status"`
+	Kind   string `json:"kind,omitempty"`
+	Output string `json:"output,omitempty"`
 }
 
 type jobLedger struct {
@@ -47,6 +54,7 @@ type jobLedger struct {
 	pending     map[string]string
 	reservation int
 	events      []ledgerEvent
+	results     map[string]jobResult
 	path        string
 }
 
@@ -82,6 +90,7 @@ func newJobLedger() *jobLedger {
 		running: map[string]ledgerEvent{},
 		tasks:   map[string]string{},
 		pending: map[string]string{},
+		results: map[string]jobResult{},
 		path:    ledgerPath(),
 	}
 	ledger.load()
@@ -235,8 +244,10 @@ func (l *jobLedger) started(reservation, workspaceID, paneID, kind, role, label,
 		event.CloneURL = checkout[0].CloneURL
 		event.TokenEnv = checkout[0].TokenEnv
 		event.BaseBranch = checkout[0].BaseBranch
+		event.Nonce = checkout[0].Nonce
 	}
 	l.running[workspaceID] = event
+	delete(l.results, paneID)
 	if taskID != "" {
 		l.tasks[taskID] = workspaceID
 	}
@@ -323,6 +334,25 @@ func (l *jobLedger) runningCount() int {
 // eventForPane finds the running job for a pane. The job status is addressed by
 // pane id, and the kind is what tells a command job (zerostack) from an agent
 // job when herdr cannot answer agent.get for the pane.
+func (l *jobLedger) finished(paneID, status, kind, output string) {
+	if l == nil || paneID == "" {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.results[paneID] = jobResult{Status: status, Kind: kind, Output: output}
+}
+
+func (l *jobLedger) resultForPane(paneID string) (jobResult, bool) {
+	if l == nil {
+		return jobResult{}, false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	result, ok := l.results[paneID]
+	return result, ok
+}
+
 func (l *jobLedger) eventForPane(paneID string) (ledgerEvent, bool) {
 	if l == nil {
 		return ledgerEvent{}, false

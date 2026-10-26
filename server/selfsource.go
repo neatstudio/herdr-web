@@ -202,11 +202,12 @@ func discoverTailnetPeers(ctx context.Context) []selfCandidate {
 			url := "http://" + net.JoinHostPort(ip, selfPeerPort)
 			probeCtx, cancel := context.WithTimeout(ctx, selfPeerProbeTimeout)
 			defer cancel()
-			request, err := http.NewRequestWithContext(probeCtx, http.MethodGet, url+"/api/v1/herdr-web/release", nil)
+			// Discovery is public: never send the console token to a peer that
+			// merely appeared in the tailnet listing.
+			request, err := http.NewRequestWithContext(probeCtx, http.MethodGet, url+"/release/version", nil)
 			if err != nil {
 				return
 			}
-			addConsoleToken(request)
 			response, err := selfClient.Do(request)
 			if err != nil {
 				return
@@ -215,14 +216,12 @@ func discoverTailnetPeers(ctx context.Context) []selfCandidate {
 			if response.StatusCode != http.StatusOK {
 				return
 			}
-			var release struct {
-				Version string `json:"version"`
-			}
-			if json.NewDecoder(response.Body).Decode(&release) != nil || release.Version == "" {
+			body, err := io.ReadAll(io.LimitReader(response.Body, 1024))
+			if err != nil || strings.TrimSpace(string(body)) == "" {
 				return
 			}
 			mu.Lock()
-			found = append(found, selfCandidate{Source: url + "/release", Version: release.Version})
+			found = append(found, selfCandidate{Source: url + "/release", Version: strings.TrimSpace(string(body))})
 			mu.Unlock()
 		}(ip)
 	}

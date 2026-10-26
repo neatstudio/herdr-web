@@ -2,7 +2,12 @@ package server
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"time"
+
+	"herdr-web/server/sharedledger"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -191,6 +196,119 @@ func TestCheckoutRefAndURLValidation(t *testing.T) {
 	} {
 		if validCloneURL(raw) {
 			t.Fatalf("%q should be rejected", raw)
+		}
+	}
+}
+
+func TestTokenEnvironmentAllowlist(t *testing.T) {
+	for _, name := range []string{"", "GITHUB_TOKEN", "GITEA_TOKEN", "GITLAB_TOKEN"} {
+		if !allowedTokenEnv(name) {
+			t.Fatalf("%q should be allowed", name)
+		}
+	}
+	for _, name := range []string{
+		"HERDR_WEB_TOKEN", "HERDR_WEB_NATS_TOKEN", "AWS_SECRET_ACCESS_KEY",
+		"AWS_SESSION_TOKEN", "PATH", "HOME", "LD_PRELOAD", "bad-name",
+	} {
+		if allowedTokenEnv(name) {
+			t.Fatalf("%q should be rejected", name)
+		}
+	}
+	t.Setenv("HERDR_WEB_ALLOWED_TOKEN_ENVS", "CUSTOM_GIT_TOKEN")
+	if !allowedTokenEnv("CUSTOM_GIT_TOKEN") {
+		t.Fatal("explicit token environment was rejected")
+	}
+}
+
+func TestRepoRejectsADisallowedTokenEnvironment(t *testing.T) {
+	isolateState(t)
+	console := NewServer("", nil)
+	_, err := console.repos.Add(Repo{
+		Provider: "github", BaseURL: "https://api.github.com",
+		Owner: "acme", Name: "app", TokenEnv: "AWS_SECRET_ACCESS_KEY",
+	})
+	if err == nil || !strings.Contains(err.Error(), "tokenEnv") {
+		t.Fatalf("repo add error = %v", err)
+	}
+}
+
+func TestJobRejectsADisallowedTokenEnvironment(t *testing.T) {
+	console := NewServer("", nil)
+	recorder := httptest.NewRecorder()
+	body := `{"prompt":"hi","kind":"claude","tokenEnv":"HERDR_WEB_TOKEN"}`
+	console.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/herdr/job",
+		strings.NewReader(body)))
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestWorkspaceHeadAndAttestationRecordTheCommit(t *testing.T) {
+	repo := t.TempDir()
+	gitTest(t, repo, "init", "-q")
+	gitTest(t, repo, "config", "user.email", "test@example.com")
+	gitTest(t, repo, "config", "user.name", "test")
+	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitTest(t, repo, "add", "README.md")
+	gitTest(t, repo, "commit", "-q", "-m", "one")
+	want := gitTest(t, repo, "rev-parse", "HEAD")
+
+	socket, state, closeFn := startFakeHerdr(t)
+	defer closeFn()
+	state.checkoutPath = repo
+	console := NewServer(socket, nil)
+	head, err := console.workspaceHead(context.Background(), "w1")
+	if err != nil || head != want {
+		t.Fatalf("head = %q, %v; want %q", head, err, want)
+	}
+
+	identity, err := nodeIdentity()
+	if err != nil || identity == nil {
+		t.Fatal(err)
+	}
+	isolateState(t)
+	task, err := console.sharedLedger.Create(context.Background(), sharedledger.Task{ID: "head-task"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sharedClaim(t, console.sharedLedger, task.ID, sharedledger.RoleDev, *identity, task.Version, time.Hour)
+	if err := console.attestSharedTask(context.Background(), task.ID, sharedledger.RoleDev, want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := console.sharedLedger.Get(context.Background(), task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Artifacts.Commit != want || len(got.Attestations) != 1 || got.Attestations[0].Commit != want {
+		t.Fatalf("attestation = %+v", got)
+	}
+}
+
+func TestRepoRejectsUnsafeProviderURLs(t *testing.T) {
+	isolateState(t)
+	console := NewServer("", nil)
+	for _, baseURL := range []string{"file:///tmp", "ext::sh", "http://example.com"} {
+		if _, err := console.repos.Add(Repo{
+			Provider: "gitea", BaseURL: baseURL, Owner: "a", Name: "b",
+		}); err == nil {
+			t.Fatalf("repo accepted %q", baseURL)
+		}
+	}
+}
+
+func TestJobStartRejectsUnsafeBranchAndCloneURL(t *testing.T) {
+	console := NewServer("", nil)
+	for _, body := range []string{
+		`{"prompt":"x","kind":"claude","cwd":"/tmp","branch":"--upload-pack=/tmp/x"}`,
+		`{"prompt":"x","kind":"claude","cwd":"/tmp","branch":"job/1","cloneUrl":"file:///tmp/repo"}`,
+	} {
+		recorder := httptest.NewRecorder()
+		console.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/herdr/job",
+			strings.NewReader(body)))
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("body %s: status = %d: %s", body, recorder.Code, recorder.Body.String())
 		}
 	}
 }

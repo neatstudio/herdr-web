@@ -130,6 +130,12 @@ const MaxMergeAttempts = 3
 
 // mergeRepo is the single-writer lock key: one merge per checkout at a time.
 func mergeRepo(task Task) string {
+	if repo := strings.TrimSpace(task.Repo); repo != "" {
+		return "repo:" + repo
+	}
+	if cloneURL := strings.TrimSpace(task.CloneURL); cloneURL != "" {
+		return "clone:" + strings.TrimRight(cloneURL, "/")
+	}
 	if cwd := strings.TrimSpace(task.Cwd); cwd != "" {
 		return filepath.Clean(cwd)
 	}
@@ -145,8 +151,8 @@ type Ledger interface {
 
 	// Claim takes a role lease. expectedVersion is the version read before the
 	// claim; a mismatch is ErrConflict.
-	Claim(ctx context.Context, id string, role Role, node string, lease time.Duration, expectedVersion uint64) (Task, error)
-	Heartbeat(ctx context.Context, id string, role Role, node string, lease time.Duration) (Task, error)
+	Claim(ctx context.Context, id string, role Role, node string, lease time.Duration, expectedVersion uint64, signature string) (Task, error)
+	Heartbeat(ctx context.Context, id string, role Role, node string, lease time.Duration, signature string) (Task, error)
 
 	// Attest records a signed result and advances the state. expectedVersion is
 	// the version read before the attest.
@@ -154,11 +160,11 @@ type Ledger interface {
 	// FailMerge records a provider merge failure. It keeps the task in
 	// audit_approved for a retry, then blocks it after MaxMergeAttempts so a
 	// conflict is visible instead of retried forever.
-	FailMerge(ctx context.Context, id, node, reason string) (Task, error)
+	FailMerge(ctx context.Context, id, node, reason, signature string) (Task, error)
 	LinkPR(ctx context.Context, id string, number int) (Task, error)
 	MarkMerged(ctx context.Context, id, commit string) (Task, error)
-	Release(ctx context.Context, id string, role Role, node, reason string) (Task, error)
-	Cancel(ctx context.Context, id string, node, reason string) (Task, error)
+	Release(ctx context.Context, id string, role Role, node, reason, signature string) (Task, error)
+	Cancel(ctx context.Context, id string, node, reason, signature string) (Task, error)
 
 	Events(ctx context.Context, id string) ([]Event, error)
 }

@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"herdr-web/server/sharedledger"
 )
 
 // A fleet is a set of consoles that know each other. It has no leader.
@@ -70,12 +72,16 @@ type fleetPeer struct {
 	// Seen is unix seconds; each console stamps what it hears with its own clock,
 	// which is enough for a list whose only question is "has this gone quiet".
 	Seen int64 `json:"seen"`
+	// Signature covers every field except Seen and itself. A peer id is its
+	// ed25519 public key, so no separate key registry is needed.
+	Signature string `json:"signature,omitempty"`
 }
 
 // fleetState is this console's view of the fleet.
 type fleetState struct {
-	mu    sync.Mutex
-	peers map[string]fleetPeer
+	mu       sync.Mutex
+	peers    map[string]fleetPeer
+	lastSave time.Time
 }
 
 // fleetStatePathOverride keeps a test's fleet file out of the operator's home.
@@ -110,13 +116,14 @@ func (s *Server) loadFleet() {
 	s.fleet.mu.Lock()
 	defer s.fleet.mu.Unlock()
 	for _, peer := range stored.Peers {
-		if peer.ID != "" && peer.ID != s.fleetSelfID() {
+		if peer.ID != "" && peer.ID != s.fleetSelfID() && verifyFleetPeer(peer) {
 			s.fleet.peers[peer.ID] = peer
 		}
 	}
 }
 
 func (s *Server) saveFleetLocked() {
+	s.fleet.lastSave = time.Now()
 	path := fleetStatePath()
 	if path == "" {
 		return
@@ -132,6 +139,15 @@ func (s *Server) saveFleetLocked() {
 		return
 	}
 	_ = os.WriteFile(path, raw, 0o644)
+}
+
+// saveFleetLockedThrottled keeps a hello flood from rewriting the list on every
+// request. The first write is immediate; later ones wait for the next second.
+func (s *Server) saveFleetLockedThrottled() {
+	if time.Since(s.fleet.lastSave) < time.Second {
+		return
+	}
+	s.saveFleetLocked()
 }
 
 // defaultFleetSeeds and defaultFleetAddr are configured once in main.
@@ -253,7 +269,9 @@ func (s *Server) fleetDiscoverOnce(ctx context.Context) int {
 			defer wait.Done()
 			probeCtx, cancel := context.WithTimeout(ctx, selfPeerProbeTimeout)
 			defer cancel()
-			request, err := newConsoleRequest(probeCtx, http.MethodGet,
+			// A tailnet listing is not a trust decision. Do not send the console
+			// token to an address just because it answered a scan.
+			request, err := http.NewRequestWithContext(probeCtx, http.MethodGet,
 				strings.TrimRight(ip, "/")+"/api/v1/fleet", nil)
 			if err != nil {
 				return
@@ -276,7 +294,9 @@ func (s *Server) fleetDiscoverOnce(ctx context.Context) int {
 			if answer.Self.ID == "" {
 				return
 			}
-			s.mergeFleet(append([]fleetPeer{answer.Self}, answer.Peers...))
+			now := time.Now().Unix()
+			peers := verifiedFleetPeers(append([]fleetPeer{answer.Self}, answer.Peers...), now)
+			s.mergeFleet(peers)
 			mu.Lock()
 			found++
 			mu.Unlock()
@@ -289,7 +309,7 @@ func (s *Server) fleetDiscoverOnce(ctx context.Context) int {
 // fleetSelfPeer is what this console tells others about itself.
 func (s *Server) fleetSelfPeer() fleetPeer {
 	resources := readHostResources()
-	return fleetPeer{
+	peer := fleetPeer{
 		ID:             s.fleetSelfID(),
 		Addr:           s.fleetAddr,
 		Version:        ConsoleVersion,
@@ -305,6 +325,76 @@ func (s *Server) fleetSelfPeer() fleetPeer {
 		Load1:          resources.Load1,
 		Seen:           time.Now().Unix(),
 	}
+	return signFleetPeer(peer)
+}
+
+func fleetProofPayload(peer fleetPeer) ([]byte, bool) {
+	proof := peer
+	proof.Seen = 0
+	proof.Signature = ""
+	// nil and empty slices are the same list but different JSON. The fleet API
+	// normalizes nil to [] when it writes a peer, so sign the normalized form.
+	proof.Agents = append([]string{}, proof.Agents...)
+	proof.Tools = append([]string{}, proof.Tools...)
+	proof.Models = append([]string{}, proof.Models...)
+	raw, err := json.Marshal(proof)
+	if err != nil {
+		return nil, false
+	}
+	return raw, true
+}
+
+func signFleetPeer(peer fleetPeer) fleetPeer {
+	identity, err := nodeIdentity()
+	if err != nil || identity == nil {
+		return peer
+	}
+	payload, ok := fleetProofPayload(peer)
+	if !ok {
+		return peer
+	}
+	peer.Signature = identity.SignMessage(payload)
+	return peer
+}
+
+func verifyFleetPeer(peer fleetPeer) bool {
+	if peer.ID == "" || peer.Addr == "" || peer.Signature == "" {
+		return false
+	}
+	if !trustedFleetPeer(peer.ID) {
+		return false
+	}
+	payload, ok := fleetProofPayload(peer)
+	return ok && sharedledger.VerifyMessage(peer.ID, payload, peer.Signature)
+}
+
+func trustedFleetPeer(id string) bool {
+	raw := strings.TrimSpace(os.Getenv("HERDR_WEB_TRUSTED_PEERS"))
+	if raw == "" {
+		return true
+	}
+	for _, item := range strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == ' ' || r == '\n' || r == '\t'
+	}) {
+		if strings.TrimSpace(item) == id {
+			return true
+		}
+	}
+	return false
+}
+
+// verifiedFleetPeers filters a peer list received over the network. Seen is
+// stamped locally, so a peer cannot make itself immortal with a future clock.
+func verifiedFleetPeers(peers []fleetPeer, now int64) []fleetPeer {
+	out := make([]fleetPeer, 0, len(peers))
+	for _, peer := range peers {
+		if !verifyFleetPeer(peer) {
+			continue
+		}
+		peer.Seen = now
+		out = append(out, peer)
+	}
+	return out
 }
 
 // fleetSelfID is this console's stable identity. Tailscale's node key is the
@@ -394,7 +484,7 @@ func (s *Server) fleetExchange(ctx context.Context, target string, payload []byt
 	if json.NewDecoder(response.Body).Decode(&answer) != nil {
 		return
 	}
-	s.mergeFleet(answer.Peers)
+	s.mergeFleet(verifiedFleetPeers(answer.Peers, time.Now().Unix()))
 }
 
 // pruneFleetLocked keeps one row per address.
@@ -637,9 +727,19 @@ func (s *Server) handleFleetHello(w http.ResponseWriter, r *http.Request) {
 	}
 	peer.Seen = time.Now().Unix()
 	if peer.ID != s.fleetSelfID() {
+		if !verifyFleetPeer(peer) {
+			writeError(w, http.StatusUnauthorized, "invalid_peer", "peer signature is not valid")
+			return
+		}
 		s.fleet.mu.Lock()
+		_, existed := s.fleet.peers[peer.ID]
+		if !existed && len(s.fleet.peers) >= fleetPeerLimit {
+			s.fleet.mu.Unlock()
+			writeError(w, http.StatusTooManyRequests, "fleet_full", "the peer list is full")
+			return
+		}
 		s.fleet.peers[peer.ID] = peer
-		s.saveFleetLocked()
+		s.saveFleetLockedThrottled()
 		s.fleet.mu.Unlock()
 	}
 
@@ -647,7 +747,9 @@ func (s *Server) handleFleetHello(w http.ResponseWriter, r *http.Request) {
 	view := make([]fleetPeer, 0, len(s.fleet.peers)+1)
 	view = append(view, s.fleetSelfPeer())
 	for _, known := range s.fleet.peers {
-		view = append(view, known)
+		if verifyFleetPeer(known) {
+			view = append(view, known)
+		}
 	}
 	s.fleet.mu.Unlock()
 	sortFleetPeers(view)
@@ -703,6 +805,7 @@ func (s *Server) handleFleet(w http.ResponseWriter, r *http.Request) {
 			"memAvailableMB": peer.MemAvailableMB,
 			"load1":          peer.Load1,
 			"seen":           peer.Seen,
+			"signature":      peer.Signature,
 			"stale":          now-peer.Seen > int64(fleetPeerStaleAfter/time.Second),
 		})
 	}

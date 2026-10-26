@@ -671,3 +671,19 @@ func TestReleaseUploadRequiresItsOwnSecret(t *testing.T) {
 		t.Fatalf("console bearer = %d: %s", console.Code, console.Body.String())
 	}
 }
+
+func TestSelfFetchDoesNotSendTheConsoleTokenToAReleaseURL(t *testing.T) {
+	var authorization string
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authorization = r.Header.Get("Authorization")
+		_, _ = w.Write([]byte("ok"))
+	}))
+	t.Cleanup(target.Close)
+	t.Setenv(consoleTokenEnv, "console-secret")
+	if _, err := selfFetchText(context.Background(), target.URL+"/release/version"); err != nil {
+		t.Fatal(err)
+	}
+	if authorization != "" {
+		t.Fatalf("release fetch carried Authorization %q", authorization)
+	}
+}

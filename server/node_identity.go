@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"herdr-web/server/sharedledger"
 )
@@ -49,6 +50,14 @@ func localNodeID() string {
 		return "local"
 	}
 	return identity.NodeID()
+}
+
+func signLedgerOperation(op, taskID string, role sharedledger.Role, version uint64, lease time.Duration, reason string) string {
+	identity, err := nodeIdentity()
+	if err != nil || identity == nil {
+		return ""
+	}
+	return identity.SignOperation(op, taskID, role, identity.NodeID(), version, int64(lease/time.Second), reason)
 }
 
 func signAttestation(taskID string, role sharedledger.Role, commit, digest string) string {

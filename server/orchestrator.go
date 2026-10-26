@@ -158,13 +158,16 @@ func (s *Server) mergeApprovedTask(ctx context.Context, task sharedledger.Task) 
 	if !ok {
 		return false
 	}
-	claimed, err := s.sharedLedger.Claim(ctx, task.ID, sharedledger.RoleMerge, localNodeID(), 30*time.Minute, task.Version)
+	mergeLease := 30 * time.Minute
+	claimed, err := s.sharedLedger.Claim(ctx, task.ID, sharedledger.RoleMerge, localNodeID(), mergeLease, task.Version,
+		signLedgerOperation("claim", task.ID, sharedledger.RoleMerge, task.Version, mergeLease, ""))
 	if err != nil {
 		return false
 	}
 	merged, err := repo.mergePull(ctx, pr, "merge")
 	if err != nil || (!merged.Merged && merged.SHA == "") {
-		_, _ = s.sharedLedger.FailMerge(ctx, task.ID, localNodeID(), "provider merge failed")
+		_, _ = s.sharedLedger.FailMerge(ctx, task.ID, localNodeID(), "provider merge failed",
+			signLedgerOperation("fail_merge", task.ID, sharedledger.RoleMerge, 0, 0, "provider merge failed"))
 		return false
 	}
 	_, err = s.sharedLedger.Attest(ctx, task.ID, sharedledger.RoleMerge, localNodeID(), merged.SHA, "", signAttestation(task.ID, sharedledger.RoleMerge, merged.SHA, ""), claimed.Version)

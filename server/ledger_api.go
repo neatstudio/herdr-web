@@ -69,6 +69,7 @@ func (s *Server) handleLedgerTaskAction(w http.ResponseWriter, r *http.Request) 
 			Node         string `json:"node"`
 			LeaseSeconds int    `json:"leaseSeconds"`
 			Version      uint64 `json:"version"`
+			Signature    string `json:"signature"`
 		}
 		if !decodeBody(w, r, &request) {
 			return
@@ -82,7 +83,7 @@ func (s *Server) handleLedgerTaskAction(w http.ResponseWriter, r *http.Request) 
 		if lease <= 0 {
 			lease = 30 * time.Minute
 		}
-		task, err := s.sharedLedger.Claim(r.Context(), id, role, request.Node, lease, request.Version)
+		task, err := s.sharedLedger.Claim(r.Context(), id, role, request.Node, lease, request.Version, request.Signature)
 		if err != nil {
 			writeLedgerError(w, err)
 			return
@@ -131,9 +132,10 @@ func (s *Server) handleLedgerTaskAction(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "task": task})
 	case "release":
 		var request struct {
-			Role   string `json:"role"`
-			Node   string `json:"node"`
-			Reason string `json:"reason"`
+			Role      string `json:"role"`
+			Node      string `json:"node"`
+			Reason    string `json:"reason"`
+			Signature string `json:"signature"`
 		}
 		if !decodeBody(w, r, &request) {
 			return
@@ -143,7 +145,7 @@ func (s *Server) handleLedgerTaskAction(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusBadRequest, "invalid_request", "role and node are required")
 			return
 		}
-		task, err := s.sharedLedger.Release(r.Context(), id, role, request.Node, request.Reason)
+		task, err := s.sharedLedger.Release(r.Context(), id, role, request.Node, request.Reason, request.Signature)
 		if err != nil {
 			writeLedgerError(w, err)
 			return
@@ -151,13 +153,14 @@ func (s *Server) handleLedgerTaskAction(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "task": task})
 	case "cancel":
 		var request struct {
-			Node   string `json:"node"`
-			Reason string `json:"reason"`
+			Node      string `json:"node"`
+			Reason    string `json:"reason"`
+			Signature string `json:"signature"`
 		}
 		if !decodeBody(w, r, &request) {
 			return
 		}
-		task, err := s.sharedLedger.Cancel(r.Context(), id, request.Node, request.Reason)
+		task, err := s.sharedLedger.Cancel(r.Context(), id, request.Node, request.Reason, request.Signature)
 		if err != nil {
 			writeLedgerError(w, err)
 			return

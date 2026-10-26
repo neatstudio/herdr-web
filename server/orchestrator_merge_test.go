@@ -23,34 +23,22 @@ func advanceTaskToAuditApproved(t *testing.T, console *Server, taskID string) {
 	tester := testLedgerIdentity(t, "test")
 	auditor := testLedgerIdentity(t, "audit")
 
-	devLease, err := console.sharedLedger.Claim(ctx, taskID, sharedledger.RoleDev, dev.NodeID(), time.Hour, task.Version)
-	if err != nil {
-		t.Fatal(err)
-	}
+	devLease := sharedClaim(t, console.sharedLedger, taskID, sharedledger.RoleDev, dev, task.Version, time.Hour)
 	done, err := console.sharedLedger.Attest(ctx, taskID, sharedledger.RoleDev, dev.NodeID(), "abc", "", dev.Sign(taskID, sharedledger.RoleDev, "abc", ""), devLease.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	reviewLease, err := console.sharedLedger.Claim(ctx, taskID, sharedledger.RoleReview, review.NodeID(), time.Hour, done.Version)
-	if err != nil {
-		t.Fatal(err)
-	}
+	reviewLease := sharedClaim(t, console.sharedLedger, taskID, sharedledger.RoleReview, review, done.Version, time.Hour)
 	reviewed, err := console.sharedLedger.Attest(ctx, taskID, sharedledger.RoleReview, review.NodeID(), "abc", "", review.Sign(taskID, sharedledger.RoleReview, "abc", ""), reviewLease.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	testLease, err := console.sharedLedger.Claim(ctx, taskID, sharedledger.RoleTest, tester.NodeID(), time.Hour, reviewed.Version)
-	if err != nil {
-		t.Fatal(err)
-	}
+	testLease := sharedClaim(t, console.sharedLedger, taskID, sharedledger.RoleTest, tester, reviewed.Version, time.Hour)
 	tested, err := console.sharedLedger.Attest(ctx, taskID, sharedledger.RoleTest, tester.NodeID(), "abc", "", tester.Sign(taskID, sharedledger.RoleTest, "abc", ""), testLease.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	auditLease, err := console.sharedLedger.Claim(ctx, taskID, sharedledger.RoleAudit, auditor.NodeID(), time.Hour, tested.Version)
-	if err != nil {
-		t.Fatal(err)
-	}
+	auditLease := sharedClaim(t, console.sharedLedger, taskID, sharedledger.RoleAudit, auditor, tested.Version, time.Hour)
 	if _, err := console.sharedLedger.Attest(ctx, taskID, sharedledger.RoleAudit, auditor.NodeID(), "abc", "", auditor.Sign(taskID, sharedledger.RoleAudit, "abc", ""), auditLease.Version); err != nil {
 		t.Fatal(err)
 	}

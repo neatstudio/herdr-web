@@ -257,6 +257,57 @@ or a DNS-rebinding name from driving the API; it does not authenticate a
 tailnet peer that can reach the port directly. A reverse proxy that forwards a
 different Host needs that name in `HERDR_WEB_ALLOWED_HOSTS`.
 
+### Release and checkout boundaries
+
+`/release/` serves release files publicly (an installer has to fetch them), but
+writing it is disabled unless `HERDR_WEB_RELEASE_UPLOAD_TOKEN` is set. The upload
+must present that token in `X-Herdr-Release-Token`; the console token is not
+accepted for this. This is separate from `HERDR_WEB_TOKEN` on purpose: a token
+that is forwarded to fleet peers must not also authorize publishing a binary.
+
+A worktree job must use a branch and base branch matching
+`[A-Za-z0-9][A-Za-z0-9._/-]*` with no `..`, `.lock`, or leading dash. A clone URL
+must be `https`, `ssh`, or private `http`; `file:`, `ext::`, and credential-bearing
+URLs are refused. New checkouts may only be created under
+`HERDR_WEB_CHECKOUT_ROOTS` (default `~/.local/share/herdr-web/checkouts`) or the
+registered repository's checkout. Existing git checkouts remain usable.
+`HERDR_WEB_ALLOW_FILE_CLONE=1` is a deliberate test-only escape hatch for a local
+bare mirror; never set it on a network-exposed console.
+
+`tokenEnv` names are limited to `GITHUB_TOKEN`, `GITEA_TOKEN`, `GITLAB_TOKEN`, and
+names listed in `HERDR_WEB_ALLOWED_TOKEN_ENVS`. `HERDR_WEB_TOKEN`,
+`HERDR_WEB_NATS_TOKEN`, `AWS_*`, `PATH`, and `LD_PRELOAD` are always refused. A
+repository provider URL must be `https` or private `http`.
+
+### Fleet and ledger proof
+
+Fleet hellos and peer rows carry an ed25519 signature over every field except
+`Seen`. The node id is the public key, so an unsigned or forged peer is rejected.
+`Seen` is stamped by the receiver, the hello path is capped at the same 64 peers
+as the merge path, and repeated hellos throttle the fleet-file write.
+`HERDR_WEB_TRUSTED_PEERS` optionally limits accepted peer public keys. Dispatch
+targets must be this console, a known seed/peer, or loopback, and are capped at
+16; release downloads and tailnet discovery never receive the console token.
+
+Ledger `claim`, `heartbeat`, `release`, `cancel`, and `fail_merge` require an
+ed25519 proof from the named node, in addition to the attestation signature. The
+canonical bytes are:
+
+```text
+op \0 taskID \0 role \0 node \0 version \0 leaseSeconds \0 reason
+```
+
+signed with the node key and sent as base64url. The HTTP endpoints take the proof
+in `signature`. A command job's completion marker now contains a per-job nonce;
+an agent job is completed only by herdr's agent status, never by a string in its
+output. A failed job is not attested as successful, and the first terminal status
+is cached so a scrolled-out marker cannot flip a finished job back to running.
+The dev attestation records the workspace HEAD commit, and the merge lock keys on
+`Repo`/`CloneURL` before falling back to `Cwd`.
+
+Markdown links are rendered only for `http:`, `https:`, and `mailto:`; other
+schemes are shown as text.
+
 ## Files
 
 Attachments are written to `herdr-web-uploads` under the system temp directory

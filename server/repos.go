@@ -69,7 +69,7 @@ func (r *repoRegistry) load() {
 		return
 	}
 	for _, repo := range stored {
-		if repo.ID != "" {
+		if repo.ID != "" && validProviderURL(repo.BaseURL) && allowedTokenEnv(repo.TokenEnv) {
 			r.repos[repo.ID] = repo
 		}
 	}
@@ -168,6 +168,9 @@ func normalizeRepo(repo Repo) (Repo, error) {
 		} else {
 			repo.TokenEnv = "GITEA_TOKEN"
 		}
+	}
+	if !allowedTokenEnv(repo.TokenEnv) {
+		return Repo{}, errors.New("tokenEnv is not allowed")
 	}
 	if repo.WebhookSecretEnv == "" {
 		if repo.Provider == "github" {
@@ -314,6 +317,9 @@ type providerPull struct {
 }
 
 func (r Repo) token() (string, error) {
+	if !allowedTokenEnv(r.TokenEnv) {
+		return "", fmt.Errorf("%s is not an allowed token environment", r.TokenEnv)
+	}
 	token := strings.TrimSpace(os.Getenv(r.TokenEnv))
 	if token == "" {
 		return "", fmt.Errorf("%s is not set", r.TokenEnv)

@@ -183,6 +183,52 @@ type dispatchRequest struct {
 	Targets     []string `json:"targets"`
 }
 
+const maxDispatchTargets = 16
+
+// normalizeDispatchTargets keeps a request from turning the token-bearing
+// dispatch client into an open proxy. A loopback target is allowed for local
+// testing; every other target must be this console or a known peer/seed.
+func (s *Server) normalizeDispatchTargets(raw []string) ([]string, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	if len(raw) > maxDispatchTargets {
+		return nil, fmt.Errorf("at most %d dispatch targets are allowed", maxDispatchTargets)
+	}
+	targets := make([]string, 0, len(raw))
+	seen := map[string]bool{}
+	for _, item := range raw {
+		parsed, err := url.Parse(strings.TrimSpace(item))
+		if err != nil || parsed.Host == "" || parsed.User != nil ||
+			(parsed.Scheme != "http" && parsed.Scheme != "https") ||
+			(parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return nil, fmt.Errorf("target %q is not a console URL", item)
+		}
+		base := strings.ToLower(parsed.Scheme + "://" + parsed.Host)
+		if seen[base] {
+			continue
+		}
+		if !isLoopbackHost(parsed.Host) && !s.knownConsoleBase(base) {
+			return nil, fmt.Errorf("target %q is not a known fleet console", item)
+		}
+		seen[base] = true
+		targets = append(targets, base)
+	}
+	return targets, nil
+}
+
+func (s *Server) knownConsoleBase(base string) bool {
+	if strings.EqualFold(fleetBase("http://"+s.fleetAddr), base) {
+		return true
+	}
+	for _, known := range s.fleetConsoles() {
+		if strings.EqualFold(fleetBase(known), base) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) handleDispatchJob(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeMethodNotAllowed(w, "POST")
@@ -207,6 +253,12 @@ func (s *Server) handleDispatchJob(w http.ResponseWriter, r *http.Request) {
 	if len(targets) == 0 {
 		writeError(w, http.StatusConflict, "no_targets",
 			"no console is known: pass targets, or start this one with --fleet-seeds")
+		return
+	}
+	var err error
+	targets, err = s.normalizeDispatchTargets(targets)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_target", err.Error())
 		return
 	}
 	switch strategy := strings.ToLower(strings.TrimSpace(request.Strategy)); strategy {
@@ -491,6 +543,11 @@ func (s *Server) handleDispatchRetry(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "not_a_market", "only single-machine tasks can be re-offered")
 		return
 	}
+	targets, err := s.normalizeDispatchTargets(entry.Targets)
+	if err != nil {
+		writeError(w, http.StatusConflict, "invalid_target", err.Error())
+		return
+	}
 	for _, job := range entry.Jobs {
 		if job.WorkspaceID != "" {
 			writeError(w, http.StatusConflict, "already_started",
@@ -534,9 +591,9 @@ func (s *Server) handleDispatchRetry(w http.ResponseWriter, r *http.Request) {
 
 	market := dispatchRequest{
 		Prompt: entry.Prompt, Cwd: entry.Cwd, Branch: entry.Branch,
-		Kind: entry.Kind, Weight: entry.Weight, Strategy: "single", Targets: entry.Targets,
+		Kind: entry.Kind, Weight: entry.Weight, Strategy: "single", Targets: targets,
 	}
-	updated, started, err := s.runMarket(ctx, market, entry.Targets, entry.ID)
+	updated, started, err := s.runMarket(ctx, market, targets, entry.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "invalid_request", err.Error())
 		return

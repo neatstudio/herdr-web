@@ -78,3 +78,9 @@
 - 新增 `GET /api/v1/herdr-web/update/status`，返回是否启用/符合条件、上次检查、上次更新、错误、间隔。
 - 新增 `HERDR_WEB_ADVERTISE_ADDR`：共享到另一 tailnet 的机器可绑定自己的 `100.64.x.x`，同时向 fleet 报告共享 `100.89.x.x` 地址；Host guard 自动接受该地址。
 - 安装脚本/plist 设置 `HERDR_WEB_SERVICE=1`，帮助重启逻辑识别 supervisor。
+
+## 2026-10-26（A/B/C 安全边界）
+
+- A：`/release/` 上传默认关闭，只接受独立的 `HERDR_WEB_RELEASE_UPLOAD_TOKEN`；checkout 限制根目录、ref 字符、clone/provider URL；Markdown 只渲染 http/https/mailto。
+- B：dispatch targets 只允许已知 peer/seed/loopback，最多 16；`tokenEnv` 走白名单；fleet hello/peer 行改为 ed25519 签名，接收方设置 Seen、限制 64 条、节流持久化；发现与 release 下载不再带 console token。
+- C：账本 claim/heartbeat/release/cancel/fail_merge 要求操作签名；命令 job 使用每-job nonce，agent job 不以输出文本完成；失败 job 不再被 attest，终态缓存；dev attestation 记录 workspace HEAD；merge 锁优先用 Repo/CloneURL。

@@ -150,3 +150,37 @@ func TestTabCreateRefusesAnythingButPost(t *testing.T) {
 		t.Fatalf("status = %d", recorder.Code)
 	}
 }
+
+func TestDispatchRejectsAnUnknownTarget(t *testing.T) {
+	console := NewServer("", nil)
+	recorder := httptest.NewRecorder()
+	body := `{"prompt":"hi","kind":"claude","targets":["http://evil.example:80"]}`
+	console.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/fleet/job",
+		strings.NewReader(body)))
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), "not a known fleet console") {
+		t.Fatalf("body = %s", recorder.Body.String())
+	}
+}
+
+func TestDispatchRejectsTooManyTargets(t *testing.T) {
+	console := NewServer("", nil)
+	targets := make([]string, maxDispatchTargets+1)
+	for index := range targets {
+		targets[index] = "http://127.0.0.1:1"
+	}
+	body, err := json.Marshal(map[string]any{
+		"prompt": "hi", "kind": "claude", "targets": targets,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	console.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/v1/fleet/job",
+		strings.NewReader(string(body))))
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+}

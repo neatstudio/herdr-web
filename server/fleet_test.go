@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -20,12 +21,32 @@ func fleetTestServer(t *testing.T) *Server {
 	return NewServer(filepath.Join(t.TempDir(), "herdr.sock"), nil)
 }
 
+func signedFleetTestPeer(t *testing.T, name string, peer fleetPeer) fleetPeer {
+	t.Helper()
+	identity := testLedgerIdentity(t, "fleet-"+name)
+	peer.ID = identity.NodeID()
+	peer.Seen = 0
+	payload, ok := fleetProofPayload(peer)
+	if !ok {
+		t.Fatal("fleet proof payload")
+	}
+	peer.Signature = identity.SignMessage(payload)
+	return peer
+}
+
 func TestFleetHelloShowsTheConsoleInTheList(t *testing.T) {
 	console := fleetTestServer(t)
 	handler := console.Handler()
+	peer := signedFleetTestPeer(t, "tw1", fleetPeer{
+		Addr: "100.89.0.4:5000", Version: "v0.3.1", Platform: "linux-amd64",
+	})
+	rawPeer, err := json.Marshal(peer)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	hello := httptest.NewRequest(http.MethodPost, "/api/v1/fleet/hello",
-		strings.NewReader(`{"id":"tw1","addr":"100.89.0.4:5000","version":"v0.3.1","platform":"linux-amd64"}`))
+		strings.NewReader(string(rawPeer)))
 	hello.Header.Set("Content-Type", "application/json")
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, hello)
@@ -50,7 +71,7 @@ func TestFleetHelloShowsTheConsoleInTheList(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(body.PeerList) != 1 || body.PeerList[0].ID != "tw1" {
+	if len(body.PeerList) != 1 || body.PeerList[0].ID != peer.ID {
 		t.Fatalf("peers = %+v", body.PeerList)
 	}
 	if body.PeerList[0].Version != "v0.3.1" || body.PeerList[0].Stale {
@@ -59,7 +80,7 @@ func TestFleetHelloShowsTheConsoleInTheList(t *testing.T) {
 	// The hub keeps the list across restarts, because a console that rebooted
 	// should not have to wait for every peer to say hello again.
 	raw, err := os.ReadFile(fleetStatePathOverride)
-	if err != nil || !strings.Contains(string(raw), "tw1") {
+	if err != nil || !strings.Contains(string(raw), peer.ID) {
 		t.Fatalf("state file = %q, err = %v", raw, err)
 	}
 }
@@ -238,10 +259,11 @@ func TestFleetLearnsPeersItNeverSpokeTo(t *testing.T) {
 	right.SetFleetForTest("", strings.TrimPrefix(rightServer.URL, "http://"))
 
 	// B's view already contains a machine A has never spoken to.
+	learnedPeer := signedFleetTestPeer(t, "vn200", fleetPeer{
+		Addr: "100.89.0.200:5000", Version: "v0.4.1",
+	})
 	right.fleet.mu.Lock()
-	right.fleet.peers["vn200"] = fleetPeer{
-		ID: "vn200", Addr: "100.89.0.200:5000", Version: "v0.4.1", Seen: time.Now().Unix(),
-	}
+	right.fleet.peers[learnedPeer.ID] = learnedPeer
 	right.fleet.mu.Unlock()
 
 	payload, err := json.Marshal(left.fleetSelfPeer())
@@ -251,7 +273,7 @@ func TestFleetLearnsPeersItNeverSpokeTo(t *testing.T) {
 	left.fleetExchange(context.Background(), rightServer.URL, payload)
 
 	left.fleet.mu.Lock()
-	_, learned := left.fleet.peers["vn200"]
+	_, learned := left.fleet.peers[learnedPeer.ID]
 	left.fleet.mu.Unlock()
 	if !learned {
 		t.Fatal("a peer's list did not teach this console about the rest of the fleet")
@@ -374,10 +396,11 @@ func TestFleetFormsItselfWithoutASeed(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	// Another console it will meet through the first one.
+	knownPeer := signedFleetTestPeer(t, "vn", fleetPeer{
+		Addr: "100.89.0.2:5000", Version: "v0.6.10",
+	})
 	host.fleet.mu.Lock()
-	host.fleet.peers["vn"] = fleetPeer{
-		ID: "vn", Addr: "100.89.0.2:5000", Version: "v0.6.10", Seen: time.Now().Unix(),
-	}
+	host.fleet.peers[knownPeer.ID] = knownPeer
 	host.fleet.mu.Unlock()
 
 	seeker := fleetTestServer(t)
@@ -385,14 +408,13 @@ func TestFleetFormsItselfWithoutASeed(t *testing.T) {
 	previous := fleetConsoleURLs
 	fleetConsoleURLs = func(context.Context) []string { return []string{server.URL} }
 	t.Cleanup(func() { fleetConsoleURLs = previous })
-
 	if found := seeker.fleetDiscoverOnce(context.Background()); found == 0 {
 		t.Fatal("discovery found nothing")
 	}
 	// The two consoles in this test share a host name, which a real fleet does not,
 	// so the one that answered introduces its peers rather than itself.
 	seeker.fleet.mu.Lock()
-	_, learnedPeer := seeker.fleet.peers["vn"]
+	_, learnedPeer := seeker.fleet.peers[knownPeer.ID]
 	seeker.fleet.mu.Unlock()
 	if !learnedPeer {
 		t.Fatalf("fleet after discovery = %v", seeker.fleet.peers)
@@ -413,5 +435,77 @@ func TestFleetDiscoveryToleratesSilence(t *testing.T) {
 	}
 	if elapsed := time.Since(started); elapsed > 5*time.Second {
 		t.Fatalf("discovery took %s", elapsed)
+	}
+}
+
+func TestFleetHelloRejectsAnUnsignedPeer(t *testing.T) {
+	console := fleetTestServer(t)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/fleet/hello",
+		strings.NewReader(`{"id":"ed25519:not-a-real-key","addr":"100.89.0.4:5000"}`))
+	request.Header.Set("Content-Type", "application/json")
+	console.Handler().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestFleetHelloUsesLocalSeenAndCapsTheList(t *testing.T) {
+	console := fleetTestServer(t)
+	peer := signedFleetTestPeer(t, "new", fleetPeer{Addr: "100.89.0.7:5000", Version: "v1"})
+	future := time.Now().Add(time.Hour).Unix()
+	peer.Seen = future
+	// Re-sign with the future Seen would be pointless: Seen is not signed and the
+	// receiver stamps it locally.
+	raw, _ := json.Marshal(peer)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/fleet/hello", bytes.NewReader(raw))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	console.Handler().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("hello = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	console.fleet.mu.Lock()
+	stored := console.fleet.peers[peer.ID]
+	console.fleet.mu.Unlock()
+	if stored.Seen == future || stored.Seen > time.Now().Unix() {
+		t.Fatalf("seen = %d, want a local time", stored.Seen)
+	}
+
+	console.fleet.mu.Lock()
+	for index := len(console.fleet.peers); index < fleetPeerLimit; index++ {
+		id := "filler-" + strings.Repeat("x", index+1)
+		console.fleet.peers[id] = fleetPeer{ID: id, Addr: "100.89.1.1:5000"}
+	}
+	console.fleet.mu.Unlock()
+	extra := signedFleetTestPeer(t, "extra", fleetPeer{Addr: "100.89.0.8:5000"})
+	raw, _ = json.Marshal(extra)
+	request = httptest.NewRequest(http.MethodPost, "/api/v1/fleet/hello", bytes.NewReader(raw))
+	request.Header.Set("Content-Type", "application/json")
+	recorder = httptest.NewRecorder()
+	console.Handler().ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusTooManyRequests {
+		t.Fatalf("full list = %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestFleetHelloCanRequireATrustedPeerKey(t *testing.T) {
+	console := fleetTestServer(t)
+	peer := signedFleetTestPeer(t, "allowlisted", fleetPeer{Addr: "100.89.0.9:5000"})
+	raw, _ := json.Marshal(peer)
+	request := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/fleet/hello", bytes.NewReader(raw))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		console.Handler().ServeHTTP(rec, req)
+		return rec
+	}
+	t.Setenv("HERDR_WEB_TRUSTED_PEERS", "ed25519:someone-else")
+	if got := request(); got.Code != http.StatusUnauthorized {
+		t.Fatalf("untrusted key = %d: %s", got.Code, got.Body.String())
+	}
+	t.Setenv("HERDR_WEB_TRUSTED_PEERS", peer.ID)
+	if got := request(); got.Code != http.StatusOK {
+		t.Fatalf("trusted key = %d: %s", got.Code, got.Body.String())
 	}
 }

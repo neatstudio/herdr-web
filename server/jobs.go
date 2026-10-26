@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -67,26 +69,39 @@ type jobStarted struct {
 // completion signal the job status reads.
 const zerostackOneShot = `zerostack -p "$1"
 rc=$?
-printf '\n__HERDR_JOB_DONE__:%d\n' "$rc"
+printf '\n__HERDR_JOB_DONE__:%s:%d\n' "$2" "$rc"
 `
 
 const jobDoneMarker = "__HERDR_JOB_DONE__:"
 
 // commandOneShot runs the test command in a shell and prints the same completion
-// marker zerostack uses. The command arrives as $1 so its quoting is untouched.
+// marker zerostack uses. The command arrives as $1 and the per-job nonce as $2,
+// so a line printed by the command itself cannot satisfy the status check.
 const commandOneShot = `sh -c "$1"
 rc=$?
-printf '\n__HERDR_JOB_DONE__:%d\n' "$rc"
+printf '\n__HERDR_JOB_DONE__:%s:%d\n' "$2" "$rc"
 `
 
-// splitJobOutput separates a command's output from the completion marker. It
-// returns done=false when the marker is absent (the command is still running).
-func splitJobOutput(text string) (string, int, bool) {
-	index := strings.LastIndex(text, jobDoneMarker)
+func newJobNonce() string {
+	var raw [12]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(raw[:])
+}
+
+// splitJobOutput separates a command's output from its nonce-bearing completion
+// marker. It returns done=false when that job's marker is absent.
+func splitJobOutput(text, nonce string) (string, int, bool) {
+	if nonce == "" {
+		return text, 0, false
+	}
+	prefix := jobDoneMarker + nonce + ":"
+	index := strings.LastIndex(text, prefix)
 	if index < 0 {
 		return text, 0, false
 	}
-	rest := text[index+len(jobDoneMarker):]
+	rest := text[index+len(prefix):]
 	line := rest
 	if newline := strings.IndexByte(rest, '\n'); newline >= 0 {
 		line = rest[:newline]
@@ -149,6 +164,10 @@ func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 	}
 	if cloneURL := strings.TrimSpace(request.CloneURL); cloneURL != "" && !validCloneURL(cloneURL) {
 		writeError(w, http.StatusBadRequest, "invalid_request", "cloneUrl must be https, ssh, or private http")
+		return
+	}
+	if tokenEnv := strings.TrimSpace(request.TokenEnv); tokenEnv != "" && !allowedTokenEnv(tokenEnv) {
+		writeError(w, http.StatusBadRequest, "invalid_request", "tokenEnv is not allowed")
 		return
 	}
 	// Admission and the slot claim are one step: a check now and a record after
@@ -237,13 +256,16 @@ func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 	// prints a marker with the exit code: the pane has no exit status to poll, and
 	// that marker is how the status endpoint knows the command is done.
 	if strings.EqualFold(kind, "command") {
-		command := []string{"sh", "-c", commandOneShot, "test-command", request.TestCommand}
+		nonce := newJobNonce()
+		command := []string{"sh", "-c", commandOneShot, "test-command", request.TestCommand, nonce}
 		if err := s.runInPane(ctx, paneID, command); err != nil {
 			s.abandonWorkspace(workspaceID)
 			writeBadGateway(w, "herdr_job_failed", err)
 			return
 		}
-		s.ledger.started(reservation, workspaceID, paneID, kind, string(role), label, sharedTaskID(request, paneID), jobCheckout(request))
+		event := jobCheckout(request)
+		event.Nonce = nonce
+		s.ledger.started(reservation, workspaceID, paneID, kind, string(role), label, sharedTaskID(request, paneID), event)
 		taskID = sharedTaskID(request, paneID)
 		if err := s.startSharedTask(ctx, request, taskID, label); err != nil {
 			fmt.Fprintf(os.Stderr, "herdr-web: shared task %s: %v\n", taskID, err)
@@ -259,13 +281,16 @@ func (s *Server) handleJobStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.EqualFold(kind, "zerostack") {
-		command := []string{"sh", "-c", zerostackOneShot, "zerostack", request.Prompt}
+		nonce := newJobNonce()
+		command := []string{"sh", "-c", zerostackOneShot, "zerostack", request.Prompt, nonce}
 		if err := s.runInPane(ctx, paneID, command); err != nil {
 			s.abandonWorkspace(workspaceID)
 			writeBadGateway(w, "herdr_job_failed", err)
 			return
 		}
-		s.ledger.started(reservation, workspaceID, paneID, kind, string(role), label, sharedTaskID(request, paneID), jobCheckout(request))
+		event := jobCheckout(request)
+		event.Nonce = nonce
+		s.ledger.started(reservation, workspaceID, paneID, kind, string(role), label, sharedTaskID(request, paneID), event)
 		taskID = sharedTaskID(request, paneID)
 		if err := s.startSharedTask(ctx, request, taskID, label); err != nil {
 			fmt.Fprintf(os.Stderr, "herdr-web: shared task %s: %v\n", taskID, err)
@@ -522,13 +547,15 @@ func (s *Server) startSharedTask(ctx context.Context, request jobRequest, taskID
 	} else if err != nil {
 		return err
 	}
-	_, err = s.sharedLedger.Claim(ctx, taskID, role, localNodeID(), 30*time.Minute, task.Version)
+	claimLease := 30 * time.Minute
+	_, err = s.sharedLedger.Claim(ctx, taskID, role, localNodeID(), claimLease, task.Version,
+		signLedgerOperation("claim", taskID, role, task.Version, claimLease, ""))
 	return err
 }
 
 // attestSharedTask marks the role result. It is idempotent: a task already out
 // of the claimed state (or owned by another node) is left alone.
-func (s *Server) attestSharedTask(ctx context.Context, taskID string, role sharedledger.Role) error {
+func (s *Server) attestSharedTask(ctx context.Context, taskID string, role sharedledger.Role, commit string) error {
 	if s.sharedLedger == nil || taskID == "" {
 		return nil
 	}
@@ -539,7 +566,7 @@ func (s *Server) attestSharedTask(ctx context.Context, taskID string, role share
 	if task.Owner != localNodeID() {
 		return nil
 	}
-	_, err = s.sharedLedger.Attest(ctx, taskID, role, localNodeID(), "", "", signAttestation(taskID, role, "", ""), task.Version)
+	_, err = s.sharedLedger.Attest(ctx, taskID, role, localNodeID(), commit, "", signAttestation(taskID, role, commit, ""), task.Version)
 	return err
 }
 
@@ -555,7 +582,8 @@ func (s *Server) cancelSharedTask(ctx context.Context, taskID string) error {
 	if task.State == sharedledger.Cancelled || task.State == sharedledger.Merged {
 		return nil
 	}
-	_, err = s.sharedLedger.Cancel(ctx, taskID, localNodeID(), "job stopped")
+	_, err = s.sharedLedger.Cancel(ctx, taskID, localNodeID(), "job stopped",
+		signLedgerOperation("cancel", taskID, "", 0, 0, "job stopped"))
 	return err
 }
 
@@ -618,6 +646,13 @@ func (s *Server) handleJobStatus(w http.ResponseWriter, r *http.Request, paneID 
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 
+	if result, finished := s.ledger.resultForPane(paneID); finished {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok": true, "jobId": paneID, "status": result.Status,
+			"kind": result.Kind, "output": result.Output,
+		})
+		return
+	}
 	event, isJob := s.ledger.eventForPane(paneID)
 	commandJob := isJob && (event.Kind == "zerostack" || event.Kind == "command")
 
@@ -666,9 +701,9 @@ func (s *Server) handleJobStatus(w http.ResponseWriter, r *http.Request, paneID 
 	if isJob {
 		kind = event.Kind
 	}
-	if commandJob || (statusErr != nil && strings.Contains(read.Text, jobDoneMarker)) {
+	if commandJob {
 		status = "running"
-		if output, code, done := splitJobOutput(read.Text); done {
+		if output, code, done := splitJobOutput(read.Text, event.Nonce); done {
 			read.Text = output
 			if code == 0 {
 				status = "done"
@@ -691,16 +726,27 @@ func (s *Server) handleJobStatus(w http.ResponseWriter, r *http.Request, paneID 
 		if role == "" {
 			role = sharedledger.RoleDev
 		}
-		if status == "done" && role == sharedledger.RoleDev {
-			if err := s.pushDevBranch(ctx, event); err != nil {
-				fmt.Fprintf(os.Stderr, "herdr-web: push dev branch %s: %v\n", taskID, err)
-				writeBadGateway(w, "branch_push_failed", err)
-				return
+		if status == "done" {
+			if role == sharedledger.RoleDev {
+				if err := s.pushDevBranch(ctx, event); err != nil {
+					fmt.Fprintf(os.Stderr, "herdr-web: push dev branch %s: %v\n", taskID, err)
+					writeBadGateway(w, "branch_push_failed", err)
+					return
+				}
+			}
+			commit := ""
+			if event.WorkspaceID != "" {
+				if head, headErr := s.workspaceHead(ctx, event.WorkspaceID); headErr == nil {
+					commit = head
+				} else {
+					fmt.Fprintf(os.Stderr, "herdr-web: workspace head %s: %v\n", event.WorkspaceID, headErr)
+				}
+			}
+			if err := s.attestSharedTask(ctx, taskID, role, commit); err != nil {
+				fmt.Fprintf(os.Stderr, "herdr-web: attest shared task %s: %v\n", taskID, err)
 			}
 		}
-		if err := s.attestSharedTask(ctx, taskID, role); err != nil {
-			fmt.Fprintf(os.Stderr, "herdr-web: attest shared task %s: %v\n", taskID, err)
-		}
+		s.ledger.finished(paneID, status, kind, read.Text)
 		// Completion releases the execution slot; the workspace/result stays.
 		s.ledger.stopped(event.WorkspaceID)
 	}
