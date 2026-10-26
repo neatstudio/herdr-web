@@ -504,3 +504,25 @@
   gap: 2px;
   align-content: start;
 }
+
+/* A phone on its side has 390px of height for a transcript and a card that is
+   96px of it: the 2×2 pad is 74px tall, so the pad — not the two rows of draft
+   — is what sets the card's height, exactly as in typing mode. Upright there is
+   no width to spare for a row of four controls beside the draft; sideways there
+   is 828px of card, and the row costs the card only the draft's own two rows.
+   So a short coarse frame folds the resting pad into a row too: the card goes
+   96 → 70px and the transcript takes the 26px back. Height, not width, is the
+   condition — this is the same 500px line lib/frame.ts uses, and it leaves the
+   upright phones (568+) and the keyboard-up card (already one row) alone. */
+@media (pointer: coarse) and (max-height: 500px) {
+  .shell.is-narrow .prompt__pad {
+    display: flex;
+    flex-direction: row;
+    gap: 2px;
+    align-content: start;
+  }
+
+  .shell.is-narrow .prompt__field {
+    align-items: center;
+  }
+}
