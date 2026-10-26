@@ -4,8 +4,10 @@ import {
   paneNameRepeatsAgent,
   paneListName,
   paneOwnHasName,
+  idleTileFacts,
   shortPaneId,
   statusChip,
+  statusLabel,
   toneOf,
 } from "@/lib/fleet";
 import type { HerdrWorkspace } from "@/lib/herdr";
@@ -120,6 +122,7 @@ export function TabStage({
         const workspaceName = names.get(pane.workspaceId) ?? pane.workspaceId;
         const active = tile.id === activePaneId;
         const agent = paneAgent(pane);
+        const facts = idleTileFacts(pane);
         return (
           <section
             key={tile.id}
@@ -212,9 +215,25 @@ export function TabStage({
               />
             ) : (
               // Only the active tile reads its pane: a split would otherwise
-              // pull every pane's transcript on every poll.
+              // pull every pane's transcript on every poll. What is left is
+              // what the fleet snapshot already said, which is the question a
+              // grid of splits asks — which pane is this, and where is it
+              // running?
               <div className="scope scope--idle">
-                <p className="scope__idle">click to read this pane</p>
+                <div className="scope__idle">
+                  <span className="scope__idle-id">{tile.id}</span>
+                  {facts.cwd !== "" && (
+                    <span className="scope__idle-cwd" title={pane.cwd}>
+                      {facts.cwd}
+                    </span>
+                  )}
+                  {facts.note !== undefined && (
+                    <span className="scope__idle-note" title={facts.note}>
+                      {statusLabel(pane.agentStatus)}
+                    </span>
+                  )}
+                  <span className="scope__idle-hint">click to read this pane</span>
+                </div>
               </div>
             )}
           </section>

@@ -1280,6 +1280,43 @@ body::before {
   font-weight: 500;
 }
 
+/* An idle tile used to say only "click to read this pane", which is the one
+   thing its header already implies. It answers the question a split actually
+   asks — which pane is this? — instead: the full id (the header keeps only the
+   short one, and only when the pane has a name of its own), the directory the
+   pane is running in, and, when the daemon reports a word this console does not
+   know, that word in full rather than the header's twelve-character chip. All
+   of it is in memory: an idle tile must never read its pane. */
+.scope__idle-id,
+.scope__idle-cwd,
+.scope__idle-note {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: var(--step-label);
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scope__idle-id,
+.scope__idle-cwd {
+  font-family: var(--font-mono);
+}
+
+.scope__idle-id {
+  color: var(--ink-dim);
+}
+
+.scope__idle-cwd,
+.scope__idle-hint {
+  color: var(--ink-faint);
+}
+
+.scope__idle-note {
+  font-style: italic;
+  color: var(--ink-dim);
+}
+
 /* ---------------------------------------------------------------- prompt */
 
 /* The composer is a card, not a bar. A draft, four controls and one line of

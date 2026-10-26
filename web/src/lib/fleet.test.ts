@@ -86,6 +86,25 @@ test("tailPath keeps the last segments for compact readouts", () => {
   assert.equal(fleet.tailPath("/", 2), "/");
 });
 
+test("idleTileFacts says only what an unread tile can know", () => {
+  const base = { id: "w1:p2", workspaceId: "w1" };
+  // The tail is what tells two checkouts of one repo apart, so the head of the
+  // path is dropped; the tooltip in the tile keeps the whole thing.
+  assert.deepEqual(fleet.idleTileFacts({ ...base, cwd: "/Users/op/server/herdr-web" }), {
+    cwd: "server/herdr-web",
+  });
+  // No cwd is no line, not an empty one.
+  assert.deepEqual(fleet.idleTileFacts(base), { cwd: "" });
+  assert.deepEqual(fleet.idleTileFacts({ ...base, cwd: "" }), { cwd: "" });
+  // A known status is already in the header; only an unknown word, which the
+  // header chip would clip, is repeated in the body.
+  assert.deepEqual(fleet.idleTileFacts({ ...base, agentStatus: "working" }), { cwd: "" });
+  assert.deepEqual(fleet.idleTileFacts({ ...base, agentStatus: "waiting for review" }), {
+    cwd: "",
+    note: "waiting for review",
+  });
+});
+
 test("paneName prefers the operator's rename over everything else", () => {
   // herdr keeps four independent names; a deliberate rename wins.
   assert.equal(

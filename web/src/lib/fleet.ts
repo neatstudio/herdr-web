@@ -149,6 +149,23 @@ export function tailPath(value: string, segments = 1): string {
   return parts.slice(Math.max(0, parts.length - segments)).join("/");
 }
 
+/**
+ * What an inactive split tile may say about its pane.
+ *
+ * Only the active tile reads pane output — a grid of splits would otherwise
+ * pull every transcript on every poll — so a tile body has to be built from the
+ * fleet snapshot alone. Two facts are worth repeating there because the header
+ * cannot carry them: the directory the pane runs in (tail only; the tail is
+ * what tells two checkouts of the same repo apart) and a status word the daemon
+ * sent but this console does not know, which the header chip clips to twelve
+ * characters. Everything else in the header stays unrepeated.
+ */
+export function idleTileFacts(pane: AgentPane): { cwd: string; note?: string } {
+  const cwd = pane.cwd === undefined || pane.cwd === "" ? "" : tailPath(pane.cwd, 2);
+  const note = statusNote(pane.agentStatus);
+  return note === undefined ? { cwd } : { cwd, note };
+}
+
 type NameablePane = {
   id: string;
   label?: string;
