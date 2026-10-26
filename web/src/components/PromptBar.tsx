@@ -83,6 +83,23 @@ function canType(text: string): boolean {
 }
 
 /**
+ * Paste a line a key cannot carry, then submit it with a key of its own.
+ *
+ * `pane.send_text` writes the bytes verbatim, so a "\n" appended to the text
+ * reaches a TUI in raw mode as LF — its line editor reads that as a line break
+ * inside the draft (Ctrl+J), and the line stays in the prompt unsent. Measured
+ * against herdr 0.9.0: text with a newline arrives as `…0a`, the "Enter" key
+ * arrives as `0d`. So the paste goes out without a newline and Enter follows it
+ * as its own request, which the daemon delivers as a key press.
+ */
+async function pasteThenSubmit(paneId: string, line: string): Promise<boolean> {
+  if (!(await sendPaneText(paneId, line, false))) {
+    return false;
+  }
+  return sendPaneKeys(paneId, ["Enter"]);
+}
+
+/**
  * The operator's draft store, or null where a browser refuses it (private
  * windows, a storage policy). A missing draft is recoverable; a throwing
  * keystroke handler is not, so every access goes through the quiet helpers in
@@ -581,10 +598,11 @@ export function PromptBar({
     setBusy(true);
     try {
       // Typed input keeps a TUI's own menus alive; anything a key cannot carry
-      // (non-ASCII, a pasted block) goes out as text.
+      // (non-ASCII, a pasted block) goes out as text, and is submitted by the
+      // key that follows it.
       const delivered = canType(line)
         ? await typePaneText(paneId, line)
-        : await sendPaneText(paneId, line);
+        : await pasteThenSubmit(paneId, line);
       if (!delivered) {
         return;
       }

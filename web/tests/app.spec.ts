@@ -1378,8 +1378,11 @@ test("text a key cannot carry is sent as text", async ({ page }) => {
   const input = page.locator("#herdr-input");
   await input.fill("检查一下这个目录");
   await input.press("Enter");
-  await expect.poll(() => inputPosts).toEqual([JSON.stringify({ text: "检查一下这个目录\n" })]);
-  expect(keyPosts).toEqual([]);
+  // The paste carries no newline of its own: a "\n" inside it arrives as LF,
+  // which a TUI reads as a line break in the draft, not as the Enter that
+  // submits it. Enter goes out as a key afterwards, and arrives as CR.
+  await expect.poll(() => inputPosts).toEqual([JSON.stringify({ text: "检查一下这个目录" })]);
+  await expect.poll(() => keyPosts).toEqual([JSON.stringify({ keys: ["Enter"] })]);
 });
 
 test("shift+enter writes a newline instead of sending", async ({ page }) => {
