@@ -236,13 +236,18 @@ endpoints are read-only and refuse anything that is not a regular file, and SVG
 is never served as an image (it can carry script), but the console is as
 powerful as a shell.
 
-Set `HERDR_WEB_TOKEN` to require a bearer token on every `/api/` and
-`/opendesign/` request. A browser can establish the same token as an HttpOnly
-cookie by opening `/auth?token=...` once; EventSource and WebSocket then work
-without putting the secret in JavaScript. `/api/health` and provider webhooks
-stay open (webhooks verify their own HMAC). Fleet peers read the same variable
-for heartbeats, dispatch, and the remote proxy. Set the same token on every
-console in a fleet; do not expose a console to the public internet.
+Set `HERDR_WEB_TOKEN` to require a bearer token on `/api/` and `/opendesign/`
+requests from fleet peers, scripts, and curl. A same-origin browser is exempt by
+default: the UI's fetch/EventSource/WebSocket already carries
+`Sec-Fetch-Site: same-origin` or a matching Origin, so there is no per-console
+`/auth` visit. The token still closes the cross-site, DNS-rebinding, and
+unauthenticated-script paths; the remaining boundary is the private bind plus
+the tailnet/LAN ACL. Set `HERDR_WEB_TOKEN_BROWSER=require` if you want the strict
+per-origin login instead; then `/auth?token=...` sets the HttpOnly cookie as
+before. `/api/health` and provider webhooks stay open (webhooks verify their own
+HMAC). Fleet peers read the token for heartbeats, dispatch, and the remote proxy.
+Set the same token on every console in a fleet; do not expose a console to the
+public internet.
 
 The browser boundary is checked separately: a request must address a host this
 console answers on (the bound address, `localhost`, a single-label LAN name,

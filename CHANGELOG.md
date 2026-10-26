@@ -45,6 +45,8 @@
 
 - `HERDR_WEB_TOKEN` 可选：设置后 `/api/`（health 与 webhook 除外）和 `/opendesign/` 必须带 `Authorization: Bearer`、`X-Herdr-Token` 或 HttpOnly cookie。
 - `GET /auth?token=...` 验证后设置 HttpOnly cookie，现有 UI 的 EventSource/WebSocket 可直接复用。
+- 同源浏览器默认免 token：UI 的 fetch/EventSource/WebSocket 带 `Sec-Fetch-Site: same-origin` 或匹配 Origin 时直接放行，不再需要逐台打开 `/auth`；curl/脚本/fleet 仍必须带 token。需要严格逐 origin 登录时设 `HERDR_WEB_TOKEN_BROWSER=require`。
+- 新增 `HERDR_WEB_TRUSTED_NETS`：来自指定 CIDR（部署为 `100.89.0.0/16`）的请求视为已由 tailnet/LAN 认证，不再要求 token 或 cookie；Host/Origin/JSON 守卫仍然生效。安全边界变为 private bind + 网络 ACL。
 - fleet 心跳、dispatch、job 状态、remote proxy 的出站请求自动携带同一 token；constant-time 比较。
 
 ### 仓库 checkout 与分支推送

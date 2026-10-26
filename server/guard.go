@@ -52,10 +52,12 @@ func GuardRequests(next http.Handler, listeners []net.Listener) http.Handler {
 			return
 		}
 		if token := consoleToken(); token != "" && tokenRequired(r.URL.Path) && !tokenMatches(requestToken(r), token) {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="herdr-web"`)
-			writeError(w, http.StatusUnauthorized, "unauthorized",
-				"a console token is required")
-			return
+			if !trustedSource(r) && !(browserTokenExempt() && browserProvenanceSameOrigin(r)) {
+				w.Header().Set("WWW-Authenticate", `Bearer realm="herdr-web"`)
+				writeError(w, http.StatusUnauthorized, "unauthorized",
+					"a console token is required")
+				return
+			}
 		}
 		if isMutation(r.Method) {
 			if !guard.sameOrigin(r) {
