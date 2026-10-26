@@ -132,6 +132,7 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `b013330` | 细字一直在假装自己存在：`--step-fine` 被 20 处声明引用（面板、弹窗、任务板、peek 预览），却在两个仓库里都没有定义过（`git log -S` 查空），声明全部落到 computed-value 阶段失效、字号继承正文 12.5px——面板因此只剩颜色一层层级。在 `:root` 定成 11px（标签 10.5 < 细字 11 < 正文 12.5）。连带两件：`.newws__submit` 高度是 padding + 行盒，细字一缩手机上 44→42px，coarse 下钉 `min-height: 44px`（桌面仍 30px，副产品是弹窗里的 create 在粗指针下 32→44px）；任务板条目的那行 prompt 是唯一识别信息，留在正文 12.5px，其余元信息才用细字。390×844/844×390/1440×900 明暗实测 20 处全 11px/17.6，旧 tmux、peek、dispatch 条目、commits、collect 这批原本量不到的补 fixture 后也一致 |
 | `dcd8738` | 细字一缩小，面板和表里的控件就全部掉到拇指下面：`--step-fine` 只有 11px，而这些盒子没有 `min-height`，高度全靠自己的行盒加 padding——字段 34、策略切换 23、机器行 19（复选框 13）、两处折叠行 18、stop 19、面板头按钮 22/18、关闭按钮 20×24。桌面无所谓，手上大面积按空。先试了 masthead 那套伪元素扩展，用 `elementFromPoint` 逐点扫发现 button 把生成内容裁进自己的盒子，`::before` 的 inset 只在原盒范围命中，于是改成真实长高：字段（含 fleet 表单的 select）、策略键、机器行（复选框 13→18，行内详情在粗指针下允许换行，手机上一行只剩省略号，而“这台机器装了哪个 agent”正是决定点不点的信息）、`.dispatch__line` 居中与 stop、两处 `summary`、`.hostpanel__act`、面板与表的头部按钮/关闭按钮。整块必须写在样式表末尾：`.sheet--dialog .newws__field input` 的 34px 在 500 行之上、同特异度，写在旁边是静默失效。390×844 粗指针实测 host 9 个控件9 个小 → 0，fleet 25 → 0，844×390 同；1440×900 鼠标 host 仍 9 小、fleet 仍 19 小，逐个高度与改前一致（22/18/19/23/30/34） |
 | `9eaf60c` | 终端镜头里的键条、键盘菜单和查找条仍是鼠标尺寸：44px 的键条里浮着 32px 的键面（上下各 6px 空），菜单的 `hide` 是 26×20 的文本链接、两行网格每行只有 32px，查找条的三枚按钮是 36×36、旁边那颗启动按钮 40×40。键面加到 40px 时整条会从 44 涨到 45（1px 规则 + 2+2 padding），等于白拿终端一行，所以让 padding 从 2 退到 1 把那 1px 还回去，`min-height` 继续钉住 44px——竖屏、横屏、键盘起落四种姿态下终端高度与改前逐项相同（559/429/177/0）。菜单是在流里的，它长多高终端就少多高，于是给小屏横放留了 `min-height: 500px` 的闸：竖着两行网格升到 40px、标题行 44px（`hide` 变成真 34×44），480px 高的横屏手机维持 32px 不变。查找条按钮升到 44px，390 宽仍有 182px 输入框、320 宽 112px，无溢出 |
+| `1dc18b4` | 手机上换 pane 全靠 picker 表，可这张表每一件都还是桌面尺寸：行高 30px、agent 名用 9.5px 的 micro 字号、还塞在 4rem（64px）的列里，于是 `opencode-gpt-5-coder`、`claude-code` 被截成 `opencode-…`/`claude-co…`——一行里唯一能区分两个 pane 的词没了，名字那侧却空着；Agents/Spaces 切换条 34px，筛选框 27px 高、旁边那个 14px 的 `×` 只有 16×14。粗指针下：行 44px，agent 列放宽到 5.25rem 并把字号提到 `--step-fine` 11px（identity 不是 caption），切换条 44px、字号同样升到 11px；筛选框 44px，清除键撑成 44×54 顶满整行、字段用 `padding-right: 46px` 把文字让开它（`top/right/bottom: 0` 让它吃满 filter 行，而不是只吃 input 的 44px）。全部挂在 `(pointer: coarse)` 且以 `.sheet` 前缀收窄，桌面仍是 30px 行 / 34px 切换条 / 27px 筛选框 / 16×14 的 `×`（1440×900 与 1280×800 逐项复测）。390×844、320×780、768×1024 明暗实测：表内每个可点元素都 ≥44×44，列表可滚、无溢出 |
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
 `resolveLens` 的三例）；
@@ -534,6 +535,34 @@ padding。它们的尺寸不是算出来的，是「小字恰好撑到多高」�
 `.shell`、`.masthead`、`.tab`、`.prompt`、`.term`、`.keys`、`.keymenu` 的盒与
 计算样式逐项 diff 为空（`/tmp/probe-desktop-geo.mjs`，改动前后各采集一次）。
 截图 `keys-{phone390,land844}-kb{0,1}-{menu,find}.png` 与 `keyslight-*`（浅色）。
+
+### 4.8 手机换 pane 的那张表（`1dc18b4`）
+
+picker 是手机上唯一能换 pane 的入口，而它每一件都还停在桌面尺度。4.6/4.7 扫过
+面板与终端镜头，漏掉的正是这张表——因为它在 `index.css` 里，且量的时候要先
+`#herdr-picker-open` 打开弹窗才会渲染。
+
+| 控件 | 改前（390×844 粗指针） | 改后 |
+| --- | --- | --- |
+| `.sheet .srow`（每个 pane 一行） | 30 | 44 |
+| `.sheet .srow__agent` | 9.5px，列宽 4rem，长名截成 `opencode-…` | 11px，列宽 5.25rem |
+| `.sheet__view`（AGENTS / SPACES） | 34 | 44，字号 9.5→11 |
+| `#herdr-sheet-filter` / `.col__clear` | 27 / 16×14 | 44 / 44×54 |
+
+两处选择器上的坑：
+
+1. **`.srow` 有个单列变体。** 空间列表用 `.srow--space`，它自己把 grid 改成单列
+   （`index.css:527`），所以放宽 agent 列必须写 `.srow:not(.srow--space)`，否则
+   空间行也会被两列模板挤掉名字。
+2. **清除键要长在行上，不在 input 上。** `.col__clear` 是
+   `position: absolute; right: 13px` 的一颗小字，只把 input 抬到 44px 它还是
+   16×14。改成 `top/right/bottom: 0` + `min-width: 44px` + `inline-flex` 居中，
+   它就吃满 44px 的 filter 行（实际 44×54），同时 input 用
+   `padding-right: 46px` 把文字让开，输入的字不会被 `×` 盖住。
+
+这些规则一律带 `.sheet` 前缀：`.col__input` / `.col__clear` 桌面侧栏
+（`Sidebar.tsx`）也在用，不带前缀会把桌面 rail 的筛选框一起抬到 44px。实测桌面
+picker 一行 30px、切换条 34px、筛选框 27px、`×` 16×14，与改前逐位相同。
 
 ## 5. 给服务端的一页需求（若要继续逼近 Ovis）
 
