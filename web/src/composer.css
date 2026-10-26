@@ -322,6 +322,29 @@
     height: 18px;
   }
 
+  /* 36px is all the card can afford — the resting 2x2 pad is 74px tall and a
+     44px face would take 16px more straight off the transcript — so the thumb
+     reach is added outside the face, the same way the attachment's corner mark
+     does it: an invisible skirt takes each control to 44x44 without moving a
+     pixel of layout. Neighbours are 2px apart, so the skirts only overlap in
+     the empty gap between two controls, and the later sibling paints over the
+     earlier one: the last of the four is send, which is the one press that must
+     never land on a neighbour. */
+  .prompt__act,
+  .prompt__send,
+  .prompt__keys {
+    position: relative;
+  }
+
+  .prompt__act::before,
+  .prompt__send::before,
+  .prompt__keys::before {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border-radius: 999px;
+  }
+
   /* Typing mode. The 2×2 pad is 74px tall, so it — not the draft — was setting
      the height of a 96px card, and every pixel of the card is a pixel the
      transcript loses to the keyboard. While the keyboard is up the same four
