@@ -143,6 +143,7 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `1209205` | 截断之后全名去哪看：4.13 把长 slug 截成 `opencode-gpt5…`，全名只进了 `title`——而 `title` 只认悬停，手机上长按什么也没有，偏偏「这个 pane 跑的是什么 agent」就是决定点不点的信息。芯片补长按（`longPressHandlers`）开 pane 菜单，菜单顶部加一行 `agent` 打印全名（`MenuTarget.agent`，行高按 34 计进弹层高度），回归测试钉三件：1024 下两个 `.tile__head` 高度相等、芯片 `scrollWidth > clientWidth`、`touchstart` 之后菜单里读得到 `opencode-gpt5-coder-xhigh`。同一次提交还带上了 §4.15 的横屏键盘修复 |
 | `a3cc97b` | 桌面上的 tab 条一溢出，够不着的就不只是最后一个 tab：`white-space: nowrap` 让每个 tab 的自动最小宽度等于整个名字，tab 从不收缩、溢出的是条本身——而桌面条把滚动条藏了（`.strip::-webkit-scrollbar { display: none }`），鼠标滚轮也不滚横向，于是 1024px 下八个 139px 的 tab 在 848px 的条里多出 292px，最后几个落在右边界外、任何指针手势都够不着；`+` 的 sticky 只写在窄屏块里，同一个原因下它也一起越界（1286–1316）。让名字走省略号（`.tab__name` 早就会）之后 tab 可缩到 88px，下限 5.5rem 保住序号/编号/状态点，八个 tab 以 102px 全部上屏（848 == 848）；`+` 的固定从窄屏块提到基础规则（桌面同样需要），仍然溢出的情形（1024 下 12 个 tab：1087 > 848）由 `strip--more` 在固定钮左缘补一道阴影，说明底下还有 |
 | `8ca78a4` | herdr 的 zoom 让舞台失去了解释自己的能力：`arrangeTiles` 在 `layout.zoomed` 时只返回一格，`arrangeable` 又同时把排列开关藏掉，而 tile 头的闸门是 `tiles.length > 1`——于是一个装着 4 个 pane 的 tab、屏幕上 1 格、头上没名字、没有关闭入口、也没有一句话说另外 3 格去哪了。闸门改成 `tileHeadVisible(tileCount, tabPaneCount)`（多于一格，或该 tab 的 pane 多于显示的格），`layout.zoomed` 时在头里补一句 `zoom 1/4`（琥珀、无框、`--step-micro`，因为 herdr 没有 unzoom RPC，它只能陈述不是按钮）；显示的格恰好不是输入目标时，空态从 `click to read this pane` 改读 `click to work here — the prompt sends to pD`；顺带触摸平板的头从 28px 长到 37px、× 从悬停才显示改成常显 32×32（手机走透镜不渲染tile，所以只命中 iPad 尺寸的帧） |
+| `3b29472` | 一条非 ASCII（或带换行）的草稿只停在 pane 的输入框里，发不出去：这类文字一个键带不动，走的是粘贴路径，而 `pane.send_text` 会把行尾的 `"\n"` 一起写进 pane；在 raw 模式的 TUI 里那个换行是 LF，行编辑器读成「在草稿里换行」（Ctrl+J），于是文字留在 prompt、永远不提交。隔离会话里用一个只打印收到字节的 pane 量到 herdr 0.9.0：带换行的 `pane.send_text` 到达 `61 0a`，`Enter` 键到达 `0d`。改成粘贴不带换行、紧接一次独立的 `Enter` 键；ASCII 的打字路径本来就以那个键收尾，不动 |
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
 `resolveLens` 的三例）；
@@ -908,3 +909,55 @@ herdr 能把一个 tab 缩放到单格（zoom）。桌面舞台在 `layout.zoome
 2. `pane.read` 增加 **`before` 游标**，让聊天能往前翻而不是只有 200 行。
 3. 会话历史的 `history_id`/世代号，避免历史被替换时整段重排。
 4. （可选）选择菜单的结构化读出：`{options[], default_index}`。没有也能用键条，有则能做卡片。
+
+### 4.18 发出去的消息为什么停在输入框（`3b29472`）
+
+现场是：手机上打了一句中文，点发送，我们的草稿框清空了、placeholder 回到
+`send to w2:p1`，而 pane 里那句话**还在它自己的输入框里**，光标停在末尾，一个字节都没提
+交。这条不是渲染问题，是发送语义问题——中间隔了一次「文字被当成粘贴」。
+
+草稿的两条出口本来就分岔（4.1 之前的打字/粘贴之分）：
+
+- **一个键带得动的 ASCII** → `typePaneText`：逐字符发 `keys`，最后补一次 `Enter` 键。
+- **一个键带不动的** → `sendPaneText(paneId, line)`，默认 `newline = true`，于是
+  `web/src/lib/herdr.ts` 在行尾补一个 `"\n"` 写进 `/input`。
+
+病根在第二条。`pane.send_text` 是「把字节原样写进 pty」：它不做 bracketed paste、也不
+做行尾转换，`"\n"` 就是 LF。而现代 TUI 的行编辑器处在 raw 模式，读到的 **LF 是
+「换行」这个动作本身**（等同 Ctrl+J），**CR 才是 Enter**。所以旧路径等于「把文字打进去，
+再在草稿里敲一次换行」——文字进去了、草稿变两行、什么也没发。用户看到的那句「消息在输入框里，
+发出不去」逐字对应这个字节。
+
+量到的东西（隔离的 `herdr --session probe` 会话，pane 里跑一个 `tty.setraw` 的
+Python 读字节程序，只回显十六进制）：
+
+| 发的调用 | pane 收到的字节 | 含义 |
+| --- | --- | --- |
+| `pane send-text w1:p1 $'abc\n'` | `616263 0a` | 文字 + LF（= Ctrl+J，草稿内换行） |
+| `pane send-keys w1:p1 enter` | `0d` | CR（= 真 Enter，提交） |
+| `pane run w1:p1 "xyz"` | `1b5b3230307e 78797a 1b5b3230317e 0a` | bracketed paste 包一层，末尾仍是 LF |
+
+顺带否掉了先前的猜测：不是 bracketed paste 的锅。`pane.send_text` 根本不加
+`ESC[200~…ESC[201~`，加了那一层的是 `pane run`（CLI 的 `pane run` 帮人「打字+回车」）。
+
+再往下做了一次端到端复现（同一个隔离会话，pane 里换成一个仿真 TUI：raw 模式，收到 `0a`
+打印 `NEWLINE`、收到 `0d` 打印 `SUBMIT:<草稿>`）：
+
+- 旧路径 `send-text $'abc\n'` → 屏幕上 `abcNEWLINE`，没有 `SUBMIT`。
+- 新路径 `send-text "检查一下"` + `send-keys enter` → `SUBMIT:检查一下`。
+
+修法就是让「粘贴」和「提交」变成两次独立调用，而不是一个带尾巴的字符串：
+`pasteThenSubmit(paneId, line)` = `sendPaneText(paneId, line, false)`（不带换行）→
+`sendPaneKeys(paneId, ["Enter"])`；粘贴失败就直接返回 false，不再补一次键。ASCII 的
+`typePaneText` 路径本来就以 `Enter` 键收尾，所以它一直是好的——这也解释了为什么
+「英文发得出去、中文发不出去」这种一半好一半坏的现场。
+
+`handOff`（Tab 补全、`/` 菜单）照旧不补 Enter：那两条路径要的就是「把字放进 pane，
+让菜单开着」。
+
+验证：`npm --prefix web run typecheck` 干净；`test:unit` 326/326；
+`npm --prefix web run build` 通过；浏览器用例
+`text a key cannot carry is sent as text` 改为断言先 `POST …/input {"text":"检查一下这个目录"}`
+（**不再带 `\n`**）、再 `POST …/keys {"keys":["Enter"]}`，三条 prompt 用例全过
+（`enter types the line key by key and keeps history` 与
+`tab hands the line to the pane so completion continues there` 未受影响）。
