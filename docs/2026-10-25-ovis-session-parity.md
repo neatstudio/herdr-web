@@ -35,7 +35,7 @@ herdr-web 建立在**客户端重解 ANSI 快照**之上（`readPane(paneId, 200
 | 输入框随内容长高 | `Composer.tsx` `sizeTextarea()`（`useLayoutEffect` + 隐藏测量副本） | `components/PromptBar.tsx` + `lib/composer.ts` `fitComposer()`（提交 `4278e69`） |
 | 按 pane 存草稿 | `ovis:composer-draft:<paneStorageId>` | `herdr:draft:<paneId>`（`lib/composer.ts:95`） |
 | `@` 提及 / `/` 命令 | `lib/mentions.ts` + `usePaneCommands` | `lib/composer.ts` `mentionQuery`/`slashQuery` + `PromptBar.tsx`（提及 pane/workspace/路径，非 agent 专有） |
-| 附件上传 / 粘贴 / 拖入 | `uploadImages` + `.composer-attachments` | `lib/attachments.ts` + `PromptBar.tsx`（`uploadFile`） |
+| 附件上传 / 粘贴 / 拖入 | `uploadImages` + `.composer-attachments` | `lib/attachments.ts` + `PromptBar.tsx`（`uploadFile`）；粗指针下四枚 36px 控件各长出 `-4px` 裙边，实际接住 44×44（提交 `fb7cc02`） |
 | 真实 xterm，不做假终端 | `useTerminalMount.ts`（`scrollback: 0`，翻页走 RPC） | `components/session/TerminalLens.tsx`（本地 `scrollback: 2000`，滚轮天然可用） |
 | 控制键条 | `KeyBar.tsx`（默认 12 键、粘滞修饰、长按连发、安全区、mask 渐隐） | `components/session/KeyBar.tsx` + `lib/keybar.ts`（同一套：粘滞修饰、长按连发、`is-at-screen-bottom`；键分三层，且按软键盘高度收细，见 §4 `057348e`、`86169ad`） |
 | 终端里回答选择菜单 | `PromptCard` + 键位协议 | `PICKER_BAR_KEYS` + 窗口捕获方向键（`ChatLens.tsx:92-115`），聊天里直接回 Esc/↑↓/Enter（提交 `ce2abcd`） |
@@ -122,6 +122,7 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `4afa186` | 菜单的答案原来只能用方向键走过去：键条只有 `esc ↑ ↓ ← → ↵` 六个键，手机上一份三选一的菜单要按三次才选中、四次才确认，而答案本身就是 agent 在等的那个数字。改成把快照里拼出来的答案做成 chips（`parsePickerOptions()` 复用 `showsPicker` 的同一道闸，所以绝不会出现「有键条没 chip」或反之）：`[1] keep [2] skip [3] edit` 一行内联菜单变成三枚 chip，点一下发出 `{"keys":["2"]}`。标签止于内联菜单对齐用的两格以上空档（`1. run step 2. then` 因此是一个答案不是一个），超长标签**中间**截断而不是结尾——答案常是共享前缀的路径，能区分它们的是尾巴（`/Users/gouk…kspace-name-w0`）。键条保留：`esc` 在它手上，且「herdr 报 blocked、快照却没写答案」那种菜单只有键条过得去 |
 | `f421b9c` | 答案带不走：唯一的复制在最后一条上，且只给一行拍平的纯文本；手机更糟——`.chat__meta` 只在 hover/`focus-within` 时 `opacity:1`，拇指既没有 hover 也点不到还没显形的东西，等于这一功能只对桌面有用。改成每一轮都写两个格式：`markdown` 是 agent 原文（标题、围栏、行内代码原封不动），`text` 去标记但**围栏内的内容一个字节不动**（`sh` 块里的 `#` 是注释不是标题，`npm test --watch=false` 原样），操作者自己说的话在两种格式里都原样保留（他打的 `#` 就是他要的）。判断全在 `lib/answerText.ts` 的 `turnCopyText()`：按行扫围栏状态机丢围栏行、只对围栏外的行剥 `#`/`>` 与行内语法，链接 label 与 target 相同只印一次；`TurnList` 拆出 `TurnFooter`，`copied` 记成 `{id, format}`，只把刚点的那一个按钮写成 `copied`（1.5s 后复原），另一格式的标签不被顺手改掉 |
 | `f7118af` | 代码块的两个按钮是整条聊天里最后两处点不准的地方：`copy` 只有 26×20，`show all 34 lines` 有 44px 宽却只有 30px 高——而正好是手机上最需要折的那段构建日志。粗指针下让表头行本身长到 44px（语言标签继续吃省略号），`copy` 撑成 44×44、`show all` 补到 44px 高；细指针一律不动，仍是 30px 的表头与 20px 高的文字链，鼠标不需要那块空白。手机上每处代码块因此多 14px 的表头高度，换来的是不用瞄准的手指尺寸 |
+| `fb7cc02` | 输入区的四枚按钮正好落在拇指落点上，却只有 36×36：`+`（附件）、图片、`/`（命令）、发送两两相隔 2px，组成 2×2 的 74px 方块。面不能长大——36px 正是「静止 96px / 弹键盘 66px」两张卡高的来源，每多 1px 面就从转录里拿走 1px——所以手指的余量加在面**外面**，和本文件里 `.prompt__untile` 用同一个办法：透明的 `::before` 裙边 `inset:-4px`，四个控件各得 44×44，一个元素都不动。裙边只在 2px 缝里互相重叠，后画的兄弟盖住先画的，最后一个正是发送——这一下绝不会落到邻居身上 |
 
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
@@ -135,6 +136,11 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 `show all` 30px 高，改后 `copy` 44×44、`show all` 44px 高、表头 44px，点 `copy` 得到 `copied`
 且不滚走；720×900 细指针（narrow 桌面）尺寸一位不变（表头 30 / `copy` 26×20 / `show all` 30），
 两侧页面溢出均为 0/0。
+`/tmp/probe-composer-tap.mjs`：390×844 手机（明暗两色 × 静止/弹键盘）四枚控件都报 44×44 有效、
+卡高仍是静止 96px 与键盘 66px（`html.has-keyboard` 下单行 `+ image ↵ send`）、页面溢出 0/0；
+`elementFromPoint` 从面外 3px 落点仍归该控件，往外 14px（进草稿）就归 `textarea`；
+发送右下方无人抢，邻居的裙边只在 2px 缝里交换。1280px 桌面一位不变：34px 面、没有裙边。
+截图 `thumb-{dark,light}-{resting,typing}.png`。
 `/tmp/probe-copy.mjs`：390×844 手机（明暗两色）两轮各有 `markdown`/`text` 两个按钮，粗指针下
 `min-height` 就是 44px、`.chat__meta` 不再靠 hover（两轮 opacity 均 1），点 `markdown` 拿到
 `## 改好了` 与 ```` ```sh ```` 行、点 `text` 拿到去掉 `#`/反引号的同一段但围栏里的
