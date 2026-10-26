@@ -2728,8 +2728,16 @@ body::before {
   cursor: pointer;
 }
 
+/* `opacity` on a control is a window, not a dimmer. The fleet sheet pins this
+   button over its own form (`position: sticky` in the narrow block below), and
+   rows scrolled under it read straight through the orange — the submit looked
+   like it had lost its fill at exactly the moment it was explaining why it was
+   unavailable. Mixing the same two colours into a solid value paints the
+   identical disabled tone over either theme without letting the page through. */
 .newws__submit:disabled {
-  opacity: 0.5;
+  opacity: 1;
+  background: color-mix(in srgb, var(--accent) 50%, var(--paper));
+  color: color-mix(in srgb, var(--paper) 50%, transparent);
   cursor: default;
 }
 
