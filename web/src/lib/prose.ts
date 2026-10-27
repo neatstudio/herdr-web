@@ -43,6 +43,45 @@ const CLOSERS = "”’」』）)]】》";
 /** Rows that Markdown must still see at the start of a line. */
 const BLOCK_START = /^(?:[-*+•·]|\d+[.)、]|[（(]\d+[)）]|#{1,6}\s|>|\||\u2500|\u2502|\u250c|\u2514|\u251c|\u253c)/;
 
+/**
+ * Spaces beside a full-width mark are not word gaps: the model writes
+ * `go vet ./... 、前端` and `调用 RemoveAll 。应在`, and on a phone that reads as
+ * a stumble, not as Chinese. Only the space *beside the punctuation* goes —
+ * `没有 .env.test` keeps its space, because Chinese technical writing puts one
+ * between a CJK word and an inline code span on purpose.
+ *
+ * Fenced code and drawn blocks are untouched: there a space can be content.
+ */
+const BEFORE_WIDE =
+  /([^\s])[ \t]+([\u3001-\u303f\u2018-\u201f\u2026\uff01-\uff0f\uff1a-\uff20\uff3b-\uff40\uff5b-\uff65])/g;
+
+/**
+ * Marks that never take a space on the far side either. A full-width mark is a
+ * whole column of its own, so `。 我检查了` and `： go vet` read as a broken
+ * column rather than as a pause. Only the marks that end a clause or open one
+ * are listed: a full-width `～` in `10 ～ 20` *is* a word gap and stays.
+ *
+ * There has to be a glyph after the run: a row that simply ends `好了 。  ` is
+ * a Markdown hard break (two trailing spaces), and that is a structure rather
+ * than a word gap.
+ */
+const AFTER_WIDE = /([。，、；：！？…）】」』》〉”’（【「『《〈“‘])[ \t]+(?=\S)/g;
+
+/**
+ * The gap a block marker needs. `4. “合并并拉取本地”` is an ordered list item
+ * only while the space after `4.` is there, and `“` is a full-width mark, so
+ * tidying that gap folds the item into the paragraph above it and the list
+ * loses its number. The marker's own run of spaces is never part of the tidy.
+ */
+const BLOCK_LEAD = /^(\s*(?:#{1,6}|[-*+]|\d{1,9}[.)、])[ \t]+)/;
+
+function tighten(line: string): string {
+  const lead = BLOCK_LEAD.exec(line);
+  const head = lead === null ? "" : lead[1];
+  const rest = line.slice(head.length);
+  return head + rest.replace(BEFORE_WIDE, "$1$2").replace(AFTER_WIDE, "$1");
+}
+
 /** Any drawn line: box drawing means a diagram or a table, never prose. */
 const DRAWN = /[\u2500-\u257f]/;
 
@@ -211,5 +250,25 @@ export function reflowProse(text: string): string {
     out[out.length - 1] = previous + separator(previous, line) + line.trimStart();
   }
 
-  return out.join("\n");
+  // Joining rows can leave the model's own spaces next to full-width marks, and
+  // so can a row that was never joined at all, so this pass is on every prose
+  // row — the two that must keep their bytes (fences, drawn blocks) are skipped
+  // by the same test that kept them out of the loop above.
+  let inFence: string | null = null;
+  return out
+    .map((line) => {
+      const open = FENCE_RE.exec(line);
+      if (inFence !== null) {
+        if (open !== null && open[1] === inFence) {
+          inFence = null;
+        }
+        return line;
+      }
+      if (open !== null) {
+        inFence = open[1];
+        return line;
+      }
+      return DRAWN.test(line) ? line : tighten(line);
+    })
+    .join("\n");
 }

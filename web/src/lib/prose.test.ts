@@ -72,6 +72,34 @@ test("a Chinese sentence that ended at the wrap column is a wrap, not a paragrap
   assert.equal(out.split("\n\n").length, 1);
 });
 
+test("a space the model left before a full-width mark is not a word gap", () => {
+  const rows = "静态检查已通过： go vet ./... 、前端 TypeScript ；该路径调用  RemoveAll 。";
+  assert.equal(reflowProse(rows), "静态检查已通过：go vet ./...、前端 TypeScript；该路径调用  RemoveAll。");
+});
+
+test("a space between a Chinese word and an inline code span stays", () => {
+  const rows = "项目没有 `.env.test` ，按约定不跑功能测试。";
+  assert.equal(reflowProse(rows), "项目没有 `.env.test`，按约定不跑功能测试。");
+});
+
+test("a fenced or drawn row keeps the spaces beside full-width marks", () => {
+  const rows = ["```", "echo 完成 。", "```", "│ 完成 。 │"];
+  assert.equal(reflowProse(rows.join("\n")), rows.join("\n"));
+});
+
+test("a numbered item quoting the model keeps the gap its marker needs", () => {
+  // `4. “…”` is a list item only while the space after `4.` survives; tidying it
+  // away folds the item into the row above and Markdown stops numbering it.
+  const rows = ["   3. 跨项目仓库归属校验不完整。", "   4. “合并并拉取本地”无法更新默认分支。"];
+  assert.equal(reflowProse(rows.join("\n")), rows.join("\n"));
+});
+
+test("trailing spaces are a hard break, not a word gap", () => {
+  // Two trailing spaces are how Markdown keeps a row break inside a paragraph,
+  // so only the gap before the mark goes and the row still ends in two spaces.
+  assert.equal(reflowProse("第一行 。  "), "第一行。  ");
+});
+
 test("blank rows stay blank and are never joined across", () => {
   const rows = ["第一段。", "", "第二段。"];
   assert.equal(reflowProse(rows.join("\n")), "第一段。\n\n第二段。");
