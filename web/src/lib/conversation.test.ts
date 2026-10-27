@@ -34,6 +34,18 @@ function box(rows: readonly string[]): string {
   return rows.map((row) => band(row.padEnd(64))).join("\n");
 }
 
+/** Antigravity echoes what was submitted, bold, behind a bare caret. */
+function agyEcho(text: string): string {
+  return `${ESC}1m${ESC}38;5;4m> ${text}${RESET}`;
+}
+
+/** One row of the Antigravity splash: half-block art with a label beside it. */
+function agySplash(art: string, label: string): string {
+  return `${ESC}38;2;240;114;54m${art}${RESET}        ${grey(label)}`;
+}
+
+const AGY_RULE = "─".repeat(60);
+
 function snapshot(lines: readonly string[]): string {
   return `${lines.join("\r\n")}\r\n`;
 }
@@ -792,4 +804,85 @@ test("prose around a fence is still trimmed", () => {
   const turn = deriveConversation(text).turns[0];
   assert.match(turn.answer, /^a deeply indented paragraph/m);
   assert.match(turn.answer, /\n  code/);
+});
+
+/*
+ * Antigravity CLI opens every `pane.read` window on a five-row splash: the
+ * half-block logo with the version, the account, the model and the cwd beside
+ * it, then `> what was submitted` in bold accent ink. The splash used to be the
+ * first paragraph of the answer, and the question itself vanished because the
+ * client fills no band for it.
+ */
+test("the antigravity splash is not prose and its caret echo opens the turn", () => {
+  const text = snapshot([
+    "",
+    agySplash("▄▀▀▄", "Antigravity CLI 1.4.7"),
+    agySplash("▀▀▀▀▀▀", "gouki.xiao@gmail.com (Google AI Pro)"),
+    agySplash("▀▀▀▀▀▀▀▀", "Gemini 3.8 Flash (High)"),
+    agySplash("▄▀▀    ▀▀▄", "~/server/herdr-web"),
+    agySplash("▄▀▀      ▀▀▄", ""),
+    "",
+    grey(AGY_RULE),
+    agyEcho("安装 https://github.com/DietrichGebert/ponytail"),
+    "",
+    grey("▸ Thought for 20s, 2.4k tokens"),
+    grey("  Reviewed the plugin directory and its rule loading."),
+    ink("已成功安装 ponytail。"),
+  ]);
+  const conversation = deriveConversation(text);
+  assert.equal(conversation.turns.length, 1);
+  const turn = conversation.turns[0];
+  assert.equal(turn.user, "安装 https://github.com/DietrichGebert/ponytail");
+  assert.equal(turn.answer.trim(), "已成功安装 ponytail。");
+  assert.equal(turn.answer.includes("Antigravity"), false);
+  assert.equal(turn.answer.includes("Google AI Pro"), false);
+  // The wrapped rows under the timing row are the thought, not the answer.
+  assert.equal(turn.thoughts.length, 1);
+  assert.match(turn.thoughts[0], /Reviewed the plugin directory/);
+});
+
+test("a second caret echo mid-transcript opens its own turn", () => {
+  const text = snapshot([
+    agySplash("▄▀▀▄", "Antigravity CLI 1.4.2"),
+    grey(AGY_RULE),
+    agyEcho("第一个问题"),
+    ink("第一个回答。"),
+    "",
+    grey(AGY_RULE),
+    agyEcho("第二个问题"),
+    ink("第二个回答。"),
+  ]);
+  const turns = deriveConversation(text).turns;
+  assert.deepEqual(
+    turns.map((turn) => turn.user),
+    ["第一个问题", "第二个问题"],
+  );
+});
+
+test("half-block art that names no client stays in the answer", () => {
+  const text = snapshot([
+    ink("看一下这个进度条："),
+    grey("▄▀▀▀▀      ▀▀▄▄"),
+    ink("过了三分之一。"),
+    ink("> 这是引用，不是回显"),
+  ]);
+  const conversation = deriveConversation(text);
+  const turn = conversation.turns[0];
+  assert.equal(turn.user, null);
+  assert.match(turn.answer, /▄▀▀▀▀      ▀▀▄▄/);
+  assert.match(turn.answer, /^> 这是引用，不是回显$/m);
+});
+
+test("a bold caret row inside a fence is shell, not a prompt echo", () => {
+  const text = snapshot([
+    agySplash("▄▀▀▄", "Antigravity CLI 1.4.7"),
+    grey(AGY_RULE),
+    agyEcho("把输出存到文件里"),
+    ink("```sh"),
+    `${ESC}1m> out.txt${RESET}`,
+    ink("```"),
+  ]);
+  const turn = deriveConversation(text).turns[0];
+  assert.equal(turn.user, "把输出存到文件里");
+  assert.match(turn.answer, /^> out\.txt$/m);
 });

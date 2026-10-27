@@ -215,6 +215,16 @@ function hasDefaultInk(line: Line): boolean {
 const THOUGHT_MARK_RE = /^\s*[○◌▸▹⟡◇◈●✻✶✳*]\s+(?:thought|thinking|reasoning)\b/i;
 const THOUGHT_GLYPH_RE = /^\s*[○◌▸▹⟡◇◈●✻✶✳*]\s+/;
 
+/*
+ * Gemini wraps its thinking summary over several rows: the first one carries
+ * `▸ Thought for 20s, 2.4k tokens`, and every row under it is printed grey and
+ * indented with no marker of its own. Read alone, such a row opens the answer
+ * with the agent's own notes about what it looked at.
+ */
+function isThoughtWrap(line: Line): boolean {
+  return /^\s{2,}\S/.test(line.plain) && !hasDefaultInk(line) && !isChrome(line);
+}
+
 function stripThoughtMark(text: string): string {
   return text.replace(THOUGHT_GLYPH_RE, "");
 }
@@ -321,6 +331,73 @@ function isSplashArt(text: string): boolean {
     }
   }
   return braille >= 3 && braille * 4 >= text.length;
+}
+
+/**
+ * Antigravity CLI (`agy`, Gemini) opens its screen with a five-row splash:
+ * two-tone half-block art with the client version, the account, the model and
+ * the cwd printed beside the drawing. `pane.read` starts its window on that
+ * splash, so it used to open the transcript with three rows of account
+ * furniture the agent never wrote.
+ *
+ * Only a run that names the client is dropped. Half blocks are also what a
+ * progress or sparkline row is drawn with, and losing the agent's own chart
+ * would cost more than printing the client's letterhead.
+ */
+const BANNER_ART_RE = /^[\u2584\u2580]{2,}[\s\u2584\u2580]*$/;
+const BANNER_LABEL_RE = /^[\u2584\u2580]{2,}[\s\u2584\u2580]*\s{2,}\S/;
+const BANNER_MARK_RE = /Antigravity CLI\s+\d/;
+
+function stripBanner(lines: Line[]): { lines: Line[]; banner: boolean } {
+  let end = 0;
+  let marked = false;
+  while (end < lines.length && end < 8) {
+    const text = textOf(lines[end]);
+    if (text === "") {
+      end += 1;
+      continue;
+    }
+    if (!BANNER_ART_RE.test(text) && !BANNER_LABEL_RE.test(text)) {
+      break;
+    }
+    if (BANNER_MARK_RE.test(text)) {
+      marked = true;
+    }
+    end += 1;
+  }
+  if (!marked) {
+    return { lines, banner: false };
+  }
+  return { lines: lines.slice(end), banner: true };
+}
+
+/**
+ * The line the operator submitted, as Antigravity echoes it: a bare `>` caret
+ * followed by the text, painted bold in the client's accent colour. That client
+ * fills no band, so the question never reached the transcript as a user turn
+ * and instead sat in the answer above the reply.
+ */
+const CARET_ECHO_RE = /^>\s+/;
+
+function boldShare(line: Line): number {
+  let bold = 0;
+  let total = 0;
+  for (const span of line.spans) {
+    const chars = span.text.trim().length;
+    total += chars;
+    if (span.style.bold) {
+      bold += chars;
+    }
+  }
+  return total === 0 ? 0 : bold / total;
+}
+
+function isCaretEcho(line: Line): boolean {
+  return /^>\s+\S/.test(textOf(line)) && boldShare(line) >= 0.5;
+}
+
+function caretEchoText(text: string): string {
+  return text.replace(CARET_ECHO_RE, "");
 }
 
 function isStatusBar(text: string): boolean {
@@ -1158,7 +1235,7 @@ function fencedRows(lines: readonly Line[]): boolean[] {
   return inside;
 }
 
-function buildBlocks(lines: Line[], groups: Map<number, BoxGroup>): Block[] {
+function buildBlocks(lines: Line[], groups: Map<number, BoxGroup>, banner: boolean): Block[] {
   const blocks: Block[] = [];
   const fenced = fencedRows(lines);
   // A client that prints `---EOF--*` tells us where an answer ends, so a
@@ -1175,6 +1252,9 @@ function buildBlocks(lines: Line[], groups: Map<number, BoxGroup>): Block[] {
   // Set while skipping a queued command's echo, so the blank rows around it do
   // not open gaps in the answer that was interrupted.
   let muted = false;
+  // Set while the thought block being collected can still absorb wrapped rows
+  // (see `isThoughtWrap`); cleared by every path that closes the block.
+  let thoughtOpen = false;
 
   const flushAnswer = (): void => {
     if (answer.length > 0) {
@@ -1183,6 +1263,7 @@ function buildBlocks(lines: Line[], groups: Map<number, BoxGroup>): Block[] {
     }
   };
   const flushThought = (): void => {
+    thoughtOpen = false;
     if (thought.length > 0) {
       blocks.push({ kind: "thought", text: thought.join("\n") });
       thought = [];
@@ -1211,6 +1292,19 @@ function buildBlocks(lines: Line[], groups: Map<number, BoxGroup>): Block[] {
     }
     if (EOF_MARK_RE.test(text)) {
       terminated = true;
+    }
+    // See `isCaretEcho`: only a client that opened on the Antigravity splash
+    // reads a leading `>` as its own echo, so a quoted line in every other
+    // transcript stays prose. A `>` inside a fence is shell, never an echo.
+    if (banner && fenced[index] !== true && isCaretEcho(line)) {
+      const asked = caretEchoText(text);
+      flushAnswer();
+      flushThought();
+      blocks.push({ kind: "user", text: asked });
+      terminated = false;
+      slashTurn = /^\/\S/.test(asked);
+      index += 1;
+      continue;
     }
     if (isChrome(line) && !(slashTurn && isClientView(text))) {
       index += 1;
@@ -1276,6 +1370,12 @@ function buildBlocks(lines: Line[], groups: Map<number, BoxGroup>): Block[] {
       flushAnswer();
       // The marker is the client's glyph, not part of what was thought.
       thought.push(stripThoughtMark(text));
+      thoughtOpen = true;
+      index += 1;
+      continue;
+    }
+    if (thoughtOpen && isThoughtWrap(line)) {
+      thought.push(text);
       index += 1;
       continue;
     }
@@ -1416,8 +1516,9 @@ export function deriveConversation(text: string): Conversation {
   const lines = rawLines.map(readLine);
   const lineCount = rawLines.length - (text.endsWith("\n") ? 1 : 0);
   try {
-    const groups = boxGroups(lines);
-    const blocks = buildBlocks(lines, groups);
+    const stripped = stripBanner(lines);
+    const groups = boxGroups(stripped.lines);
+    const blocks = buildBlocks(stripped.lines, groups, stripped.banner);
     return { turns: foldTurns(blocks), lines: lineCount };
   } catch {
     return plainConversation(text);
