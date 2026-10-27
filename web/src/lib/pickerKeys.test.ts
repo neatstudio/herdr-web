@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  pickerAsk,
   pickerKeyName,
   isTypingTarget,
   parsePickerOptions,
@@ -197,4 +198,29 @@ test("a long answer is clipped in the middle, so its tail survives", () => {
   );
   assert.equal(paths?.[0].label, "/Users/gouk…erdr-web/alpha");
   assert.equal(paths?.[1].label, "/Users/gouk…herdr-web/beta");
+});
+
+test("a short frame can still say what the menu is asking", () => {
+  const menu = ["有三个方向，选一个：", "", "❯ 1. 先修横屏的键条", "❯ 2. 先修转录的分段", "esc to cancel · enter to confirm"].join("\n");
+  assert.equal(pickerAsk(menu), "有三个方向，选一个：");
+
+  // A boxed menu puts a border and a blank line between question and answers.
+  const boxed = ["│ Which branch?  │", "│                │", "│ ❯ 1. main      │", "│   2. release   │", "esc to cancel"].join("\n");
+  assert.equal(pickerAsk(boxed), "Which branch?");
+
+  // An inline menu asks on the same row as its answers.
+  assert.equal(pickerAsk("Pick a lane  1. chat  2. terminal\nEnter to confirm"), "Pick a lane");
+});
+
+test("without prose above them, answers are not a question", () => {
+  // The menu opens the tail: nothing above it to quote.
+  assert.equal(pickerAsk(["1. yes", "2. no", "Esc to cancel"].join("\n")), null);
+  // Work output far above the menu is not the question either.
+  assert.equal(
+    pickerAsk(["▸ ran tool", "▸ ran tool", "▸ ran tool", "▸ ran tool", "1. yes", "2. no", "Esc to cancel"].join("\n")),
+    null,
+  );
+  // Not a menu at all.
+  assert.equal(pickerAsk("just prose"), null);
+  assert.equal(pickerAsk(""), null);
 });

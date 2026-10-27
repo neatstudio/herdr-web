@@ -102,6 +102,36 @@
   padding-bottom: 8px;
 }
 
+/* The menu's question, for a frame with no room for the transcript. A
+   landscape phone with the keyboard up leaves the lane 18px — the menu's hint
+   row, with the question itself four lines higher and gone. The answers are
+   chips and the shift keys are buttons, so the frame becomes an answer card;
+   this line is its head. Everywhere else it stays out of the way: there the
+   transcript shows the question in place, and a copy would only repeat it. */
+.chat__ask {
+  display: none;
+  flex: none;
+  width: var(--ui-lane);
+  margin: 0 auto;
+  height: 18px;
+  padding-inline: 2px;
+  font-family: var(--ui-mono, var(--font-mono));
+  font-size: var(--ui-meta, 11px);
+  line-height: 18px;
+  color: var(--ui-text, var(--ink));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The glyph the terminal draws before the line being asked about. */
+.chat__ask::before {
+  content: "❯";
+  margin-right: 6px;
+  color: var(--ui-accent, var(--accent));
+  font-size: var(--step-micro, 9.5px);
+}
+
 /* A picker in the transcript needs keys, and that bar belongs to the document,
    not to the composer: the composer below it already pads for the home
    indicator, so the bar keeps only its own 2px instead of doubling the inset. */
@@ -209,6 +239,53 @@
 
 .chat__pickopt:active {
   background: var(--ui-panel, var(--surface));
+}
+
+.chat__pickkey {
+  display: none;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: var(--rule-w) dashed var(--ui-border-strong, var(--rule-strong));
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ui-dim, var(--ink-dim));
+  font-family: var(--ui-mono, var(--font-mono));
+  font-size: var(--ui-meta, 11px);
+  line-height: 1;
+  cursor: pointer;
+  scroll-snap-align: start;
+}
+
+.chat__pickkey:active {
+  background: var(--ui-panel, var(--surface));
+}
+
+/* A menu is one card when the frame is short. Below 167px of lens the stack is
+   a 44px answer row, a 44px key bar and 16px of lane air, which leaves the
+   question under five lines of a lane that is itself the only thing able to
+   scroll — so it is simply not there. The card pays 18px for the question,
+   folds the bar's two shift keys into the answers row (esc and enter are the
+   whole menu vocabulary the chips do not already carry) and hands the rest to
+   the transcript. The bound is where the lane would show the question in place
+   again: 18 + 44 + 16 + 90 ≈ 168. */
+@container lens (max-height: 167px) {
+  .chat__ask {
+    display: block;
+  }
+
+  .chat__pickkey {
+    display: inline-flex;
+  }
+
+  /* Only when the answers are chips. A menu whose answers the snapshot never
+     spelled out keeps the bar: there is nothing else to press. */
+  .chat:has(.chat__pick) .keys {
+    display: none;
+  }
 }
 
 .chat__picknum {

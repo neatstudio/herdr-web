@@ -236,3 +236,48 @@ export function parsePickerOptions(text: string): PickerOption[] | null {
   }
   return options.length >= 2 ? options.slice(0, 9) : null;
 }
+
+/** How many lines above the first answer row the question may sit. */
+const ASK_LOOKUP = 3;
+/** A question ends by asking something; work output does not. */
+const ASK_END = /[:：?？]\s*$/;
+/** Longest question the strip will carry; the strip clips at its own width. */
+const ASK_MAX = 96;
+
+/**
+ * The line a menu is asking about, for a frame too short to show the menu.
+ *
+ * On a landscape phone with the keyboard up the transcript gets about 18px:
+ * enough for the menu's hint row and nothing above it. The answers survive as
+ * chips, so the one thing missing is *what* they answer — the question, which
+ * sits four or five lines higher and has scrolled out of the sliver. This
+ * returns that line so the short frame can print it above the chips.
+ *
+ * `null` when the tail is not a menu, when the menu opens the tail (nothing
+ * above it to show), or when the nearest lines above the answers are furniture
+ * rather than prose.
+ */
+export function pickerAsk(text: string): string | null {
+  const lines = menuTail(text);
+  if (lines === null) {
+    return null;
+  }
+  const firstOption = lines.findIndex((line) => optionsOn(line) > 0);
+  if (firstOption < 0) {
+    return null;
+  }
+  // An inline menu puts its question on the same row as its answers.
+  const lead = lines[firstOption].split(OPTION_MARK)[0].replace(MENU_TRAIL, "").trim();
+  if (lead !== "" && !/^[│┃|╎❯›>»]+$/.test(lead)) {
+    return lead.length <= ASK_MAX ? lead : `${lead.slice(0, ASK_MAX - 1)}…`;
+  }
+  for (let i = firstOption - 1; i >= Math.max(0, firstOption - ASK_LOOKUP); i -= 1) {
+    const line = lines[i].replace(MENU_TRAIL, "").trim();
+    // Only the line that asks wins: `▸ ran tool` above a menu is context, not
+    // the question, and printing it as one would mislead.
+    if (line !== "" && ASK_END.test(line)) {
+      return line.length <= ASK_MAX ? line : `${line.slice(0, ASK_MAX - 1)}…`;
+    }
+  }
+  return null;
+}

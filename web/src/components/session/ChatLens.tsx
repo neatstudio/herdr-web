@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { deriveConversation } from "@/lib/conversation";
 import { sendPaneKeys } from "@/lib/herdr";
-import { PICKER_BAR_KEYS, emptyLatches, type KeyLatch } from "@/lib/keybar";
-import { parsePickerOptions, pickerKeyName, showsPicker } from "@/lib/pickerKeys";
+import { PICKER_BAR_KEYS, emptyLatches, keyNameFor, type KeyLatch } from "@/lib/keybar";
+import { parsePickerOptions, pickerAsk, pickerKeyName, showsPicker } from "@/lib/pickerKeys";
 import { usePaneRead } from "@/lib/usePaneRead";
 import { KeyBar } from "./KeyBar";
 import { TurnList } from "./TurnList";
@@ -20,6 +20,19 @@ import { TurnList } from "./TurnList";
  * that paints later. In those cases the honest answer is a hint row that offers
  * the real terminal, not a fabricated empty chat.
  */
+
+/**
+ * The two keys a menu needs beyond its options. The bar draws all six; on a
+ * frame too short for two rows of keys these two ride inside the answers row
+ * instead, so leaving or confirming a menu never means finding the bar first.
+ */
+const PICK_KEYS = PICKER_BAR_KEYS.filter((key) => key.id === "esc" || key.id === "enter")
+  .map((key) => ({
+    label: key.label,
+    ariaLabel: key.ariaLabel,
+    name: keyNameFor(key, emptyLatches()),
+  }))
+  .filter((key): key is { label: string; ariaLabel: string; name: string } => key.name !== null);
 
 export type ChatLensProps = {
   paneId: string;
@@ -66,6 +79,11 @@ export function ChatLens({ paneId, status, onOpenTerminal }: ChatLensProps) {
     () => (picker ? parsePickerOptions(read.text) : null),
     [picker, read.text],
   );
+  // On a landscape phone with the keyboard up the lane is 18px: the menu's
+  // hint row and nothing above it. The answers survive as chips and the shift
+  // keys as buttons, but the question they answer has scrolled out — this is
+  // the one line worth a strip of its own, printed above the chips.
+  const ask = useMemo(() => (picker ? pickerAsk(read.text) : null), [picker, read.text]);
 
   // The pane snapshot has no timestamps, so the only duration available is the
   // one we observe: from the first snapshot that carried the running turn.
@@ -298,6 +316,11 @@ export function ChatLens({ paneId, status, onOpenTerminal }: ChatLensProps) {
           </div>
         )}
       </div>
+      {ask !== null && (
+        <p className="chat__ask" title={ask}>
+          {ask}
+        </p>
+      )}
       {!atBottom && !empty && (
         <button
           type="button"
@@ -329,6 +352,17 @@ export function ChatLens({ paneId, status, onOpenTerminal }: ChatLensProps) {
             >
               <span className="chat__picknum">{option.key}</span>
               <span className="chat__picklabel">{option.label}</span>
+            </button>
+          ))}
+          {PICK_KEYS.map((key) => (
+            <button
+              key={key.label}
+              type="button"
+              className="chat__pickkey"
+              aria-label={key.ariaLabel}
+              onClick={() => void sendPaneKeys(paneId, [key.name])}
+            >
+              {key.label}
             </button>
           ))}
         </div>

@@ -150,7 +150,7 @@ const box = async (page: Page, selector: string) => {
 test.describe("a phone on its side, keyboard up", () => {
   test.use({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
 
-  test("the lens switch rides the key row for free", async ({ page }) => {
+  test("the lens switch rides the answer row for free", async ({ page }) => {
     await installBridge(page, { waiting: true });
     await page.goto("/");
     await expect(page.locator(".lens .keys")).toBeVisible();
@@ -159,9 +159,15 @@ test.describe("a phone on its side, keyboard up", () => {
     await keyboardUp(page, 210);
 
     const lens = await box(page, ".lens");
-    const keys = await box(page, ".lens .keys");
     const prompt = await box(page, ".prompt");
     const pill = await box(page, ".flip");
+
+    // A waiting menu in this frame is an answer card: the rows below the lane
+    // are the 18px question and a 40px answer row, and the bar's shift keys
+    // live in that row (see squeeze-rows). So the band the pill grew up in is
+    // gone — and the answer row's own trailing bay is what is empty now.
+    await expect(page.locator(".lens .keys")).toBeHidden();
+    const answers = await box(page, ".chat__pick");
 
     // The switch that used to be in the hidden header is gone; the floating one
     // replaces it and costs no height: the lens still ends where the composer
@@ -172,16 +178,16 @@ test.describe("a phone on its side, keyboard up", () => {
       Math.round(lens.y + lens.height),
     );
 
-    // It sits inside the key row's band, on its centre line, 10px in from the
-    // edge, and clears the last key by a comfortable margin.
+    // It sits inside the answer row's band, on its centre line, 10px in from
+    // the edge, and clears the last answer face by a comfortable margin.
     expect(Math.round(pill.x + pill.width)).toBe(844 - 10);
-    expect(pill.y).toBeGreaterThanOrEqual(keys.y);
-    expect(pill.y + pill.height).toBeLessThanOrEqual(keys.y + keys.height);
+    expect(pill.y).toBeGreaterThanOrEqual(answers.y);
+    expect(pill.y + pill.height).toBeLessThanOrEqual(answers.y + answers.height);
     expect(
-      Math.abs(pill.y + pill.height / 2 - (keys.y + keys.height / 2)),
+      Math.abs(pill.y + pill.height / 2 - (answers.y + answers.height / 2)),
     ).toBeLessThanOrEqual(4);
-    const lastKey = await box(page, ".lens .keys > *:last-child");
-    expect(pill.x - (lastKey.x + lastKey.width)).toBeGreaterThan(8);
+    const lastAnswer = await box(page, ".chat__pick > *:last-child");
+    expect(pill.x - (lastAnswer.x + lastAnswer.width)).toBeGreaterThan(8);
 
     // The face is 26px tall but `::after` pads it to a 38px target: a point 4px
     // below the face still resolves to the control, not to the key row behind.
