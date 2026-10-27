@@ -23,6 +23,11 @@ function dim(text: string): string {
   return `${ESC}38;2;156;163;176m${ESC}3m${text}${RESET}`;
 }
 
+/** Grey but upright: how Gemini paints its thought timing row. */
+function grey(text: string): string {
+  return `${ESC}38;5;7m${text}${RESET}`;
+}
+
 /** A box, every row on the same background fill. */
 function box(rows: readonly string[]): string {
   return rows.map((row) => band(row.padEnd(64))).join("\n");
@@ -227,6 +232,61 @@ test("client furniture under the answer never becomes prose", () => {
   assert.equal(conversation.turns.length, 1);
   assert.equal(conversation.turns[0].user, "改完后记得提交");
   assert.equal(conversation.turns[0].answer, "改完了，已经提交，工作区是干净的。");
+});
+
+/**
+ * Gemini draws its reasoning as a grey marker row rather than italic small
+ * print — `▸ Thought for 5s, 184 tokens` — so the styling test reads it as
+ * answer prose, and the transcript claims the agent wrote its own timing line.
+ * The glyph alone cannot be the signal (`●` also opens a work row), so the
+ * rule demands the word behind it.
+ */
+test("a grey gemini thought row folds into the work fold", () => {
+  const text = snapshot([
+    band(" 安装这个插件"),
+    grey("▸ Thought for 5s, 184 tokens"),
+    grey("○ Thought for 32.3s (working out the rules)"),
+    grey("● Ran 7 commands (2.1s)"),
+    ink("装好了，配置已经写进去。"),
+  ]);
+  const turn = deriveConversation(text).turns[0];
+  assert.deepEqual(turn.thoughts, [
+    "Thought for 5s, 184 tokens\nThought for 32.3s (working out the rules)",
+  ]);
+  assert.equal(turn.answer, "装好了，配置已经写进去。");
+  // `● Ran` is work, not reasoning: the marker is shared, the word is not.
+  assert.equal(turn.work.length, 1);
+});
+
+/**
+ * The key hint sits under the input caret and is the last row in the pane; with
+ * no rule it became the last line of the answer.
+ */
+test("the input box key hint is furniture, not the end of the answer", () => {
+  const text = snapshot([
+    band(" 好了吗"),
+    ink("好了，工作区是干净的。"),
+    ink("? for shortcuts"),
+    ink("esc to interrupt"),
+  ]);
+  assert.equal(deriveConversation(text).turns[0].answer, "好了，工作区是干净的。");
+});
+
+/**
+ * A bare `>` between two rules is the empty input box. It used to arrive as an
+ * empty blockquote hanging off the end of the transcript; a `>` with words
+ * after it is still a quote the agent wrote.
+ */
+test("an empty caret is furniture, a quote with words stays prose", () => {
+  const text = snapshot([
+    band(" 贴一下报错"),
+    ink("关键就是这一行："),
+    ink("> cannot find symbol: class Pane"),
+    ink(">"),
+  ]);
+  const answer = deriveConversation(text).turns[0].answer;
+  assert.match(answer, /^> cannot find symbol: class Pane$/m);
+  assert.equal(answer.endsWith(">"), false);
 });
 
 test("glyph and bracket rows classify by what the agent did", () => {

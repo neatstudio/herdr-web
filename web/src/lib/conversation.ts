@@ -205,12 +205,30 @@ function hasDefaultInk(line: Line): boolean {
 }
 
 /*
+ * Reasoning that is not italic. Gemini prints `▸ Thought for 5s, 184 tokens`
+ * in plain grey ink — no italic, no dim attribute — so the styling test below
+ * reads it as answer prose and the transcript ends up claiming the agent wrote
+ * its own timing line. The marker plus the word is what the client prints, and
+ * the word has to be there: a bare `○` or `●` is a list bullet or a work row
+ * (`● Ran 7 commands`), not reasoning.
+ */
+const THOUGHT_MARK_RE = /^\s*[○◌▸▹⟡◇◈●✻✶✳*]\s+(?:thought|thinking|reasoning)\b/i;
+const THOUGHT_GLYPH_RE = /^\s*[○◌▸▹⟡◇◈●✻✶✳*]\s+/;
+
+function stripThoughtMark(text: string): string {
+  return text.replace(THOUGHT_GLYPH_RE, "");
+}
+
+/*
  * Reasoning is italic small print. Some agents colour it, some grey it, some
  * mix several colours in one paragraph, so the test cannot be "grey": it is
  * "no default-coloured visible text, and italic enough to not be a stray
  * em-dash".
  */
 function isReasoningLine(line: Line): boolean {
+  if (THOUGHT_MARK_RE.test(textOf(line))) {
+    return true;
+  }
   if (italicShare(line) < 0.15) {
     return false;
   }
@@ -253,7 +271,23 @@ const CHROME_PATTERNS: readonly RegExp[] = [
   /^\s*[a-z][\w.-]*\s*>\s*\[[^\]]+\]/i,
   // A footer naming the model and the permission mode: `SWE-2 Max · bypass`.
   /^\s*[A-Za-z][\w.\- ]{0,24}·\s*(?:bypass|accept-edits|full-auto)\b/i,
+  // The input box's key hint: `? for shortcuts` (Gemini, Claude) and
+  // `esc to interrupt` (Claude while it runs). The client prints these under
+  // the caret; they are the last thing in the pane and would otherwise become
+  // the last line of the answer.
+  /^\s*\?\s+for\s+shortcuts\b/i,
+  /^\s*(?:esc|ctrl\+c)\s+to\s+(?:interrupt|cancel|stop)\b/i,
 ];
+
+/**
+ * The empty input box, painted as a bare `>` caret between two rules. A `>`
+ * with anything after it may be a quote the agent wrote and stays; alone it is
+ * furniture — no answer is a single greater-than sign, and it used to render
+ * as an empty blockquote at the end of the transcript.
+ */
+function isBareCaret(text: string): boolean {
+  return /^>\s*$/.test(text);
+}
 
 /**
  * Splash art: the client's banner is drawn in braille cells, sometimes with a
@@ -295,7 +329,7 @@ function isChromeText(text: string): boolean {
     return true;
   }
   // A horizontal rule is drawn by the client, not written by the agent.
-  if (isPadding(text) || isSplashArt(text)) {
+  if (isPadding(text) || isSplashArt(text) || isBareCaret(text)) {
     return true;
   }
   for (const pattern of CHROME_PATTERNS) {
@@ -1148,7 +1182,8 @@ function buildBlocks(lines: Line[], groups: Map<number, BoxGroup>): Block[] {
     }
     if (isReasoningLine(line)) {
       flushAnswer();
-      thought.push(text);
+      // The marker is the client's glyph, not part of what was thought.
+      thought.push(stripThoughtMark(text));
       index += 1;
       continue;
     }
