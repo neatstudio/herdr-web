@@ -250,6 +250,14 @@ function isReasoningLine(line: Line): boolean {
 const COMPOSER_FOOTER_RE = /(?: > ){3,}/;
 
 /**
+ * The row the client's own input box paints: omp's `pi > [max] DeepSeek V4.1`
+ * placeholder, and the same row once it is filled — `pi > [max] <model> >
+ * [D] ~/path > @ main > $0.73 >----- 45% -----|-----1M-`. The title and mode
+ * echo sits on the row directly above it (see `isTitleEcho`).
+ */
+const INPUT_BOX_RE = /^\s*[a-z][\w.-]*\s*>\s*\[[^\]]+\]/i;
+
+/**
  * The client's own view of the account, which it prints when the operator types
  * `/usage`: `Daily ■■■ 65% used · resets in 9h 47m`, `This session`,
  * `Activity 1 turn · 22 tool calls`, `Tokens 108k in · 2.1k out`, `Model ...`.
@@ -286,6 +294,10 @@ const CHROME_PATTERNS: readonly RegExp[] = [
   // `devin -r southern-bedbug` / `resumes this session · devin -r ...`.
   /^\s*resumes?\s+this\s+session\b/i,
   /^\s*(?:✓\s+)?started\s+new\s+session\b/i,
+  // omp's notice that it restored a conversation: `Resumed session`. The
+  // client prints it above the input box, one blank row under the answer, so
+  // without this it becomes the last line of the transcript.
+  /^\s*resumed\s+session\b/i,
   /^\s*[a-z][\w.-]*\s+-r\s+[a-z][\w-]*\s*$/i,
   // A divider row, sometimes with the turn's subject baked into it:
   // `───── 深度分析当前项目 ─`. It is the client's separator, not prose.
@@ -297,8 +309,8 @@ const CHROME_PATTERNS: readonly RegExp[] = [
   // omp paints a handoff hint in the input box: `🤝 HNDF: Add ...`. It is the
   // client offering to carry the job elsewhere, not something the agent wrote.
   /^\s*\uD83E\uDD1D\s/,
-  // The empty input box's own placeholder: `pi > [max] DeepSeek V4.1`.
-  /^\s*[a-z][\w.-]*\s*>\s*\[[^\]]+\]/i,
+  // The input box's own row: `pi > [max] DeepSeek V4.1`, then the filled one.
+  INPUT_BOX_RE,
   // A footer naming the model and the permission mode: `SWE-2 Max · bypass`.
   /^\s*[A-Za-z][\w.\- ]{0,24}·\s*(?:bypass|accept-edits|full-auto)\b/i,
   // The input box's key hint: `? for shortcuts` (Gemini, Claude) and
@@ -453,9 +465,51 @@ function isPromptEcho(line: Line): boolean {
   return PROMPT_ECHO_RE.test(textOf(line)) && isBandRow(line);
 }
 
+/**
+ * omp repaints the job it is on at the right edge of the row directly above its
+ * composer footer. When the job has a mode the row is a badge pill — `🤝 HNDF:
+ * Add ...`, `🕵️ SPWN: Reduce token usage`, `🚦 SHIP: Add S3 bucket`; when it has
+ * none it is the bare title — `Fix Ansible inventory tilde paths`. Either way it
+ * is the string herdr already shows in the tab strip, it carries no styling the
+ * reader needs, and it used to become the last line of the answer (and of the
+ * recap). The words say nothing about being furniture, so the alignment and the
+ * neighbour do: measured 110–155 columns of padding, and the very next row is
+ * the composer's own row (`isComposerFooter` or the input box). Padding alone
+ * is a false positive — agents write
+ * `✅ PASS: all gates green` at the margin, and prose indented under a list
+ * reaches a dozen columns.
+ */
+const MODE_PILL_RE = /^\p{Extended_Pictographic}\s+[A-Z][A-Z0-9]{2,7}:\s+\S/u;
+
+/** Columns of right padding the title echo needs before it counts as furniture. */
+const TITLE_ECHO_PAD = 24;
+
+function rightPad(line: Line): number {
+  return line.plain.length - line.plain.trimStart().length;
+}
+
+/** Shape-only read of the badge pill, used when the footer scrolled out of the window. */
+function isModePill(line: Line): boolean {
+  return rightPad(line) >= TITLE_ECHO_PAD && MODE_PILL_RE.test(textOf(line));
+}
+
+/** The title echo: right-aligned text on the row directly above the composer footer. */
+function isTitleEcho(lines: readonly Line[], index: number): boolean {
+  const line = lines[index];
+  const next = lines[index + 1];
+  if (next === undefined || rightPad(line) < TITLE_ECHO_PAD) {
+    return false;
+  }
+  const under = textOf(next);
+  return isComposerFooter(under) || INPUT_BOX_RE.test(under);
+}
+
 function isChrome(line: Line): boolean {
   if (isPromptEcho(line)) {
     return false;
+  }
+  if (isModePill(line)) {
+    return true;
   }
   return isChromeText(textOf(line));
 }
@@ -1307,6 +1361,12 @@ function buildBlocks(lines: Line[], groups: Map<number, BoxGroup>, banner: boole
       continue;
     }
     if (isChrome(line) && !(slashTurn && isClientView(text))) {
+      index += 1;
+      continue;
+    }
+    // omp's title echo is only furniture by position, so it is checked here
+    // where the next row is available; a fenced row is someone's shell output.
+    if (fenced[index] !== true && isTitleEcho(lines, index)) {
       index += 1;
       continue;
     }

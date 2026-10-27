@@ -374,6 +374,93 @@ test("client furniture under the answer never becomes prose", () => {
 });
 
 /**
+ * omp paints the job it is on at the right edge of the row above its status
+ * line — `🕵️ SPWN: Reduce token usage` — and it restores a conversation with
+ * `Resumed session` one blank row under the answer. Both sat below the recap
+ * and became the last thing the transcript said. The padding is the measured
+ * one: 155 columns on a 200-column pane row.
+ */
+test("the right-aligned mode pill and the resume notice never become prose", () => {
+  const pad = " ".repeat(155);
+  const text = snapshot([
+    band(" 顺手把 token 降下来"),
+    ink("降下来了，单测也过了。"),
+    ink(""),
+    ink("Resumed session"),
+    ink(""),
+    ink(pad + "🕵️ SPWN: Reduce token usage, add jev decisions"),
+    ink(
+      " pi > [max] DeepSeek V4.1 Flash > [D] ~/server/wwwroot/xpier/xteam > @ main *12 > $0.73 >------45%------|------1M-",
+    ),
+    ink("╰─"),
+  ]);
+  const conversation = deriveConversation(text);
+  assert.equal(conversation.turns.length, 1);
+  assert.equal(conversation.turns[0].answer, "降下来了，单测也过了。");
+});
+
+/**
+ * When the job has no mode omp paints the bare title above its footer instead
+ * of a badge pill — `Fix Ansible inventory tilde paths`, the same string herdr
+ * shows in the tab strip. The shape rule cannot see it, so this one rides on
+ * the position: right-aligned, on the row directly above the composer footer.
+ */
+test("the bare title omp paints above its footer never becomes prose", () => {
+  const text = snapshot([
+    band(" 修一下 ansible 的路径"),
+    ink("改好了，join 还缺凭证。"),
+    ink(""),
+    ink(" ".repeat(110) + "Fix Ansible inventory tilde paths"),
+    ink(
+      " pi > [max] DeepSeek V4.1 Flash 1017 (AMR) > [D] ~/remote >--------------------------------35%",
+    ),
+    ink("╰─"),
+  ]);
+  const conversation = deriveConversation(text);
+  assert.equal(conversation.turns.length, 1);
+  assert.equal(conversation.turns[0].answer, "改好了，join 还缺凭证。");
+});
+
+/**
+ * The badge shape alone is not a signal: agents end reviews with
+ * `✅ PASS: ...` at the margin, and list prose reaches deeper than a pill's
+ * right edge would. Only the two together — an ALL-CAPS badge behind an emoji
+ * *and* right alignment — mean furniture.
+ */
+test("an emoji badge the agent wrote at the margin stays prose", () => {
+  const text = snapshot([
+    band(" 跑一下门禁"),
+    ink("✅ PASS: tsc, unit tests and the two spec files are green"),
+    ink("    🚦 SHIP: indented under a list, not padded to the margin"),
+  ]);
+  const conversation = deriveConversation(text);
+  assert.equal(
+    conversation.turns[0].answer,
+    [
+      "✅ PASS: tsc, unit tests and the two spec files are green",
+      "🚦 SHIP: indented under a list, not padded to the margin",
+    ].join("\n"),
+  );
+});
+
+/**
+ * Position only means furniture with the client's footer under it. A
+ * right-aligned line anywhere else is something the agent drew.
+ */
+test("a right-aligned title with no composer footer stays prose", () => {
+  const text = snapshot([
+    band(" 看看清单"),
+    ink(" ".repeat(110) + "Fix Ansible inventory tilde paths"),
+    ink("上面那行是我故意右对齐的。"),
+  ]);
+  const conversation = deriveConversation(text);
+  assert.equal(
+    conversation.turns[0].answer,
+    ["Fix Ansible inventory tilde paths", "上面那行是我故意右对齐的。"].join("\n"),
+  );
+});
+
+/**
  * Gemini draws its reasoning as a grey marker row rather than italic small
  * print — `▸ Thought for 5s, 184 tokens` — so the styling test reads it as
  * answer prose, and the transcript claims the agent wrote its own timing line.
