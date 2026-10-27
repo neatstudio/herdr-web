@@ -32,6 +32,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 5px;
   min-height: 44px;
   padding: 0 14px;
   border: var(--rule-w) solid var(--ui-border-strong, var(--rule-strong));
@@ -46,6 +47,31 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   cursor: pointer;
+}
+
+.chat__jump-arrow {
+  font-size: 13px;
+  letter-spacing: 0;
+}
+
+/*
+ * The word is courtesy, the arrow is the control. On a phone the pill was
+ * 97×44 over a 366px lane — a quarter of the column, sitting on top of the
+ * prose the operator had just scrolled back to read — and the label repeated
+ * what a `↓` in the bottom-right corner already says. It shrinks to the 44px
+ * thumb face; the word stays where there is a gutter for it to sit in. The
+ * frame is chosen by width as well as pointer, because a narrow desktop window
+ * puts the pill over text the same way.
+ */
+@media (max-width: 560px), (pointer: coarse) {
+  .chat__jump {
+    width: 44px;
+    padding: 0;
+  }
+
+  .chat__jump-word {
+    display: none;
+  }
 }
 
 .chat__jump:active {

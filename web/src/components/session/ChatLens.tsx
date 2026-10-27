@@ -305,7 +305,10 @@ export function ChatLens({ paneId, status, onOpenTerminal }: ChatLensProps) {
           onClick={jumpToLatest}
           aria-label="jump to the latest turn"
         >
-          latest ↓
+          <span className="chat__jump-word">latest</span>
+          <span className="chat__jump-arrow" aria-hidden="true">
+            ↓
+          </span>
         </button>
       )}
       {options !== null && (
