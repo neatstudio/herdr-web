@@ -2113,3 +2113,34 @@ devin（`w2N:p5`，3 回合 / 19+117+7 行）与 omp（`w6:p7`，1 回合 / 174 
 `tsc --noEmit` 干净、`test:unit` **380/380**；`touch-targets` 2/2、`keyboard-portrait-card` 4/4、`lens-typing` 6/6、`pick-ask` 4/4、`squeeze-rows` 5/5、`composer-draft-top` 5/5、`jump-pill` 3/3、`pick-row` 4/4、`landscape-keyboard` 2/2、`keymenu-space` 4/4、`keyboard-turn-footer` 2/2、`lens-flip` 6/6。
 
 **下一步**：顶部三条 chrome 还是 137px（masthead 46 + 镜头头 46 + 标签条 45），下一节把它压到 ~120；再往下是「按规则折叠连排的工具输出」与「字号线宽的自定义设置」。
+
+### 4.49 顶部三条 chrome 压到每行 40px（`c6f1a03`）
+
+4.48 把正文、工具行、输入卡都压到了手机密度，但**顶部三条 chrome 还留着笔记本的 46/46/45**：masthead 46、镜头头 46、标签条 45，一共 137px，占 390×844 的 16%。这是**在第一行正文之前**就花掉的玻璃，而这块屏幕的全部用途是读 agent 干了什么。
+
+**改法**：粗指针 + ≤720px 下三条各 40px（40px 的盒子 + 1px 发丝线 = 41）。**触达当成可达距离保留，不换成更大的行**：两条无边界的 cluster 条目（daemon 入口、fleet 入口）40px 真盒子；画出来的主题芯片保持 22px 的脸，靠原来那条 `::before` −12px 裙边；标签条 `overflow-x: auto` 会裁掉裙边，所以 tab 的 40px 是真盒子。
+
+**量到的改前 → 改后**（390×844，真粗指针）：
+
+| 项 | 改前 | 改后 |
+| --- | --- | --- |
+| masthead | 46 | **41**（盒 40 + 发丝线） |
+| 镜头头 `.stage__head` | 46 | **41** |
+| 标签条起点 y | 92 | **82** |
+| 标签条 | y92 h45，tab 110×44 | **y82 h41，tab 101×40** |
+| tab 字号 / 内边距 | 12px / 8 12 | **11.5px / 6 10** |
+| 品牌字 | 15px | **13.5px** |
+| 三条合计 | **137** | **123** |
+| 触达（三键） | 44 | **39–40** |
+
+**为什么 tab 先掉字不掉高**：44px 高、110px 宽的 tab 从来不缺靶子（整行宽就是靶子），缺的是行高；12px 的字在这个宽度里还有余量，11.5px / 6 10 的内边距把 110 收到 101，一行照样塞得下。`+` 保留 15px 字形（`min-width: 40px`），不然它会被上面的 11.5px 继承成一条细缝。
+
+**为什么钉 39–40 而不是 44**：masthead 的两个 cluster 条目贴的是**页面顶边**，40px 的盒子在 y=0 只能给出中心以上 19px；40px 的行最多也就能还回 40px。40px ≈ 7mm，比 44px 的建议值**故意少 1mm**，落在这屏最宽的四个靶子上——这是这次改动的取舍，不是回归，所以 `touch-targets.spec.ts` 把阈值和理由一起改掉，桌面那条 46/44 的断言一个字没动。
+
+**顺手修掉的**：截图里 masthead 中间多出竖排的 "herdr host"——`.sr-only` 这个类在 tmuxd 的 shell 里有、在这个 shell 里从来没人定义，于是那个「只给读屏器」的 span 当普通文本画了出来，390px 上折成两行。select 自己带 `aria-label`，所以补一条真正的 `.sr-only`（1px + `clip-path`）就够，无障碍树不变。
+
+**跟着动的两条钉**：`touch-targets` 的 masthead 46 → 41、镜头头 46 → 41、标签条 y 92 → 82、触达 44 → 39–40；`lens-typing`「键盘落下后镜头头回到行里」从 46 改钉 41（意图不变：回到 static 流内，`+` 回到标签条）。
+
+`tsc --noEmit` 干净、`test:unit` **381/381**；`touch-targets` 2/2、`lens-typing` 6/6、`keyboard-portrait-card` 4/4、`lens-flip` 6/6、`landscape-keyboard` 2/2、`squeeze-rows` 5/5、`composer-draft-top` 5/5、`keymenu-space` 4/4、`jump-pill` 3/3、`pick-row` 4/4、`pick-ask` 4/4、`keyboard-turn-footer` 2/2。
+
+**下一步**：4.48 末尾承诺的两件事还没做——「按规则折叠连排的工具输出」与「字号线宽的自定义设置」。
