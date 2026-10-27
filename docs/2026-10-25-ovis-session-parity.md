@@ -2144,3 +2144,28 @@ devin（`w2N:p5`，3 回合 / 19+117+7 行）与 omp（`w6:p7`，1 回合 / 174 
 `tsc --noEmit` 干净、`test:unit` **381/381**；`touch-targets` 2/2、`lens-typing` 6/6、`keyboard-portrait-card` 4/4、`lens-flip` 6/6、`landscape-keyboard` 2/2、`squeeze-rows` 5/5、`composer-draft-top` 5/5、`keymenu-space` 4/4、`jump-pill` 3/3、`pick-row` 4/4、`pick-ask` 4/4、`keyboard-turn-footer` 2/2。
 
 **下一步**：4.48 末尾承诺的两件事还没做——「按规则折叠连排的工具输出」与「字号线宽的自定义设置」。
+
+### 4.50 让读的人自己定字号与行宽（`bef3e83`）
+
+4.48 / 4.49 把手机压到「一列 14px 正文」这一档。档位定死了就必然有人不满意——同一句话，坐在 390px 手机上的人嫌大，接 27 寸屏的人嫌小。用户的判断是对的：「如果你觉得每个人的需求不一样，那应该可以允许用户设置自定义」。所以这一轮不再猜一个更好的数字，而是把**两个既属于眼睛、又不属于骨架**的量交给读的人：
+
+| 设置 | 三档 | 改的是 |
+| --- | --- | --- |
+| SIZE | `small` 12.5px / `default` 14–15px / `large` 16.5px | `--ui-body`、`--ui-meta`、`--ui-code`、`--ui-leading` |
+| MEASURE | `narrow` 640px / `default` 820px / `wide` 1080px | `--ui-lane`（窄档手机侧边距 40px，宽档 16px） |
+
+**实现是「把已有 token 变成可重指的量」，不是新图层**：`lib/reading.ts` 只做三件事——解析/序列化一个 `"small/narrow"` 字符串（`localStorage` 键 `herdr-web-reading`，手工可读可改）、把选择写成一串 `document.documentElement.style` 自定义属性、并挂 `data-read-size` / `data-read-measure` 两个状态钩子。样式表继续拥有几何，选择只把名字重新指一下。
+
+**默认档一个字节都不写**（`removeProperty`）。这不是洁癖：`touch-targets`、`lens-typing`、`composer-draft-top`、`keyboard-portrait-card` 这一批钉死了 41 / 148 / 109 / 103 / 325 / 82 的套装，全都靠「没人动设定时计算出来的就是今天这些数」才继续成立。为了这个，4.48 留在手机块里的硬编码 px 先改写成 `var(--ui-leading)` / `var(--ui-code)` / `calc(var(--ui-body) - 1.5px)`，让默认值仍然解析成 14/1.55/11.5/12.5——改前后截图逐像素一致。
+
+**不动的东西，写在注释里也写在测试里**：40px 镜头头、30px 工具头、24px 工具行、40px 面板档位、44px 触达，都是「给手指的几何」，不跟字号走；输入框保持 16px 下限（`composer.css:304` 的 `max(16px, var(--ui-body))`），否则 iOS 聚焦会把整页放大。
+
+**入口放在 sheet 的第三个页签**，不放在镜头头。原因是 `index.css:3599`：软键盘一弹，`.stage__head` 的除镜头开关外的子元素全被隐藏——而「调字号」正是键盘收起时做的事。所以三个页签变成 `AGENTS 0 / SPACES 1 / READING`（id 仍是 `herdr-sheet-view-text`，`aria-controls` 补齐，列表体改成带 `aria-labelledby` 的 tabpanel）。
+
+**面板本身是演示，不是说明书**：样例块直接用 `.chat__prose` / `.chat__code` 的同一条规则渲染（同一组变量），选 `large` 样例当场变大；只写档位名，不写「多少 px」「多少字」——桌面默认 15px、手机默认 14px，印在按钮上的数字会变成一句谎。页脚一个 `reset`（默认档时 disabled）把属性全部清回样式表。
+
+**量到的面板**（390×844，真粗指针，无键盘）：三页签各 130×41，`.read` 390×736（flex 撑满，页脚贴 sheet 底而不是浮在中间），档位行 366×46、档位面 97×40，样例 326×~143（`narrow` 时 326，`default` 366），`reset` 80×40，`scrollHeight === clientHeight`（844 高度下不滚动）。
+
+**测试**：`reading.test.ts` 10 条（含一个假的 `root`，验证 `default` 会把五个属性全 `removeProperty`、`applyReading(x, null)` 不炸、坏存储回退默认）；`reading.spec.ts` 5 条（第三页签/面板形状、`large` 改效果且刷新后仍在、`narrow` 让行宽真的变窄、`reset` 把属性还给样式表、存了脏值回退默认）。`tsc --noEmit` 干净、`test:unit` **391/391**、`reading` 5/5、`pick-row` 4/4、`touch-targets` 2/2、`lens-typing` 6/6、`app.spec.ts` 的 sheet 4 条通过（另外 4 条手机用例在干净 HEAD 上同样失败，属于 app.spec 既有的 `.tile` / `#herdr-display-*` 陈旧断言，不在本轮范围）。
+
+**下一步**：4.48 / 4.49 都点名的「按规则折叠连排的工具输出」。真实读回来的一个 turn 高 **1543px**，里面 5 个只有一行的 `text` 围栏，每个先付 ~26px 的头部 chrome——这是手机上比字号更伤阅读的东西。
