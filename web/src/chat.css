@@ -102,6 +102,20 @@
   padding-bottom: 8px;
 }
 
+/* The turn footer is the lane's most expensive furniture: on a phone its 44px
+   coarse rows are 41% of the 106px a landscape keyboard leaves to read in, and
+   44px of the 433px portrait lane — measured on both, the answer below the last
+   turn runs to the lane's bottom edge and the footer pushes a whole extra line
+   out of view. None of it is a typing tool: the dot and the clock restate what
+   the send button already shows, and `markdown`/`text` are reached for after
+   reading, not while writing. So it steps aside for the keyboard's lifetime and
+   comes back the moment the keyboard drops; the `earlier lines dropped` note
+   shares the row and comes back with it. The lane-level meta stays: with no
+   turns it is the only status a reader has. */
+.has-keyboard .chat__turn > .chat__meta {
+  display: none;
+}
+
 /* The menu's question, for a frame with no room for the transcript. A
    landscape phone with the keyboard up leaves the lane 18px — the menu's hint
    row, with the question itself four lines higher and gone. The answers are
