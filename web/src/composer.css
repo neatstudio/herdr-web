@@ -550,3 +550,60 @@
     align-items: center;
   }
 }
+
+/* ------------------------------------------------- the phone's resting card */
+/*
+ * The sheet at the end of this file is 96px tall at rest on a 390x844 phone:
+ * 10px of padding, a 2x2 pad of 36px faces (74px with its 2px gap) and the
+ * 48px draft, which sits shorter than the pad and therefore does not set the
+ * height. 96px of a phone's screen for an empty box is the thing that reads as
+ * "a desktop card shrunk", so the pad's faces come down to 30px — 66px of pad,
+ * and the card is 82px.
+ *
+ * The 44px reach does not come down with the face: the skirt that already
+ * carries it (`inset: -4px` over a 36px face) is widened to -7px, and the gap
+ * between faces grows from 2px to 6px so two skirts only overlap in the empty
+ * gap instead of over a neighbour's face. The 16px draft face and its 24px
+ * line stay exactly where they were: iOS zooms in on a smaller field, and the
+ * row maths in composer.ts counts those pixels. The draft gains 12px of width
+ * (264 -> 276) because the pad lost it.
+ *
+ * Scoped to `html:not(.has-keyboard)`: the typing card is already 66px and
+ * every pixel it has is spoken for, so this block touches only the resting
+ * one.
+ */
+@media (pointer: coarse) and (max-width: 720px) {
+  html:not(.has-keyboard) .shell.is-narrow .prompt {
+    padding: 7px 9px;
+    margin-bottom: max(6px, env(safe-area-inset-bottom));
+    border-radius: 16px;
+    box-shadow: 0 4px 14px rgb(0 0 0 / 0.06);
+  }
+
+  html:not(.has-keyboard) .shell.is-narrow .prompt__field {
+    gap: 8px;
+  }
+
+  html:not(.has-keyboard) .shell.is-narrow .prompt__pad {
+    grid-template-columns: repeat(2, 30px);
+    grid-auto-rows: 30px;
+    gap: 6px;
+  }
+
+  html:not(.has-keyboard) .shell.is-narrow .prompt__act,
+  html:not(.has-keyboard) .shell.is-narrow .prompt__send {
+    width: 30px;
+    height: 30px;
+  }
+
+  html:not(.has-keyboard) .shell.is-narrow .prompt__act svg,
+  html:not(.has-keyboard) .shell.is-narrow .prompt__send svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  html:not(.has-keyboard) .shell.is-narrow .prompt__act::before,
+  html:not(.has-keyboard) .shell.is-narrow .prompt__send::before {
+    inset: -7px;
+  }
+}

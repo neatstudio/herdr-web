@@ -169,10 +169,13 @@ test.describe("a phone, no keyboard", () => {
     expect(Math.abs(draft.y - attach.y)).toBeLessThanOrEqual(1);
 
     // Nothing was paid for it: the 2x2 pad is still the tallest thing in the
-    // card, so the card keeps the 96px it had and the field keeps 74px.
-    expect(card.height).toBe(96);
-    expect(field.height).toBe(74);
-    expect(pad.height).toBe(74);
+    // card, so the field is exactly the pad. The numbers are 66/82 rather than
+    // 74/96 because the phone's density block takes the pad's faces from 36px
+    // to 30px — the card was 96px of a phone screen for an empty box; its
+    // controls keep their 44px reach through a wider skirt, not a bigger face.
+    expect(card.height).toBe(82);
+    expect(field.height).toBe(66);
+    expect(pad.height).toBe(66);
     expect(pad.bottom).toBe(field.bottom);
 
     // The draft still has its two-row floor to grow into, its column still ends
@@ -195,7 +198,7 @@ test.describe("a phone, no keyboard", () => {
     const attach = now["#herdr-attach-button"];
     if (!card || !draft || !attach) throw new Error(`geometry missing: ${JSON.stringify(now)}`);
 
-    expect(card.height).toBe(96);
+    expect(card.height).toBe(82);
     expect(draft.y).toBe(attach.y);
   });
 });

@@ -425,7 +425,11 @@ test.describe("the lens switch while typing", () => {
       ),
       keys: document.querySelector<HTMLElement>(".chat .keys")!.getBoundingClientRect().height,
     }));
-    expect(restored.padding).toBe(20);
+    // 12px, not the 20px this file was written against: the phone's density
+    // block cuts the resting air above the transcript. What the assertion is
+    // after is unchanged — the padding is back once the keyboard is gone, and
+    // it is larger than the 8px the typing state uses.
+    expect(restored.padding).toBe(12);
     expect(restored.keys).toBeGreaterThanOrEqual(40);
   });
 });

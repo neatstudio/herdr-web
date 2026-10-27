@@ -1147,3 +1147,151 @@
   outline: 2px solid var(--ui-accent);
   outline-offset: 2px;
 }
+
+/* ----------------------------------------------------- the phone's density */
+/*
+ * Everything above is written for a laptop: 26px between turns, a 44px row per
+ * tool call, 12px of padding inside the user's band, and 44px of chrome around
+ * every tucked-away button. On a 390x844 phone the transcript is 603px of the
+ * 844 and a single agent turn of eleven tool calls fills it twice over, which
+ * is the wrong way round — the reason to open this page on a phone is to see
+ * what the agent did and what it said, and neither needs air.
+ *
+ * So this block halves the air and keeps the targets: the faces get smaller,
+ * never the reach (the copy buttons take a skirt, exactly as the composer's
+ * controls do), and the type stays above 12px because a phone is still read.
+ * Every number below is the measured baseline at 390x844, replaced by the
+ * measured value after this block.
+ */
+@media (pointer: coarse) and (max-width: 720px) {
+  /* 26px between turns was reading distance; 16px still separates two
+     speakers. The lane's 20/28 padding was paid above and below the whole
+     scroll: 12/16 leaves the same edge inset at rest and 12px more transcript
+     while typing, where the bottom of the lane is the draft's problem. */
+  .chat__lane {
+    gap: 16px;
+    padding: 12px 0 16px;
+  }
+
+  .chat__turn {
+    gap: 10px;
+  }
+
+  /* The user's band is the one loud surface in the lane, so its padding is the
+     loudest thing in it: 12px/16px turned a three-line question into a 48px
+     slab with a 12px radius, which is card chrome, not a quotation. */
+  .chat__user {
+    padding: 8px 11px;
+    border-radius: 10px;
+    line-height: 1.5;
+  }
+
+  /* 15px/1.65 is a document; 14px/1.55 is a column, and the paragraph gap
+     drops with it — 12px between paragraphs of 14px text read as two separate
+     answers. */
+  .chat__prose {
+    font-size: 14px;
+    line-height: 1.55;
+  }
+
+  .chat__prose p {
+    margin: 0 0 8px;
+  }
+
+  /* Tables are already cards below 560px; the cells keep one line each. */
+  .chat__table {
+    font-size: 12.5px;
+  }
+
+  /* The footer row (time, copy, again) is metadata, not content: 44px made it
+     the tallest thing in a short turn. 26px of face, and the buttons keep
+     their 44px reach with a skirt in the empty space around them — the row is
+     the last thing in the turn, so its top skirt only overlaps the prose's own
+     margin. */
+  .chat__meta {
+    min-height: 26px;
+    gap: 6px;
+  }
+
+  .chat__meta button {
+    position: relative;
+    min-height: 26px;
+    padding-inline: 2px;
+  }
+
+  .chat__meta button::after {
+    content: "";
+    position: absolute;
+    inset: -9px -6px;
+  }
+
+  /* A tool call is one line of output, and 44px of row for it was the single
+     biggest cost in the transcript: a run of eleven calls is 484px of lane.
+     30px of head and a 24px row are still a full fingertip for the head (it is
+     the whole width of the lane) and a comfortable line for the row, which is
+     read, not pressed. */
+  .work__head {
+    min-height: 30px;
+    font-size: 12.5px;
+  }
+
+  .work__rows {
+    margin-top: 0;
+    padding-top: 2px;
+  }
+
+  .work__row > span,
+  .work__row > button {
+    min-height: 24px;
+    padding: 2px 0;
+    font-size: 12px;
+  }
+
+  /* Fenced output: the header existed to carry copy and "show all", and those
+     buttons took the 44px row. The body is read line by line, so it keeps a
+     16.7px line and gets the padding back (8/10 instead of 10/12). */
+  .chat__code {
+    margin-bottom: 10px;
+  }
+
+  .chat__code-head {
+    min-height: 26px;
+    padding: 3px 10px;
+  }
+
+  .chat__code-copy {
+    position: relative;
+    min-width: 26px;
+    min-height: 26px;
+  }
+
+  .chat__code-copy::after {
+    content: "";
+    position: absolute;
+    inset: -9px -6px;
+  }
+
+  .chat__code-more {
+    min-height: 28px;
+    padding: 5px 10px;
+  }
+
+  .chat__code-body {
+    padding: 8px 10px;
+    font-size: 11.5px;
+    line-height: 1.45;
+  }
+
+  .chat__pre {
+    padding: 8px 10px;
+    font-size: 11.5px;
+    line-height: 1.42;
+  }
+
+  /* The empty lens is a first screen, not a title page: one line of 13px. */
+  .chat__empty {
+    gap: 10px;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+}

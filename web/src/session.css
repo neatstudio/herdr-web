@@ -154,3 +154,26 @@
     transition: none;
   }
 }
+
+/* ------------------------------------------------------- the phone's type */
+/*
+ * A phone is a reading surface for this console, not a desk: the answer is
+ * skimmed, and the lines of tool output are looked at, not studied. The frame
+ * this was measured on (390x844, coarse pointer) was serving 15px prose on a
+ * 24.75px line and 11px metadata — the type of a document read at arm's
+ * length, which is what a laptop screen is. 14px on a 21.7px line and 10.5px
+ * metadata is the same content at the distance a hand holds a phone, and it
+ * buys back a line of prose every two paragraphs.
+ *
+ * The tokens live here because both lenses read them; the rules that spend the
+ * space they free are in the file that owns each lens (chat.css for the
+ * transcript). `--ui-lane` is deliberately left alone: it is the width the
+ * answer card's pins are measured against, and the gutter it leaves is the
+ * only thing separating prose from the thumb.
+ */
+@media (pointer: coarse) and (max-width: 720px) {
+  :root {
+    --ui-body: 14px;
+    --ui-meta: 10.5px;
+  }
+}
