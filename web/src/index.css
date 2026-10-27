@@ -3848,3 +3848,103 @@ body::before {
     }
   }
 }
+
+/* ------------------------------------------------- phone chrome, closer set */
+
+/* The three chrome rows above a pane were 137px of an 844px phone screen —
+   46 of brand and daemon state, 46 of the head, 45 of tabs — before the
+   transcript began. That is 16% of the glass spent before the first line of
+   the answer, on a device whose whole point here is reading what the agent
+   did. They are rows of labels, not rows of content: 40px each still clears a
+   thumb (7mm, and the widest targets on this screen are these labels' whole
+   row-width), and the tabs lose their type size instead of their height.
+
+   Everything the 44px pass bought is kept as reach, not as a bigger row: the
+   two borderless cluster entries keep their grown box at 40px, the bordered
+   theme chip keeps its 22px face and its -12px skirt (the row above it is the
+   page edge, the row below is inert), and the tab strip — whose `overflow-x`
+   would clip any skirt — carries its 40px as a real box. 137 → 121px, and the
+   transcript starts 16px higher on the one screen where that is 2% of it. */
+@media (pointer: coarse) and (max-width: 720px) {
+  .masthead {
+    min-height: 40px;
+    padding: 0 10px;
+    gap: 8px;
+  }
+
+  /* Was `min-height: 44px` in the coarse block above; the row is 40 now, and a
+     44px child would simply put it back. The skirt on the bordered chip is
+     unchanged and now has 4px less glass to overhang, so the row keeps its
+     whole height as the target. */
+  .masthead .cluster--button {
+    min-height: 40px;
+  }
+
+  /* 15px of brand on a 390px row is the largest type on the page, and the page
+     it labels is the transcript. 13.5px holds the dot and the two words in
+     96px instead of 106px, which the daemon label can use. */
+  .wordmark {
+    font-size: 13.5px;
+    gap: 7px;
+    letter-spacing: -0.02em;
+  }
+
+  .wordmark__dot {
+    width: 6px;
+    height: 6px;
+  }
+
+  .stage__head {
+    min-height: 40px;
+    padding: 0 10px;
+    gap: 8px;
+  }
+
+  .stage__pick {
+    min-height: 40px;
+    min-width: 40px;
+  }
+
+  /* The strip keeps `overflow-x: auto`, which clips a pseudo-element skirt, so
+     the row itself carries the target. 44px of nav cost the transcript 8px; a
+     40px row gives 4 of it back, and a tab is 90px wide, so the loss is height
+     on a target that is nowhere near a fingertip's margin. */
+  .tab {
+    min-height: 40px;
+    padding: 6px 10px;
+    gap: 6px;
+    font-size: 11.5px;
+  }
+
+  .tab:not(.tab--new) {
+    min-width: 4.75rem;
+  }
+
+  .tab--new {
+    min-width: 40px;
+    font-size: 15px; /* the + glyph, not the tab's 11.5px label type */
+  }
+
+  .strip {
+    scroll-padding-right: 40px;
+  }
+}
+
+/* The hostswitch's screen-reader label had no rule behind it: `.sr-only` exists
+   in the tmuxd shell but not in this one, so the words "herdr host" painted as
+   ordinary text beside the select — on a 390px row they wrapped onto two lines
+   between the fleet entry and the brand. The select carries its own
+   `aria-label`, so the span only has to leave the page without leaving the
+   accessibility tree. (Global rather than masthead-scoped: the class is used
+   once, and a second silent copy would be the next surprise.) */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

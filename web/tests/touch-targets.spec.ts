@@ -17,6 +17,17 @@ import { expect, test, type Page } from "@playwright/test";
  * a pointer at y+21 still hits something else. The last case is the failure
  * mode of a pseudo-element reach — over-reach that steals taps from the row
  * below — and the desktop case keeps the mouse layout honest.
+ *
+ * Later that same phone got its chrome back: 46/46/45px of brand, head and
+ * tabs meant 137px of an 844px screen — 16% — before the transcript started,
+ * which is the wrong trade on a device used to read what the agent did. The
+ * three rows are 41px now (40 of box plus the hairline), so the threshold here
+ * is 39–40 rather than 44: the top row's controls sit on the page edge and lose
+ * the pixel above them, and a 40px row can only ever hand back 40. That is
+ * ~7mm, deliberately 1mm under the guideline, on the four widest targets on
+ * the screen; nothing here became a label-sized box again. The strip is the
+ * one row with `overflow-x: auto`, which clips a skirt, so its tabs pay the
+ * loss as a real box too and the assertion says 40.
  */
 
 const PANE = {
@@ -133,25 +144,29 @@ test.describe("a phone, one thumb", () => {
     await expect(page.locator("#herdr-input")).toBeVisible();
 
     // The three that were label boxes: daemon entry, fleet entry, pane switch.
+    // 39 is the floor: the top row's controls sit on the page's top edge, so a
+    // 40px box that starts at y=0 can only offer 19px above its centre.
     for (const selector of ["#herdr-host-open", "#herdr-fleet-open", "#herdr-picker-open"]) {
-      expect(await reachY(page, selector), `${selector} reach`).toBeGreaterThanOrEqual(44);
+      expect(await reachY(page, selector), `${selector} reach`).toBeGreaterThanOrEqual(39);
     }
 
     // Two are borderless (transparent border, and `border: 0` in the head), so
     // the grown box must be the real one, not a skirt a parent can clip again.
     for (const selector of ["#herdr-host-open", "#herdr-fleet-open", "#herdr-picker-open"]) {
-      expect((await box(page, selector)).height, `${selector} box`).toBeGreaterThanOrEqual(44);
+      expect((await box(page, selector)).height, `${selector} box`).toBeGreaterThanOrEqual(40);
     }
 
-    // The drawn chip keeps its 22px box: it is a bordered control.
+    // The drawn chip keeps its 22px box: it is a bordered control. Its skirt is
+    // what pays for the 40px row, and the row above it is the page edge.
     expect((await box(page, "#herdr-theme-cycle")).height).toBeLessThan(30);
-    expect(await reachY(page, "#herdr-theme-cycle")).toBeGreaterThanOrEqual(44);
+    expect(await reachY(page, "#herdr-theme-cycle")).toBeGreaterThanOrEqual(39);
 
-    // Nothing above pays for the bigger targets: both rows are still 46px, and
-    // the strip still starts exactly where the head ends.
-    expect(Math.round((await box(page, ".masthead")).height)).toBe(46);
-    expect(Math.round((await box(page, ".stage__head")).height)).toBe(46);
-    expect(Math.round((await box(page, ".stage--lens > .strip")).y)).toBe(92);
+    // The chrome is 41px a row (40 of box, one hairline) and 123px in total,
+    // down from 46/46/45: the transcript starts 14px higher on the screen that
+    // has the least of it. The head still ends exactly where the strip begins.
+    expect(Math.round((await box(page, ".masthead")).height)).toBe(41);
+    expect(Math.round((await box(page, ".stage__head")).height)).toBe(41);
+    expect(Math.round((await box(page, ".stage--lens > .strip")).y)).toBe(82);
 
     // And the row below is not stolen from: just under the head, a tap belongs
     // to the strip, not to the 44px control that ends 2px above it.

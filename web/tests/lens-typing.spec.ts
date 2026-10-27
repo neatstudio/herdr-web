@@ -329,9 +329,12 @@ test.describe("the lens switch while typing", () => {
     expect(measured).not.toBeNull();
 
     // The overlay is a keyboard-time remedy only: with the keyboard down the
-    // head is the same 46px row it always was, and `+` is back in the strip.
+    // head is back in the flow, and `+` is back in the strip. The row is 41px
+    // rather than 46: the phone-chrome pass traded 5px of head for 5px of
+    // transcript on the screen that has the least of it, and a thumb still gets
+    // 40px of box (the 41 is the box plus its hairline).
     expect(measured!.head.position).toBe("static");
-    expect(measured!.head.height).toBe(46);
+    expect(measured!.head.height).toBe(41);
     expect(measured!.strip.top).toBeGreaterThanOrEqual(measured!.head.height);
     expect(measured!.newTab).not.toBe("none");
     expect(measured!.strip.reserve).toBe(0);
