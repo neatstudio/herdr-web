@@ -1,6 +1,7 @@
 import { useMemo, type ReactNode } from "react";
 
 import { inlineSpans, safeHref } from "@/lib/markdown";
+import { reflowProse } from "@/lib/prose";
 import { splitTables, type TableModel } from "@/lib/table";
 
 import { Markdown } from "./Markdown";
@@ -14,6 +15,12 @@ import { Markdown } from "./Markdown";
  * a name, so a phone can stack a row into a card instead of making the reader
  * swipe a 1464px pre sideways to see four fifths of it. Everything that is not
  * a well-formed table stays exactly as it was.
+ *
+ * The prose goes through `reflowProse` first, per segment: an agent's answer is
+ * wrapped for its own terminal, so a Chinese word arrives split over two rows
+ * and a paragraph arrives with no blank row after it. Repairing that here, not
+ * in the conversation model, keeps the model's own text intact for the copy
+ * button and keeps this a presentation decision.
  */
 
 function cell(text: string, key: string): ReactNode[] {
@@ -95,7 +102,7 @@ export function AnswerProse({ text }: { text: string }) {
         if (segment.text.trim() === "") {
           return null;
         }
-        return <Markdown key={index} text={segment.text} />;
+        return <Markdown key={index} text={reflowProse(segment.text)} />;
       })}
     </>
   );
