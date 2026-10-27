@@ -238,6 +238,30 @@ function isReasoningLine(line: Line): boolean {
 /* ----------------------------------------------------------------- chrome */
 
 const COMPOSER_FOOTER_RE = /(?: > ){3,}/;
+
+/**
+ * The client's own view of the account, which it prints when the operator types
+ * `/usage`: `Daily ■■■ 65% used · resets in 9h 47m`, `This session`,
+ * `Activity 1 turn · 22 tool calls`, `Tokens 108k in · 2.1k out`, `Model ...`.
+ * Furniture everywhere else — it is not something the agent wrote — but it is
+ * the whole answer when the operator asked for it, so the turn reader keeps it
+ * for a turn whose user line was a slash command.
+ */
+const CLIENT_VIEW_PATTERNS: readonly RegExp[] = [
+  /^\s*(?:daily|weekly|monthly|hourly)\s+[■▰▮▪=#]/i,
+  /^\s*this session\s*$/i,
+  /^\s*activity\s+\d+\s+turns?\b/i,
+  /^\s*tokens\s+[\d.]+k?\s+in\b/i,
+  /^\s*model\s+\S/i,
+];
+
+/** The row a client prints at the end of an answer: `---EOF--*`. */
+const EOF_MARK_RE = /^\s*-{2,}\s*EOF\b/i;
+
+function isClientView(text: string): boolean {
+  return CLIENT_VIEW_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 const CHROME_PATTERNS: readonly RegExp[] = [
   /^[|\u2502].*-{8,}/, // `| 2m ... -------------1M-` progress bars
   /^\[Wall:\s/i,
@@ -245,11 +269,7 @@ const CHROME_PATTERNS: readonly RegExp[] = [
   /^…\s/,
   /^╰─/,
   /^\s*❭\s/,
-  /^\s*(?:daily|weekly|monthly|hourly)\s+[■▰▮▪=#]/i,
-  /^\s*this session\s*$/i,
-  /^\s*activity\s+\d+\s+turns?\b/i,
-  /^\s*tokens\s+[\d.]+k?\s+in\b/i,
-  /^\s*model\s+\S/i,
+  ...CLIENT_VIEW_PATTERNS,
   /^\s*\d+%\s+(?:used|of)\b/i,
   /^\s*bypass\s*$/i,
   // The command that resumes the session the client just printed:
@@ -1106,8 +1126,20 @@ function fencedRows(lines: readonly Line[]): boolean[] {
 function buildBlocks(lines: Line[], groups: Map<number, BoxGroup>): Block[] {
   const blocks: Block[] = [];
   const fenced = fencedRows(lines);
+  // A client that prints `---EOF--*` tells us where an answer ends, so a
+  // command band seen before that row was typed while the answer was still
+  // streaming. A client that prints no such row leaves us no way to tell a
+  // queued command from a new question, so there a band always opens a turn.
+  const eofClient = lines.some((line) => EOF_MARK_RE.test(textOf(line)));
   let answer: string[] = [];
   let thought: string[] = [];
+  // Whether the answer being collected has reached its `---EOF--*` row yet, and
+  // whether the turn it belongs to was a slash command the operator typed.
+  let terminated = true;
+  let slashTurn = false;
+  // Set while skipping a queued command's echo, so the blank rows around it do
+  // not open gaps in the answer that was interrupted.
+  let muted = false;
 
   const flushAnswer = (): void => {
     if (answer.length > 0) {
@@ -1136,13 +1168,16 @@ function buildBlocks(lines: Line[], groups: Map<number, BoxGroup>): Block[] {
     const text = fenced[index] === true ? line.plain.replace(/\s+$/, "") : textOf(line);
     if (text === "") {
       flushThought();
-      if (answer.length > 0) {
+      if (answer.length > 0 && !muted) {
         answer.push("");
       }
       index += 1;
       continue;
     }
-    if (isChrome(line)) {
+    if (EOF_MARK_RE.test(text)) {
+      terminated = true;
+    }
+    if (isChrome(line) && !(slashTurn && isClientView(text))) {
       index += 1;
       continue;
     }
@@ -1165,9 +1200,22 @@ function buildBlocks(lines: Line[], groups: Map<number, BoxGroup>): Block[] {
       }
       const band = readUserBand(lines, index, groups);
       if (band !== null) {
+        // A command typed while the answer was still streaming is echoed, with
+        // its own panel, in the middle of that answer — devin does this with
+        // `/usage`. The answer carries on after it, so the echo is not the
+        // start of a new turn; the real one comes after the answer's
+        // `---EOF--*` row. Only a slash command can be queued this way, so a
+        // question in band form still opens a turn as it always has.
+        if (eofClient && !terminated && answer.length > 0 && /^\/\S/.test(band.text)) {
+          muted = true;
+          index = band.end;
+          continue;
+        }
         flushAnswer();
         flushThought();
         blocks.push({ kind: "user", text: band.text });
+        terminated = false;
+        slashTurn = /^\/\S/.test(band.text);
         index = band.end;
         continue;
       }
@@ -1196,6 +1244,7 @@ function buildBlocks(lines: Line[], groups: Map<number, BoxGroup>): Block[] {
       continue;
     }
     answer.push(text);
+    muted = false;
     index += 1;
   }
   flushAnswer();

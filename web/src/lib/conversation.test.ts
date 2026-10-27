@@ -75,6 +75,98 @@ test("one exchange folds reasoning, work and a recap into one turn", () => {
   assert.equal(turn.recap, "修好了 bridge 的接线");
 });
 
+test("a command queued mid-answer does not cut the answer in half", () => {
+  // devin echoes the command the operator typed while the answer was still
+  // streaming, together with the panel it printed, right where the stream is.
+  // The answer carries on afterwards, so the echo is an interjection.
+  const text = snapshot([
+    band(" 继续检验。看看项目有没有跑偏"),
+    ink("我先看最初的设计目标，再对照现在的代码。"),
+    band(" /usage"),
+    ink(" Daily   ■■■■■■■■■■■■■■■■■■■■  65% used  · resets in 9h 47m"),
+    ink(" Weekly  ■■■■■■■■■■■■■■■■■■■■  33% used  · resets Oct 25, 8:00 AM (UTC)"),
+    "",
+    ink(" This session"),
+    ink(" Activity  1 turn · 22 tool calls · 0 files · 6 commands"),
+    ink(" Tokens    108k in · 2.1k out  (~110k per turn)"),
+    ink(" Model     Claude Opus 5.5 Medium"),
+    "",
+    ink("未提交的改动都看过了，项目的主线没有跑偏。"),
+    ink(" ---EOF--*"),
+  ]);
+  const conversation = deriveConversation(text);
+  assert.equal(conversation.turns.length, 1);
+  const turn = conversation.turns[0];
+  assert.equal(turn.user, "继续检验。看看项目有没有跑偏");
+  assert.equal(
+    turn.answer,
+    "我先看最初的设计目标，再对照现在的代码。\n未提交的改动都看过了，项目的主线没有跑偏。",
+  );
+});
+
+test("the panel a slash command prints is the answer to it", () => {
+  const text = snapshot([
+    band(" /usage"),
+    ink(" Daily   ■■■■■■■■■■■■■■■■■■■■  100% used  · resets in 8h 42m"),
+    ink(" Weekly  ■■■■■■■■■■■■■■■■■■■■  50% used  · resets Oct 25, 8:00 AM (UTC)"),
+    "",
+    ink(" This session"),
+    ink(" Activity  2 turns · 41 tool calls · 0 files · 19 commands"),
+    ink(" Tokens    254k in · 5.1k out  (~129k per turn)"),
+    ink(" Model     Claude Opus 5.5 Medium"),
+  ]);
+  const conversation = deriveConversation(text);
+  assert.equal(conversation.turns.length, 1);
+  const turn = conversation.turns[0];
+  assert.equal(turn.user, "/usage");
+  assert.equal(
+    turn.answer,
+    [
+      "Daily   ■■■■■■■■■■■■■■■■■■■■  100% used  · resets in 8h 42m",
+      "Weekly  ■■■■■■■■■■■■■■■■■■■■  50% used  · resets Oct 25, 8:00 AM (UTC)",
+      "",
+      "This session",
+      "Activity  2 turns · 41 tool calls · 0 files · 19 commands",
+      "Tokens    254k in · 5.1k out  (~129k per turn)",
+      "Model     Claude Opus 5.5 Medium",
+    ].join("\n"),
+  );
+});
+
+test("a command typed after the answer finished opens its own turn", () => {
+  const text = snapshot([
+    band(" 继续检验。"),
+    ink("看完了，结论在下面。"),
+    ink(" ---EOF--*"),
+    band(" /usage"),
+    ink(" Daily   ■■■■■■■■■■■■■■■■■■■■  100% used  · resets in 8h 42m"),
+  ]);
+  const conversation = deriveConversation(text);
+  assert.equal(conversation.turns.length, 2);
+  assert.equal(conversation.turns[0].answer, "看完了，结论在下面。");
+  assert.equal(conversation.turns[1].user, "/usage");
+  assert.equal(
+    conversation.turns[1].answer,
+    "Daily   ■■■■■■■■■■■■■■■■■■■■  100% used  · resets in 8h 42m",
+  );
+});
+
+test("without an end marker a command band still opens a turn", () => {
+  // Only devin prints `---EOF--*`. A client that does not print it gives the
+  // reader no way to tell a queued command from the next question, so the band
+  // has to stay a turn boundary — the old rule, unchanged.
+  const text = snapshot([
+    band(" 继续检验。"),
+    ink("看完了，结论在下面。"),
+    band(" /usage"),
+    ink(" Daily   ■■■■■■■■■■■■■■■■■■■■  100% used  · resets in 8h 42m"),
+  ]);
+  const conversation = deriveConversation(text);
+  assert.equal(conversation.turns.length, 2);
+  assert.equal(conversation.turns[0].answer, "看完了，结论在下面。");
+  assert.equal(conversation.turns[1].user, "/usage");
+});
+
 test("each user band opens a new turn", () => {
   const text = snapshot([
     band(" first"),
