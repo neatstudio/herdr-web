@@ -1,5 +1,6 @@
 import { useMemo, type ReactNode } from "react";
 
+import { isClientViewPanel } from "@/lib/clientView";
 import { inlineSpans, safeHref } from "@/lib/markdown";
 import { reflowProse } from "@/lib/prose";
 import { splitTables, type TableModel } from "@/lib/table";
@@ -101,6 +102,16 @@ export function AnswerProse({ text }: { text: string }) {
         }
         if (segment.text.trim() === "") {
           return null;
+        }
+        // The account panel a client prints for `/usage` is a label column and
+        // a value column. Re-flowed, its rows join into one paragraph and the
+        // labels stop pointing at their numbers, so it is drawn verbatim.
+        if (isClientViewPanel(segment.text)) {
+          return (
+            <pre className="chat__pre chat__pre--flow" key={index}>
+              {segment.text.trim()}
+            </pre>
+          );
         }
         return <Markdown key={index} text={reflowProse(segment.text)} />;
       })}

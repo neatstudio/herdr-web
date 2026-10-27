@@ -891,6 +891,20 @@
 }
 
 /*
+ * The account panel a client prints for `/usage` — a label column, then a value
+ * column — is verbatim too, but it is not a drawing: no glyph sits under
+ * another one, so a row that is wider than the lane can wrap without losing its
+ * meaning. On a phone lane the weekly row is 2.1x the width available and the
+ * reset time is the reason the operator asked; scrolling it off-screen would
+ * hide the answer inside its own answer. `pre-wrap` keeps every row on its own
+ * line and lets the long ones fold under themselves.
+ */
+.chat__pre--flow {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/*
  * Long lines in a fenced or verbatim block scroll sideways inside their own box.
  * A phone shows 366px of a 938px line and the panel edge slices the glyph in
  * half, which reads as "the line ends here"; there is no scrollbar to say
