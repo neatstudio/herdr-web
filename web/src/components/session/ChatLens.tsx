@@ -169,21 +169,24 @@ export function ChatLens({ paneId, status, onOpenTerminal }: ChatLensProps) {
     lane.scrollTop = lane.scrollHeight;
   };
 
-  // A fenced block or a verbatim block is `white-space: pre` with a sideways
-  // scroll, so a long line is not cut off — but nothing says it continues. On a
-  // phone the panel edge falls mid-glyph and reads as the end of the line, and
-  // the block has no scrollbar to hint otherwise. The boxes therefore report
-  // which side still has text behind it, and CSS fades exactly that edge, the
-  // same convention the answer row above already borrowed from the tab strip.
-  // It is an attribute rather than state: there can be a dozen blocks in the
-  // lane, each with its own scroll offset, and only the one being swiped changes.
+  // A fenced block, a verbatim block or a table too wide for the lane is a
+  // sideways scroll, so a long line is not cut off — but nothing says it
+  // continues. On a phone the panel edge falls mid-glyph and reads as the end
+  // of the line, and the block has no scrollbar to hint otherwise. The boxes
+  // therefore report which side still has text behind it, and CSS fades exactly
+  // that edge, the same convention the answer row above already borrowed from
+  // the tab strip. It is an attribute rather than state: there can be a dozen
+  // blocks in the lane, each with its own scroll offset, and only the one being
+  // swiped changes.
   useEffect(() => {
     const lane = laneRef.current;
     if (lane === null) {
       return;
     }
     const paint = () => {
-      const boxes = lane.querySelectorAll<HTMLElement>(".chat__code-body, .chat__pre");
+      const boxes = lane.querySelectorAll<HTMLElement>(
+        ".chat__code-body, .chat__pre, .chat__table",
+      );
       for (const box of Array.from(boxes)) {
         const back = box.scrollLeft > 2;
         // `scrollWidth` counts the block's own 24px of padding and rounds, so a

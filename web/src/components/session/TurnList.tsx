@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { COPY_LABEL, turnCopyText, type CopyFormat } from "@/lib/answerText";
 import { COPY_ACK_MS, copyText } from "@/lib/clipboard";
 import { statusWord, type ChatTurn } from "@/lib/conversation";
-import { Markdown } from "./Markdown";
+import { AnswerProse } from "./AnswerProse";
 import { WorkBlock } from "./WorkBlock";
 
 /**
@@ -85,7 +85,7 @@ export function TurnList({ turns, status, at, truncated, seconds }: TurnListProp
             />
             {turn.answer !== "" && (
               <div className="chat__prose">
-                <Markdown text={turn.answer} />
+                <AnswerProse text={turn.answer} />
               </div>
             )}
             {turn.recap !== null && (

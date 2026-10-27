@@ -240,6 +240,119 @@
   margin-bottom: 0;
 }
 
+/*
+ * A table the agent drew — box-drawing characters or markdown pipes — is the
+ * one kind of art worth re-flowing. The cells have names, so they can be laid
+ * out instead of scrolled: one live devin table was 1464px of `<pre>` inside a
+ * 366px phone lane, four fifths of every row behind a sideways swipe with no
+ * column name in view. A diagram, a tree and a menu have no columns and stay
+ * verbatim in `.chat__pre`.
+ *
+ * On a wide lane this is a real table: no outer padding, hairline rules between
+ * rows only, header in the label face so it reads as a caption and not as bold
+ * prose. `padding-left` starts at the second column, so the first column lines
+ * up with the paragraph above it.
+ */
+.chat__table {
+  margin: 0 0 12px;
+  overflow-x: auto;
+  overscroll-behavior: contain;
+}
+
+.chat__table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.chat__table th,
+.chat__table td {
+  padding: 7px 0;
+  border-top: 1px solid var(--ui-border);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.chat__table th + th,
+.chat__table td + td {
+  padding-left: 10px;
+}
+
+.chat__table thead th {
+  border-top: 0;
+  padding-bottom: 6px;
+  color: var(--ui-dim);
+  font-family: var(--ui-label);
+  font-size: var(--step-label);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+}
+
+/*
+ * The phone gets 366px of lane, which is narrower than two of devin's three
+ * columns: a table there is a sideways scroll with the header off screen. Each
+ * row becomes its own card instead, the column name above each cell — the
+ * label comes from `data-label`, because CSS cannot read a `<th>` once the
+ * header row is gone. Nothing is dropped and the page never scrolls sideways.
+ */
+@media (max-width: 560px) {
+  .chat__table {
+    overflow: visible;
+  }
+
+  .chat__table table,
+  .chat__table thead,
+  .chat__table tbody,
+  .chat__table td {
+    display: block;
+  }
+
+  .chat__table thead {
+    display: none;
+  }
+
+  .chat__table tr {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 9px 0 10px;
+    border-top: 1px solid var(--ui-border);
+  }
+
+  .chat__table tr:first-child {
+    padding-top: 0;
+    border-top: 0;
+  }
+
+  .chat__table td,
+  .chat__table td + td {
+    padding: 0;
+    border-top: 0;
+  }
+
+  /* A cell the pane left blank says nothing; printing its label is noise. */
+  .chat__table td:empty {
+    display: none;
+  }
+
+  .chat__table td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 2px;
+    color: var(--ui-dim);
+    font-family: var(--ui-label);
+    font-size: var(--step-label);
+    letter-spacing: 0.07em;
+  }
+
+  /* A table without a header cell for this column gets no empty label line. */
+  .chat__table td[data-label=""]::before {
+    display: none;
+  }
+}
+
 /* ------------------------------------------------------------------- meta */
 
 .chat__meta {
@@ -792,19 +905,22 @@
  * a half-shown character looks faded rather than broken.
  */
 .chat__code-body[data-edges="more"],
-.chat__pre[data-edges="more"] {
+.chat__pre[data-edges="more"],
+.chat__table[data-edges="more"] {
   -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent 100%);
   mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent 100%);
 }
 
 .chat__code-body[data-edges="back"],
-.chat__pre[data-edges="back"] {
+.chat__pre[data-edges="back"],
+.chat__table[data-edges="back"] {
   -webkit-mask-image: linear-gradient(to right, transparent 0, #000 22px);
   mask-image: linear-gradient(to right, transparent 0, #000 22px);
 }
 
 .chat__code-body[data-edges="both"],
-.chat__pre[data-edges="both"] {
+.chat__pre[data-edges="both"],
+.chat__table[data-edges="both"] {
   -webkit-mask-image: linear-gradient(
     to right,
     transparent 0,
