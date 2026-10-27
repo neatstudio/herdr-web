@@ -173,6 +173,7 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `c512fef` | Antigravity（`agy`，Gemini 3.8）的面板在会话视图里**第一段是客户端自己的开屏**：五行半块字画（版本、账号、模型、cwd），提问那一行 `> 安装 …` 也在其中，而它不铺背景带，所以 `readUserBand` 收不到——390×844 上真面板 `w6:p8` 的回合 `user === null`，回答开头是 `▄▀▀▄  Antigravity CLI 1.4.7`、`gouki.xiao@gmail.com (Google AI Pro)` 这类账号家具，操作者看不到自己问过什么。开屏只在有一行写着 `Antigravity CLI <版本>` 时才剥（半块字也是进度条/火花线的字形，认错会吃掉 agent 自己画的东西），剥掉后同一窗口里的粗体 `> ` 行才算提问回显并开一个新回合（围栏里除外，别处的 `>` 引用仍是散文）。顺带把 `▸ Thought for 20s` 下面那几行缩进灰字收进思考块——Gemini 的思考摘要折行不带标记，原来会当回答的第一段。真快照：`w6:p8` 25 → **20** 行、`wE:pG` 146 → **138** 行，两份都从 `user=null` 变成 `user="安装 https://github.com/DietrichGebert/ponytail"` / `user="深度解析当前项目"`；devin `w2N:p5`（3 回合）与 omp `w6:p7`（1 回合）逐字未变 |
 | `22e94e3` | omp 在输入框正上方**重绘当前任务标题**，回答的末尾于是变成一行右对齐的家具：六个活 omp 面板里三个的最后一行是它（`w8:p4` 第 331/331 行 `Fix Ansible inventory tilde paths`、`w2N:p3` 第 100/100 行 `Implement GitLab provider and plugin slots`、`wE:pF` 第 52/52 行 `Build governable injection distribution agent`），带模式时则是徽章药丸（`🕵️ SPWN: …`、`🚦 SHIP: …`），恢复会话时还多一行 `Resumed session`。标题文字本身不带任何「我是家具」的记号，判据只能落在**对齐 + 邻居**：右内边距实测 110–166 列、正下方就是客户端自己的输入框行（`pi > [max] …`）。药丸有形状（`\p{Extended_Pictographic}` + 大写短词 + 冒号），形状与位置两条路都收；右对齐但没有这个邻居的行仍是散文。同一批真快照过新旧两版：12 份里 6 份逐字节不变，`w8:p4` 331 → **330**、`w2N:p3` 100 → **98**、`wE:pF` 52 → **50**、`wE:p7` 230 → **226**（药丸 + 恢复提示）、`w2T:p1` 272 → **271**，被删的每一条都只是标题行本身，`user`/`thoughts`/`work`/`recap` 一字未动 |
 | `5d495dc` | 打字时**回合页脚**（状态点、时钟、`markdown`/`text` 两个复制键）在粗指针下是 44px，横屏键盘把轨道压到 106px 时它占 **41%**，回答的最后一行被顶出可视区；竖屏 433px 轨道上同样是白扔 44px。这些都不是打字工具：点与时钟说的是发送键已经说过的事，两个复制键是读完才按的，所以 `has-keyboard` 期间它 `display: none` 出流，键盘一落就回来（`earlier lines dropped` 随行一起回来）；lane 级 `.chat__meta`（空会话 / `!read.live`）不是回合页脚，留着——失败读数时它是唯一的状态。五份活面板快照 × 竖横两帧实测：页脚 **1/44px → 0/0**，回退后 **1/44**，正文恰好拿到那 44px（`w2N:p3` 横屏从 2 行被切到 3 行完整显示）。新增 `web/tests/keyboard-turn-footer.spec.ts` 2 例钉住这套交换，另报一个只报不改的问题：`usePaneRead` 遇到非 200 读会让轮询循环带着未处理 rejection 死掉，`daemon unreachable` 只在「200 但 body 解析不出来」时到得了 |
+| `8af2612` | 短镜头卡片**不是横屏的功能**，却被 `(pointer: coarse) and (max-height: 499px)` 锁在横屏：那个条件只是「手机侧过来」的代理，而卡片真正回答的是**键盘把镜头压到多矮**。竖屏手机一旦中文候选栏出现、草稿长起来就撞同一堵墙——阻塞菜单 fixture 实测 375×667 配 336px 键盘镜头 **148**、轨道 **60**；360×640 配 320px 是 **137/49**；320×568 配 260px 是 **125/37**。37px 的轨道放不下芯片正在回答的那个问句，而 44px 芯片行 + 44px 键行吃掉 125px 里的 88px，键行还只是重复芯片已有的 `esc`/`enter`。改法是把镜头容器对**所有粗指针键盘帧**注册（`container-type: size`；`.lens` 高度来自 flex，不会成环），让两条高度查询自己决定；103px 那段用相同数值重申一遍，这样 103px 的镜头不会在一个朝向跟另一个朝向长得不一样。竖屏宽镜头按构造不受影响：390×844 配 336px 镜头 **325**、414×896 配 380px **333**，167px 以下没有一条命中。短帧保留问句（18px）、保留芯片（44px），把键行的 44px 交给正文：375×667 的轨道 **60 → 86**，320×568 **21 → 47**，320×568 配 330px 键盘（镜头正好 **103**）折成 40px 行 + 4px 内边距，和横屏 82/86px 帧同一个形状。新增 `web/tests/keyboard-portrait-card.spec.ts` 4 例（148/109/103/325 四帧）；**更正 4.3x 的「竖屏纯增量」**：390×844 上确实逐字节不变，但竖屏并非到不了卡片——键盘带候选栏 + 长草稿就能到 109–148px，那批帧当时没量。`lens-typing` 里 320×568/260 那条「键行在输入框上方」现在落进卡片域，改钉卡片形状（行 `display: none`、芯片行底边 = 输入框顶边、键盘落下后行和 20px 呼吸一起回来）。|
 
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
@@ -2055,3 +2056,29 @@ devin（`w2N:p5`，3 回合 / 19+117+7 行）与 omp（`w6:p7`，1 回合 / 174 
 `tsc --noEmit` 干净、`test:unit` **380/380**、`keyboard-turn-footer` 2/2 + `landscape-keyboard` + `touch-targets` 合计 **6/6**。
 
 **只报不改**：`usePaneRead.ts` 的轮询 `tick` 是 `await readPane(...)`，而非 200 的读会让 `getJSON` 抛错、从 `tick` 里逃出去，`schedule` 再也不会被排上——面板于是**静静地冻在上一份快照上**，连 `daemon unreachable` 那一行都不会出现（`live` 只有 `readPane` 返回 `null` 也就是「200 但 body 解析不出来」时才翻假）。这个文件不在本轮可改的范围内，留作报告；真 daemon 短暂 5xx 时操作者会以为 agent 没在动。
+
+### 4.47 短镜头不是横屏的事：竖屏也能到那张卡（`8af2612`）
+
+**上一版的条件是朝向，不是原因**。`index.css` 里那张回答卡的门是 `(pointer: coarse) and (max-height: 499px)`——它读的是**视口高度**，是「手机侧过来了」的代理。卡片真正要解的问题是「键盘把镜头剩得多矮」，而竖屏手机走进同一个坑的路径很具体：中文键盘带候选栏、草稿又长起来。
+
+**量到的墙**（阻塞菜单 fixture，44px 芯片行 + 44px 键行，五行草稿，`hasTouch` 真粗指针）：
+
+| 帧 | 键盘 | 镜头 | 轨道（改前 → 改后） |
+| --- | --- | --- | --- |
+| 375×667 | 336 | 148 | 60 → **86** |
+| 360×640 | 320 | 137 | 49 → **75** |
+| 320×568 | 260 | 125 | 37 → **63** |
+| 320×568 | 300 | 109 | 21 → **47** |
+| 320×568 | 330 | **103** | 37 → 82（折成 40px 行 + 4px 内边距） |
+| 390×844 | 336 | 325 | 237 → 237（不动） |
+| 414×896 | 380 | 333 | 245 → 245（不动） |
+
+21px 的轨道一行正文都放不下，问句滚在外面，操作者看到一排芯片不知道在答什么——这正是 4.3x 在横屏修掉的那个 bug。而键行在 125px 的镜头里占 88px 中的 44px，它只重复芯片已经带着的 `esc`/`enter`。
+
+**改法**：`@media (pointer: coarse)` 下给 `html.has-keyboard .lens` 注册容器（`container-name: lens; container-type: size`），让 167px 与 103px 两条 `@container` 自己决定。103px 那段用**相同数值**重申，不靠横屏那条规则兜底，这样同一张 103px 的镜头在两个朝向上不会长得不一样。`session.css:42-65` 里 `.lens` 的高度完全由 flex 给，`container-type: size`（`contain: size layout style`）不会造成布局循环——十四个帧实测无回归。
+
+**为什么不是「键盘一弹就折」**：折的是镜头的高度，不是键盘的存在。390×844 剩 325px 的竖屏完全够用，167px 以上一条都不命中，逐字节同改动前。
+
+**用例**：`web/tests/keyboard-portrait-card.spec.ts` 四例，钉 148 / 109 / 103 / 325 四个镜头高度：18px 问句条（宽 = `min(100% - 24px, 820px)`，375−24=351）、问句条底边 = 回答行顶边、回答行 44px、`.chat .keys` `display: none`、两张 44×32 的折叠键还在、芯片 `elementFromPoint` 命中、页面不溢出；第二例把键盘落下，确认容器回到 `normal`、问句条收起、键行与 44px 回来；第三例钉 103px 边界（40px 行 + `4px` 内边距 + 32px 脸）；第四例钉宽帧原样。`lens-typing` 的 320×568/260 那条从「键行在输入框上方」改钉卡片形状，并补了键盘落下后的回退。
+
+`tsc --noEmit` 干净、`test:unit` **380/380**；`keyboard-portrait-card` 4/4、`pick-ask` 4/4、`squeeze-rows` 5/5、`keymenu-space` 4/4、`keyboard-turn-footer` 2/2、`landscape-keyboard` 2/2、`lens-flip` 6/6、`touch-targets` 2/2、`pick-row` 4/4、`lens-typing` 6/6、`composer-draft-top` 5/5。
