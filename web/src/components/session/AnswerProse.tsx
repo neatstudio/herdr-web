@@ -1,11 +1,18 @@
-import { useMemo, type ReactNode } from "react";
+import { Fragment, useMemo, type ReactNode } from "react";
 
 import { isClientViewPanel } from "@/lib/clientView";
 import { inlineSpans, safeHref } from "@/lib/markdown";
+import {
+  FOLD_AT_SHORT_FENCES,
+  fenceSource,
+  planOutput,
+  type OutputPlan,
+} from "@/lib/outputFold";
 import { reflowProse } from "@/lib/prose";
 import { splitTables, type TableModel } from "@/lib/table";
 
 import { Markdown } from "./Markdown";
+import { OutputFence } from "./OutputFence";
 
 /**
  * The agent's answer, with the tables it drew rendered as tables.
@@ -92,8 +99,40 @@ export function AgentTable({ table }: { table: TableModel }) {
   );
 }
 
+/** The body of one prose segment: its blocks of output, and the text between. */
+function outputPieces(plan: OutputPlan, fold: boolean, prefix: string): ReactNode[] {
+  return plan.pieces.map((piece, index) => {
+    const key = `${prefix}-${index}`;
+    if (piece.kind === "prose") {
+      return piece.text.trim() === "" ? null : <Markdown key={key} text={reflowProse(piece.text)} />;
+    }
+    if (piece.kind === "silence") {
+      return null;
+    }
+    if (fold && piece.short) {
+      return <OutputFence key={key} piece={piece} />;
+    }
+    return <Markdown key={key} text={fenceSource(piece)} />;
+  });
+}
+
 export function AnswerProse({ text }: { text: string }) {
   const segments = useMemo(() => splitTables(text), [text]);
+  // `lib/outputFold.ts` decides what is worth folding and owns the reasoning:
+  // a *short* block, in an answer that has at least three of them. The count is
+  // taken over the whole answer, not per table-delimited segment, because the
+  // reader sees one answer.
+  const plans = useMemo(
+    () =>
+      segments.map((segment) =>
+        segment.kind === "table" || isClientViewPanel(segment.text)
+          ? null
+          : planOutput(segment.text),
+      ),
+    [segments],
+  );
+  const folded =
+    plans.reduce((total, plan) => total + (plan?.shortFences ?? 0), 0) >= FOLD_AT_SHORT_FENCES;
   return (
     <>
       {segments.map((segment, index) => {
@@ -112,6 +151,12 @@ export function AnswerProse({ text }: { text: string }) {
               {segment.text.trim()}
             </pre>
           );
+        }
+        const plan = plans[index];
+        if (plan !== null && plan !== undefined) {
+          // A fragment, not a wrapper: the transcript's rhythm between
+          // segments is the existing flow, and a div here would change it.
+          return <Fragment key={index}>{outputPieces(plan, folded, `${index}`)}</Fragment>;
         }
         return <Markdown key={index} text={reflowProse(segment.text)} />;
       })}

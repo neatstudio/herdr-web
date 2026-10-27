@@ -1301,3 +1301,121 @@
     line-height: 1.5;
   }
 }
+
+/* -------------------------------------------------- short blocks, folded */
+/*
+ * An agent that mentions a value in a fenced block does it eight times in one
+ * answer. Measured on the Claude Code pane (`w6:p3`): 8 blocks of 1-2 lines in
+ * one 1 543px turn, each paying a 26px head with a language label and a copy
+ * button. `lib/outputFold.ts` decides when that pattern is worth folding and
+ * keeps the original source for the open state; this is what a folded block
+ * looks like — one quiet row, in the register of the work fold rather than the
+ * register of a code panel, because it is navigation.
+ *
+ * The row is deliberately short: it is pressed, not read. Its reach is the
+ * whole width of the lane — 24px of face under a mouse, 34px on a coarse
+ * pointer, and 30px on the phone, which is where the wall this replaces was
+ * worst and where a row grown to a fingertip's 44px would simply put it back.
+ * Hover and focus brighten the line rather than the labels: the line is the
+ * content.
+ */
+.out {
+  min-width: 0;
+}
+
+.out + .out {
+  margin-top: 2px;
+}
+
+.out__row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ui-dim);
+  font: inherit;
+  font-size: var(--ui-meta);
+  line-height: 1.45;
+  text-align: left;
+  cursor: pointer;
+}
+
+.out__row:hover .out__peek,
+.out__row:focus-visible .out__peek {
+  color: var(--ui-text);
+}
+
+.out__row:hover .out__caret,
+.out__row:focus-visible .out__caret {
+  color: var(--ui-dim);
+}
+
+.out__caret {
+  flex: none;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--ui-faint);
+  transition: transform 160ms ease;
+}
+
+.out[data-open="true"] .out__caret {
+  transform: rotate(90deg);
+}
+
+.out__lang {
+  flex: none;
+  color: var(--ui-faint);
+  font-family: var(--ui-mono);
+}
+
+.out__count {
+  flex: none;
+  color: var(--ui-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The one part of the row that is content: the first line, at reading size,
+   because "do I want this block" is answered by that line alone. */
+.out__peek {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ui-dim);
+  font-family: var(--ui-mono);
+  font-size: var(--ui-code);
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+
+.out__body {
+  margin-top: 4px;
+}
+
+.out__row:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  .out__row {
+    min-height: 34px;
+  }
+}
+
+@media (pointer: coarse) and (max-width: 720px) {
+  .out__row {
+    gap: 5px;
+    min-height: 30px;
+    font-size: calc(var(--ui-body) - 2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .out__caret {
+    transition: none;
+  }
+}
