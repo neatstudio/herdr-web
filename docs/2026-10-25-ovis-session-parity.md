@@ -170,6 +170,7 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `64293dd` | 手机上回到最新一轮的按钮是**压在正文上**的：`latest ↓` 在 390×844 上量到 97×44，而正文列只有 366px——四分之一条轨道，正落在操作者刚滚回去读的那段散文上；`LATEST` 这个词也没说什么 `↓` 没说的话。词改成一个 `<span>`，粗指针帧与 ≤560px 帧把它 `display: none`，药丸收成 44×44 的圆：**标签可以缩，拇指面不缩**，`aria-label` 仍把按钮的名字留给读屏；有边槽的宽帧（700×900 实测 94×44）照旧带词。同一份真 devin 面板快照、同一滚动位置（滚回 480px）：遮挡的 `.chat__prose` 面积 97×44 → **44×44**，占轨道宽 24.8% → **11.3%**（−55%）。新增 `web/tests/jump-pill.spec.ts` 三例（手机 44×44 且无词、点一下回到底部、700 宽仍带词），同跑 `touch-targets` + `squeeze-rows` 7/7、`lens-typing` + `prose-reflow` 10/10；`tsc --noEmit` 干净，`test:unit` 369/369 |
 | `a68282d` | 横屏打字时菜单把**问句**丢了：844×390 配 210px 键盘再打五行草稿，lens 只剩 82，40px 回答行 + 40px 折叠键行之后轨道只剩 **2px**——芯片还在，但「在答什么」那一行滚在外面，操作者看到一排按钮不知道在回答什么。破 167px 时改成一张卡：18px 问句条（`pickerAsk` 取下选项上方 3 行内以 `:`/`：`/`?`/`？` 收尾的那一行，`▸ ran tool` 当作上下文不算问题；96 字符封顶，超出带省略号）+ 44px 回答行，键条的 `esc`/`↵` 折进回答行做 44×32 的脸、键行不再画；轨道回到 **24px**（568×320 是 28px）。390×844 竖屏纯增量：lens 433、键条 44、问句条 `display: none`，逐字节同改动前 |
 | `0079960` | 画出来的表**少吃一行**：devin 在表格单元格里点一行内代码 chip（`48;2;0;43;54`），这一行于是带了背景色，`buildBlocks` 把所有带背景的行都送进盒子读取器，而 `readOrphanBoxRun`（本来是给「开框被滚动窗口切掉」的盒子用的）把它当成盒子正文搬出了回答——一张三列的表因此少了整行，折行后的续行独自留下来当了一行，`问题` 格读成空、`证据` 的尾巴跑进 `建议` 格，旁边还多一条重复的分隔线。390×844 真面板 `w2N:p5` 的第二张表实测第一行渲染成 `["", "行", "4 个文件"]`、第三行同样错位。判据从「数边框字形」改成「看这张表本身」：一行的上下邻行里只要有一条带 `┬`/`┼`/`┴` 的边框行，它就是画出来的表；盒面板和 diff 用 `+---+` 与 `|` 画，永远没有这三个字形，所以「窗口切在 omp diff 盒子里」那条老路径一位未动。修完同一份快照 `splitTables` 出 `单个文件太大 / server.go 2222 行、watcher.go 2113 行… / 按职责拆分。…可以拆成 4 个文件`，另外三份快照回合数与行一字未变；新增 `conversation.test.ts` 一例（合成表格 + chip 格，钉住 1 回合、表头两列、一行一格、`work` 为空），`test:unit` 372/372、`tsc --noEmit` 干净、`box-table` 2/2、`squeeze-rows` 5/5 |
+| `c512fef` | Antigravity（`agy`，Gemini 3.8）的面板在会话视图里**第一段是客户端自己的开屏**：五行半块字画（版本、账号、模型、cwd），提问那一行 `> 安装 …` 也在其中，而它不铺背景带，所以 `readUserBand` 收不到——390×844 上真面板 `w6:p8` 的回合 `user === null`，回答开头是 `▄▀▀▄  Antigravity CLI 1.4.7`、`gouki.xiao@gmail.com (Google AI Pro)` 这类账号家具，操作者看不到自己问过什么。开屏只在有一行写着 `Antigravity CLI <版本>` 时才剥（半块字也是进度条/火花线的字形，认错会吃掉 agent 自己画的东西），剥掉后同一窗口里的粗体 `> ` 行才算提问回显并开一个新回合（围栏里除外，别处的 `>` 引用仍是散文）。顺带把 `▸ Thought for 20s` 下面那几行缩进灰字收进思考块——Gemini 的思考摘要折行不带标记，原来会当回答的第一段。真快照：`w6:p8` 25 → **20** 行、`wE:pG` 146 → **138** 行，两份都从 `user=null` 变成 `user="安装 https://github.com/DietrichGebert/ponytail"` / `user="深度解析当前项目"`；devin `w2N:p5`（3 回合）与 omp `w6:p7`（1 回合）逐字未变 |
 
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
@@ -1916,3 +1917,44 @@ function isBareCaret(text: string): boolean {
 **量到的东西**：真 `ansi-w2N-p5.json` 修前第二张表三行，第一行 `["", "行", "4 个文件"]`、第三行同样错位；修后第一行 `["单个文件太大", "server.go  2222 行、watcher.go  2113 行、 runner.go  2074 行、 ProjectPage.tsx  2183 行", "按职责拆分。比如  watcher.go  里混着分支监控、PR 同步、Cherry-Pick、监控日志，可以拆成 4 个文件"]`，第二张表第一张（`设计要求 / 现状`）五行一字未变。`ansi-wE-pG.json`、`ansi-w6-p7.json`、`ansi-w6-p8.json` 回合数、行数、表格数都不变。
 
 **用例**：`conversation.test.ts` 新增一例——合成一张两列表、某格带 chip，断言只有一个回合、`readUserBand` 没把这行当提问带、`splitTables` 出 1 张表、表头 `["问题", "证据"]`、只有一行且两格都完整、`turn.work` 为空；同文件原有的「窗口切在盒子里」与「内联 chip 不造用户回合」两例仍是绿的（33/33）。同跑 `test:unit` 372/372、`tsc --noEmit` 干净、`web/tests/box-table.spec.ts` 2/2、`web/tests/squeeze-rows.spec.ts` 5/5。
+
+### 4.44 Antigravity 的开屏不是回答，提问也不是 `null`（`c512fef`）
+
+**症状**：390×844 上真 `agy` 面板 `w6:p8` 的会话视图，第一段是客户端自己的开屏：
+
+```
+▄▀▀▄        Antigravity CLI 1.4.7
+▀▀▀▀▀▀       gouki.xiao@gmail.com (Google AI Pro)
+▀▀▀▀▀▀▀▀      Gemini 3.8 Flash (High)
+▄▀▀    ▀▀▄     ~/server/herdr-web
+▄▀▀      ▀▀▄
+> 安装 https://github.com/DietrichGebert/ponytail
+已成功安装 DietrichGebert/ponytail …
+```
+
+而这一回合 `user === null`：问题被打印成开屏后的第一行回答，账号邮箱却成了操作者读到的第一句话。`wE:pG` 同样（`深度解析当前项目`）。
+
+**为什么**：`agy` 不铺提问带——它把提交的文本用**粗体强调色**紧跟在 `> ` 后面再打一遍，`readUserBand` 只认铺满背景色的带子，所以收不到；开屏五行是普通正文行，`isChrome` 也不认。`pane.read` 的窗口正好从开屏开始，于是五行家具加一行回显全落进回答。
+
+**判据**：
+
+| 情形 | 处理 | 依据 |
+| --- | --- | --- |
+| 开头 ≤ 8 行内出现 `▄`/`▀` 组成的整行，且其中一行写着 `Antigravity CLI <版本>` | 连同其间的空行一起剥掉 | 只有这家客户端印这行字；不写客户端名的半块字是 agent 自己画的图（进度条、火花线），不能剥 |
+| 剥掉开屏的窗口里，一行以 `> ` 开头且过半可见字符是粗体 | 当作提问回显：开一个 `user` 回合，去掉 `> ` | 客户端回显是粗体强调色；普通引用不粗 |
+| 同样的 `> ` 行但前面没有开屏 | 保持散文 | 不许把 omp/devin/pi 的引用行升成提问 |
+| `> ` 行落在代码围栏内 | 保持散文（shell 重定向） | 围栏里是 agent 写的内容 |
+| 标记行 `▸ Thought for 20s, 2.4k tokens` 之后，缩进 ≥ 2 空格且**没有默认前景色**的行 | 并进同一段思考 | Gemini 把思考摘要折行印成灰色缩进，行首没有标记；原来会当回答的第一段 |
+
+**量到的东西**（真面板快照，`/tmp/ansi-w6-p8.json`、`/tmp/ansi-wE-pG.json`，同一份数据过新旧两版 `deriveConversation`）：
+
+| 快照 | 回合 | 回答行数 | `user` | 回答开头 |
+| --- | --- | --- | --- | --- |
+| `w6:p8` 前 | 1 | 25 | `null` | `▄▀▀▄  Antigravity CLI 1.4.7` |
+| `w6:p8` 后 | 1 | **20** | `安装 https://github.com/DietrichGebert/ponytail` | `已成功安装 DietrichGebert/ponytail …` |
+| `wE:pG` 前 | 1 | 146 | `null` | `▄▀▀▄  Antigravity CLI 1.4.2` |
+| `wE:pG` 后 | 1 | **138** | `深度解析当前项目` | `项目深度解析：开屏广告平台规格与 signagent 治理引擎` |
+
+devin（`w2N:p5`，3 回合 / 19+117+7 行）与 omp（`w6:p7`，1 回合 / 174 行）两版输出逐字节相同：没有开屏的窗口里既没有行被剥，也没有 `>` 行被升格。
+
+**用例**：`conversation.test.ts` 新增四例——合成开屏 + 回显 ⇒ 一个回合、问题完整、回答里没有 `Antigravity`/`Google AI Pro`、折行的思考收进 `thoughts`；同一窗口第二个回显开第二个回合；没有客户端名的半块字与 `> 引用` 都留在回答里；围栏里的粗体 `> out.txt` 仍是 shell。`test:unit` **376/376**、`tsc --noEmit` 干净；`web/tests/transcript-hygiene.spec.ts` 3/3、`box-table.spec.ts` 2/2、`code-edge-fade.spec.ts` 4/4。
