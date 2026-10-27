@@ -161,6 +161,7 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `a387869` | 桌面上的 AUTO/WRAP/EXACT/FIT 是**浮在正文上**的：6px 贴角、静止 35% 不透明，而转录是追着尾巴滚的——1280×800 实测条在 `142..162`、第一条可见行在 `148`，字从脸里透出来。补滚动内边距修不了：`overflow:auto` 会把内容画进 padding 带，而它永远滚着，实测 30px 内边距下仍有行盒落在 `141`。所以细指针 + >900px 给它一行真栅格：条占第一行 `auto`、阻塞提示第二行、滚动盒第三行，静止不透明；代价是 537px 高 tile 里的 24px（一条折行），换来静止与尾巴处都没有字被压。粗指针/窄帧那条 44px 整宽触屏条一位未动 |
 | `49b2aa0` | 手机草稿在卡片里**贴着底**：桌面把 `prompt__field` 对齐到底，好让一行高的按钮压在两行草稿的最后一行上；但手机的 pad 是 2×2（74px），比草稿两行起底（48px）高，于是草稿被顶到底：390×844 实测 field `751..825`、textarea `777..825`，占位文字比它旁边的 attach 按钮低 26px，卡片左上角是一块空洞。窄帧改成 `align-items: start`，草稿首行与 attach/image 齐平（都是 751），空出的那一行读作「可以接着写」；卡片仍是 96px，一行转录都没多花。打字态 pad 折成一行，用**三个类**把它重新居中到草稿上（`.has-keyboard .shell.is-narrow .prompt__field`，66px 卡片）；短横屏的侧折仍居中（70px）；平板 820×1180 与桌面 1280×800 还是 `end` |
 | `ec86308` | 手机上的长代码行原来不是**被裁掉**，是**看不出还能滑**：`.chat__code-body` 与 `.chat__pre` 本来就是 `white-space: pre` + 横向滚动，390×844 实测 `clientW 366 / scrollW 823`（另一块 708），滚得到，但面板边缘正好把字切在中间、又没有滚动条，读起来就是「这一行到此为止」。用 `.chat__pick` 的同一条约定：块自己带 `data-edges="more|back|both"`，CSS 用 `mask-image` 淡出还有字的那一侧（右 36px、左 22px，`-webkit-` 双写）。属性而不是 state——一条轨道里可能有十几个块，各滚各的，一个捕获阶段 `scroll` 监听统一重画；`ResizeObserver(lane)` 管旋转与换帧宽。16px 地板挡住「量出来 2–3px 舍入溢出」就去淡字的情况（横屏 820 的帧 `scrollW 823` 因此保持干净）。实测淡出末段字形亮度 688→53、跨最后 25 CSS px，是真淡出不是空转；滚到中段两侧都淡、滚到底只淡左，`webkitMaskImage` 每个状态都跟 `maskImage` 一致（iOS Safari 覆盖）。新增 `web/tests/code-edge-fade.spec.ts` 四例 |
+| `8ff5ad8` | 转录把客户端的输入框当成了 Agent 的最后一句话：可见快照止于输入框，末尾几行是客户端的家具，不是文字。Gemini（`agy`）最坏——它把思考过程画成**正体灰**`▸ Thought for 5s, 184 tokens`，既非斜体也无 dim 属性，于是「按样式认思考」的 `isReasoningLine` 把它当回答正文；一个回合的结尾会同时出现三句假话：Agent 在引用自己的计时行、光标裸 `>` 造出一个空 blockquote、`? for shortcuts` 成了回答的最后一句。规则改成「标记 + 词」：`○◌▸◉✻*` 后面必须跟 `thought\|thinking\|reasoning` 才算思考，理由是工作行 `● Ran 7 commands` 也是灰的，只有 `○`/`●` 分不出来；标记本身在进折叠时剥掉（字形是客户端的，`Thought for 5s, 184 tokens` 已经把话说全了）。`CHROME_PATTERNS` 补 `? for shortcuts`、`esc\|ctrl+c to interrupt\|cancel\|stop` 与**裸** `>` 行；`>` 后面有字仍然算正文，因为那是 Agent 真写下的引用，用例里也放了一条不许被吞掉。折叠侧零 CSS 改动：思考本来就渲染成一行可展的 `data-kind="thought"` 行，计时行现在住在里面。`tsc --noEmit` 干净，`test:unit` 333/333（新增三例），新增 `web/tests/transcript-hygiene.spec.ts` 三例（390×844 ×2、700×800 ×1），同跑 `pick-row` 4/4、`squeeze-rows` 5/5、`desktop-display-row` 2/2；真 agy 面板探头：转录止于回答与它的 meta 行 |
 
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
@@ -1701,3 +1702,44 @@ AUTO / WRAP / EXACT / FIT 从 4.4 起就是「贴角的小字」：`position: ab
 - 700×800 细指针帧：同样淡出（`scrollWidth - clientWidth > 100`）——窄桌面也是这个盒子，不该只在手机上成立。
 
 `tsc --noEmit` 干净，`test:unit` 330/330，新用例 4/4，同跑 `pick-row` 4/4（芯片的 20 / 34px 淡出没被这次改动碰掉）。这一条补的是「长行读不全」这一类：内容一直在，缺的从来只是让人知道它还在。
+
+### 4.35 客户端的输入框不能变成 Agent 的最后一句话（`8ff5ad8`）
+
+`format=ansi` 的可见快照是有边界的：它截到光标所在的那一行，也就是输入框。所以最后几行永远不是 Agent 写的，而是客户端画的。以前这些行大多能靠样式认出来——真 `dim`、真反显、或者 `────` 花边——但换一个客户端就漏：
+
+- **Gemini / `agy`** 把思考过程画成正体灰：`▸ Thought for 5s, 184 tokens`、`○ Thought for 32.3s (working out the rules)`。没有斜体、没有 dim 属性，`isReasoningLine` 的两条判据（`italicShare > 0.15`、`hasDefaultInk`）都不成立，于是它被当成回答正文，折叠里什么都没有，回答尾巴上多了一句「思考了 5 秒」。
+- 底部键提示 `? for shortcuts` 和 `esc to interrupt` 同样没有样式标记，读起来完全是 Console 的语气。
+- 空输入框本身是**一行裸 `>`**。空行会被 `isPadding` 吃掉，`>` 不会；它进来之后被当成引用块的开头，渲染出一个空的 `blockquote`。
+
+三种「家具」叠在同一个回合：Agent 引用自己的计时、一个空引用块、以及 `? for shortcuts` 作为回答的最后一句。
+
+**为什么不能「灰就是思考」**：`● Ran 7 commands (2.1s)` 也是灰的正体。`○`/`●` 单独出现时既可能是列表圆点，也可能是客户端的工作行，靠颜色永远分不开。唯一的稳定信号是**标记加词**：
+
+```ts
+const THOUGHT_MARK_RE = /^\s*[○◌▸▹⟡◇◈●✻✶✳*]\s+(?:thought|thinking|reasoning)\b/i;
+const THOUGHT_GLYPH_RE = /^\s*[○◌▸▹⟡◇◈●✻✶✳*]\s+/;
+```
+
+两条分开是刻意的：认行用带词的那条，剥标记用只含字形的第二条。第一版把它们合成了一条，`stripThoughtMark` 连 `Thought` 一起吃掉，折叠里剩 `for 5s, 184 tokens`——单测第一次跑就红了（`'for 5s, 184 tokens\n for 32.3s …'` vs 期望的 `'Thought for …'`）。字形该剥，因为它是客户端画的符号；词该留，因为那一行唯一的信息就是「思考了多久、多少 token」。
+
+`CHROME_PATTERNS` 补三条，都带「为什么」的注释：`? for shortcuts`（键提示）、`esc|ctrl+c to interrupt|cancel|stop`（中断提示）、以及**裸** `>` 行。裸很关键：
+
+```ts
+function isBareCaret(text: string): boolean {
+  return /^>\s*$/.test(text);
+}
+```
+
+`>` 后面有字是 Agent 真写下的引用——比如 `> 安装 https://github.com/…`，那是它引用用户的指令——必须原样留住。所以只吃掉空的那个。用例里两条都放：一条 `> cannot find symbol: class Pane` 断言仍然匹配 `/^> …$/m`，一条裸 `>` 断言回答不以 `>` 结尾。
+
+**折叠侧零改动**。`WorkBlock` 本来就把 `thoughts` 渲染成一行可展开的 `data-kind="thought"` 行，`total` 也把思考算进计数（`totalWork(counts) + (thoughts.length > 0 ? 1 : 0)`），所以计时行现在住进折叠里，摘要行从「1 file read · 1 action」开始算，不用碰 CSS。
+
+**实测**（`/tmp/probe-agy.mjs`，390×844，真 `agy` 面板，只读）：轨道 innerHTML 现在止于 `<div class="chat__meta" …>`，最后一段正文是 `<p>已成功安装 DietrichGebert/ponytail。</p>`；`.chat__prose` 里没有 `? for shortcuts`、没有 `Thought for`、没有空 `<blockquote>`；折叠摘要 `1 file read · 1 action`。截图 `/tmp/ui/agy-phone.png` 复查：转录干净地停在 meta 行 `● idle 00:07 markdown text`。
+
+**用例**：`web/tests/transcript-hygiene.spec.ts` 三例，桩与 `code-edge-fade` 同一套（`herdr:lens:w2:p1=chat`，只读接口全打桩，夹具是**合成**的——形状抄客户端，文字为本用例所写，因为真面板的原文不该进仓库）：
+
+- 390×844：`prose` 含 `已成功安装 ponytail。`，不含 `for shortcuts`、`Gemini 3.8 Flash · high`、`/Thought for \d/`；`.markdown__quote` 恰好 1 个且含 `安装 ponytail`（裸 `>` 没造出第二个、且是空的）；
+- 390×844：`.work__head` 恰好 1 个；打开后（`work__head` → `.work__row[data-kind="thought"] > button`，思考在第二层）`.work__detail-body` 同时含 `Thought for 32.3s` 与 `Thought for 5s, 184 tokens`——**没有被静默丢掉**，只是折起来了，这一点比「不出现」更重要；
+- 700×800 细指针窄帧：同样规则，`prose` 含回答、不含键提示。
+
+`tsc --noEmit` 干净，`test:unit` 333/333（含新增三例：灰思考行折进折叠而 `● Ran` 仍算工作行；键提示与中断行被丢掉；裸光标是家具、有字的引用是正文）。同跑 `pick-row` 4/4、`squeeze-rows` 5/5、`desktop-display-row` 2/2。这一条补的是「转录末尾那几行不是人写的」这一类：判据必须落在**词**上，不能落在**样式**上。
