@@ -3767,3 +3767,52 @@ body::before {
     grid-row: 3;
   }
 }
+/* ------------------------------------------------------------- the short
+   lens is not a sideways frame -------------------------------------------
+   The card above is gated on `(pointer: coarse) and (max-height: 499px)`,
+   which is a proxy for "the phone is on its side", not for the condition it
+   answers. What the card answers is how much lens the soft keyboard leaves,
+   and a portrait phone walks into that same wall the moment the keyboard
+   brings a candidate bar and the draft grows. Measured with the blocked-menu
+   fixture (44px chip row + 44px key row, 5 lines of draft): 375x667 with a
+   336px keyboard leaves the lens 148px and the transcript 60px, 360x640 with
+   320px leaves 137/49, 320x568 with 260px leaves 125/37 — and a 37px
+   transcript cannot show the question the chips are answering, exactly the
+   bug 4.3x fixed sideways. The key row is the same 44px of a 109px lens there,
+   and it only repeats esc and enter, which the chips already carry.
+   So register the container for every coarse keyboard frame and let the height
+   queries decide. A roomy portrait lens is untouched by construction: at
+   390x844 with a 336px keyboard the lens is 325px, at 414x896 with 380px it is
+   333px, and nothing under 167px matches. The 103px block is re-stated rather
+   than left to the sideways rule so that a 103px lens cannot look different in
+   one orientation than the other; the declarations are the same values. */
+@media (pointer: coarse) {
+  html.has-keyboard .lens {
+    container-name: lens;
+    container-type: size;
+  }
+
+  @container lens (max-height: 103px) {
+    html.has-keyboard .chat__lane {
+      padding-top: 0;
+      padding-bottom: 0;
+    }
+
+    html.has-keyboard .chat__pick {
+      padding-top: 4px;
+      padding-bottom: 4px;
+    }
+
+    html.has-keyboard .chat__pickopt::after {
+      inset: calc(-4px - var(--rule-w)) -2px;
+    }
+
+    html.has-keyboard .lens .keys {
+      min-height: 40px;
+      padding-top: 0;
+      padding-bottom: 0;
+      border-top: 0;
+      box-shadow: inset 0 var(--rule-w) 0 var(--ui-border, var(--rule));
+    }
+  }
+}

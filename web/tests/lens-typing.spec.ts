@@ -399,12 +399,14 @@ test.describe("the lens switch while typing", () => {
     expect(stack.scrolls).toBe("auto");
     expect(stack.input!.height).toBeLessThanOrEqual(120);
 
-    // Each row still sits on the one below it, in order, inside the shell: the
-    // bug was the key row's bottom 11px painted under the composer because the
-    // lane would not give up its 48px of padding.
+    // At this frame the lens is under 167px once the composer hits its cap, so
+    // the answer card is what fills it and the key row is not stacked above the
+    // composer at all: its esc and enter are folded into the answers row. What
+    // still holds is the old bug's invariant — no row may paint under the
+    // composer, and what is shown stacks in order straight onto it.
+    expect(stack.keys!.height, "the card folds the key row away").toBe(0);
     expect(stack.lane!.bottom).toBeCloseTo(stack.pick!.top, 0);
-    expect(stack.pick!.bottom).toBeCloseTo(stack.keys!.top, 0);
-    expect(stack.keys!.bottom).toBeLessThanOrEqual(stack.prompt!.top + 0.5);
+    expect(stack.pick!.bottom).toBeCloseTo(stack.prompt!.top, 0);
     expect(stack.prompt!.bottom).toBeLessThanOrEqual(stack.viewport + 0.5);
     expect(stack.shell!.bottom).toBeCloseTo(stack.viewport, 0);
 
@@ -414,10 +416,16 @@ test.describe("the lens switch while typing", () => {
     expect(stack.lane!.paddingTop).toBe(8);
     expect(stack.lane!.paddingBottom).toBe(8);
 
+    // And the card is a keyboard state: with the keyboard down the lens is tall
+    // again, the row is back above the composer and so is the lane's air.
     await keyboardDown(page);
-    const restored = await page.evaluate(() =>
-      parseFloat(getComputedStyle(document.querySelector<HTMLElement>(".chat__lane")!).paddingTop),
-    );
-    expect(restored).toBe(20);
+    const restored = await page.evaluate(() => ({
+      padding: parseFloat(
+        getComputedStyle(document.querySelector<HTMLElement>(".chat__lane")!).paddingTop,
+      ),
+      keys: document.querySelector<HTMLElement>(".chat .keys")!.getBoundingClientRect().height,
+    }));
+    expect(restored.padding).toBe(20);
+    expect(restored.keys).toBeGreaterThanOrEqual(40);
   });
 });
