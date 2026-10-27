@@ -172,6 +172,7 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `0079960` | 画出来的表**少吃一行**：devin 在表格单元格里点一行内代码 chip（`48;2;0;43;54`），这一行于是带了背景色，`buildBlocks` 把所有带背景的行都送进盒子读取器，而 `readOrphanBoxRun`（本来是给「开框被滚动窗口切掉」的盒子用的）把它当成盒子正文搬出了回答——一张三列的表因此少了整行，折行后的续行独自留下来当了一行，`问题` 格读成空、`证据` 的尾巴跑进 `建议` 格，旁边还多一条重复的分隔线。390×844 真面板 `w2N:p5` 的第二张表实测第一行渲染成 `["", "行", "4 个文件"]`、第三行同样错位。判据从「数边框字形」改成「看这张表本身」：一行的上下邻行里只要有一条带 `┬`/`┼`/`┴` 的边框行，它就是画出来的表；盒面板和 diff 用 `+---+` 与 `|` 画，永远没有这三个字形，所以「窗口切在 omp diff 盒子里」那条老路径一位未动。修完同一份快照 `splitTables` 出 `单个文件太大 / server.go 2222 行、watcher.go 2113 行… / 按职责拆分。…可以拆成 4 个文件`，另外三份快照回合数与行一字未变；新增 `conversation.test.ts` 一例（合成表格 + chip 格，钉住 1 回合、表头两列、一行一格、`work` 为空），`test:unit` 372/372、`tsc --noEmit` 干净、`box-table` 2/2、`squeeze-rows` 5/5 |
 | `c512fef` | Antigravity（`agy`，Gemini 3.8）的面板在会话视图里**第一段是客户端自己的开屏**：五行半块字画（版本、账号、模型、cwd），提问那一行 `> 安装 …` 也在其中，而它不铺背景带，所以 `readUserBand` 收不到——390×844 上真面板 `w6:p8` 的回合 `user === null`，回答开头是 `▄▀▀▄  Antigravity CLI 1.4.7`、`gouki.xiao@gmail.com (Google AI Pro)` 这类账号家具，操作者看不到自己问过什么。开屏只在有一行写着 `Antigravity CLI <版本>` 时才剥（半块字也是进度条/火花线的字形，认错会吃掉 agent 自己画的东西），剥掉后同一窗口里的粗体 `> ` 行才算提问回显并开一个新回合（围栏里除外，别处的 `>` 引用仍是散文）。顺带把 `▸ Thought for 20s` 下面那几行缩进灰字收进思考块——Gemini 的思考摘要折行不带标记，原来会当回答的第一段。真快照：`w6:p8` 25 → **20** 行、`wE:pG` 146 → **138** 行，两份都从 `user=null` 变成 `user="安装 https://github.com/DietrichGebert/ponytail"` / `user="深度解析当前项目"`；devin `w2N:p5`（3 回合）与 omp `w6:p7`（1 回合）逐字未变 |
 | `22e94e3` | omp 在输入框正上方**重绘当前任务标题**，回答的末尾于是变成一行右对齐的家具：六个活 omp 面板里三个的最后一行是它（`w8:p4` 第 331/331 行 `Fix Ansible inventory tilde paths`、`w2N:p3` 第 100/100 行 `Implement GitLab provider and plugin slots`、`wE:pF` 第 52/52 行 `Build governable injection distribution agent`），带模式时则是徽章药丸（`🕵️ SPWN: …`、`🚦 SHIP: …`），恢复会话时还多一行 `Resumed session`。标题文字本身不带任何「我是家具」的记号，判据只能落在**对齐 + 邻居**：右内边距实测 110–166 列、正下方就是客户端自己的输入框行（`pi > [max] …`）。药丸有形状（`\p{Extended_Pictographic}` + 大写短词 + 冒号），形状与位置两条路都收；右对齐但没有这个邻居的行仍是散文。同一批真快照过新旧两版：12 份里 6 份逐字节不变，`w8:p4` 331 → **330**、`w2N:p3` 100 → **98**、`wE:pF` 52 → **50**、`wE:p7` 230 → **226**（药丸 + 恢复提示）、`w2T:p1` 272 → **271**，被删的每一条都只是标题行本身，`user`/`thoughts`/`work`/`recap` 一字未动 |
+| `5d495dc` | 打字时**回合页脚**（状态点、时钟、`markdown`/`text` 两个复制键）在粗指针下是 44px，横屏键盘把轨道压到 106px 时它占 **41%**，回答的最后一行被顶出可视区；竖屏 433px 轨道上同样是白扔 44px。这些都不是打字工具：点与时钟说的是发送键已经说过的事，两个复制键是读完才按的，所以 `has-keyboard` 期间它 `display: none` 出流，键盘一落就回来（`earlier lines dropped` 随行一起回来）；lane 级 `.chat__meta`（空会话 / `!read.live`）不是回合页脚，留着——失败读数时它是唯一的状态。五份活面板快照 × 竖横两帧实测：页脚 **1/44px → 0/0**，回退后 **1/44**，正文恰好拿到那 44px（`w2N:p3` 横屏从 2 行被切到 3 行完整显示）。新增 `web/tests/keyboard-turn-footer.spec.ts` 2 例钉住这套交换，另报一个只报不改的问题：`usePaneRead` 遇到非 200 读会让轮询循环带着未处理 rejection 死掉，`daemon unreachable` 只在「200 但 body 解析不出来」时到得了 |
 
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
@@ -2009,3 +2010,48 @@ devin（`w2N:p5`，3 回合 / 19+117+7 行）与 omp（`w6:p7`，1 回合 / 174 
 **已知的坑**：omp 的输入框行有两段式（短 footer 只有两个 ` > `，例如 `w8:p4` 的 `… > [D] ~/remote >------328K-`），`COMPOSER_FOOTER_RE`（要三段）和 `isStatusBar`（要四段）都不认它，所以位置判据不能只押在 footer 的形状上，这也是把 `INPUT_BOX_RE` 一起放进来的原因。
 
 **用例**：`conversation.test.ts` 新增四例——右对齐药丸 + `Resumed session` 都不进正文（回答只剩 agent 的两句）、无徽章的裸标题（内边距 110 列）同样被删、行首的 emoji 徽章（`✅ PASS:`）仍是散文、右对齐但没有输入框邻居时保持散文。`test:unit` **380/380**、`tsc --noEmit` 干净；`web/tests/code-edge-fade.spec.ts` 4/4、`squeeze-rows.spec.ts` 5/5、`lens-typing.spec.ts` 6/6。
+
+### 4.46 打字的时候，回合页脚把 44px 让给正文（`5d495dc`）
+
+会话视图里每一轮回答的下面都有一行 `chat__meta`：状态点、状态词、时钟（只有最后一轮有）、`markdown`/`text` 两个复制键，窗口被滚动切过时再加一句 `earlier lines dropped`。粗指针帧上这些键要满足 44px 的拇指面（`chat.css:1066` 的 `@media (pointer: coarse)`），所以这一行固定吃 44px。
+
+它和键盘撞在一起：
+
+| 帧 | 轨道（可读高度） | 页脚占 | 结果 |
+| --- | --- | --- | --- |
+| 横屏 844×390 + 210px 键盘 | 106px | 44px = **41%** | 回答最后一行压在轨道底边外的下面，只剩两行半 |
+| 竖屏 390×844 + 300px 键盘 | 433px | 44px = **10%** | 回答的收尾（recap 引用块）总要再滚一下 |
+
+而这一行里没有一件是打字时用的东西：状态点和时钟说的是发送键旁已经说过的事，两个复制键是**读完之后**才按的；`earlier lines dropped` 是信息，但它跟正文一起被看见才有意义。所以规则只有一条，加在同组的 `.has-keyboard .chat__lane` 紧后面（`chat.css:105-117`）：
+
+```css
+.has-keyboard .chat__turn > .chat__meta {
+  display: none;
+}
+```
+
+**为什么是出流，不是藏起来**：两个复制键的命中面是 `::after` 扩出来的伪元素，12px 间距，把它们挪到 0 尺寸会留下重叠的命中区；`visibility: hidden` 还留着 44px 的高度，白占。`display: none` 把它整行从轨道里去掉，键盘落下时没有任何状态需要恢复——CSS 是状态，不是动画。
+
+**为什么整行都藏**：只藏复制键、留下点和时钟仍然吃掉 24px 的一条，而这三个信息里没有任何一个值得为它牺牲半行正文。
+
+**没有加 `@media (pointer: coarse)` 守卫**：和它上面那条 `.has-keyboard .chat__lane` 的 8px 内边距一致。`has-keyboard` 只在可视视口真的被键盘压小的时候存在（`PromptBar.tsx:553-583` 拿 `keyboardInset(window.innerHeight, view.height)` 判断，`hidden === 0` 就摘掉类），物理键盘的桌面永远不设这个类，所以无需再加粗指针条件。
+
+**lane 级的那条 `.chat__meta` 不动**：`ChatLens` 在回合列表之外还挂一条——空会话的 `No transcript yet.` / `Waiting for the pane to paint.`，以及 `!read.live` 的 `daemon unreachable — showing the last snapshot`。它不是回合页脚，是「没有回合时唯一的状态」，所以选择器带 `> .chat__turn >`。
+
+**量到的东西**（五份活面板快照，竖屏 390×844 / 键盘 300、横屏 844×390 / 键盘 210，轨道滚到底再量被轨道切到的 `.chat__meta` 面积）：
+
+| 快照 | 竖屏 页脚 | 横屏 页脚 | 键盘落下后 |
+| --- | --- | --- | --- |
+| `wE:pF` | 1/44px → **0/0** | 1/44px → **0/0** | 1/44px |
+| `w2N:p3` | 1/44px → **0/0** | 1/44px → **0/0** | 1/44px |
+| `w6:p7` | 1/44px → **0/0** | 1/44px → **0/0** | 1/44px |
+| `w8:p4` | 1/44px → **0/0** | 1/44px → **0/0** | 1/44px |
+| `w2T:p1` | 1/44px → **0/0** | 1/44px → **0/0** | 1/44px |
+
+十帧全部正好拿到 44px，没有一帧变成负收益；把旧行为用一条 `display: flex !important` 反向注入量对照，同一帧立刻回到 1/44——所以这 44px 就是页脚自己的身高，不是别的地方让出来的。截图对照（横屏 `w2N:p3`）：旧行为下轨道只放得下两行被切断的 recap，新行为下同一块 recap 的三行完整可见。
+
+**用例**：`web/tests/keyboard-turn-footer.spec.ts` 两例。第一例在 390×844 上铺一份合成快照（一段提问带 + 一句收尾 + 24 条各一行），量键盘弹起前轨道底边到最后一行的距离（`> 44px`），弹起后页脚 `toBeHidden()`、距离 `≤ 16px`、两者差 `≥ 44px`，再落下键盘确认页脚回来、两个复制键还在、距离回到原值。第二例钉住「失败读数行不是回合页脚」：第一次读返回 200 + 空 `text`（于是没有回合、只有 lane 级 meta），之后每次读返回 200 + 解析不出来的 `{}`，等 `usePaneRead` 判 `live: false` 后断言 lane 级 `daemon unreachable` 在、`.chat__turn` 为 0，键盘弹起后这一行**仍然可见**。
+
+`tsc --noEmit` 干净、`test:unit` **380/380**、`keyboard-turn-footer` 2/2 + `landscape-keyboard` + `touch-targets` 合计 **6/6**。
+
+**只报不改**：`usePaneRead.ts` 的轮询 `tick` 是 `await readPane(...)`，而非 200 的读会让 `getJSON` 抛错、从 `tick` 里逃出去，`schedule` 再也不会被排上——面板于是**静静地冻在上一份快照上**，连 `daemon unreachable` 那一行都不会出现（`live` 只有 `readPane` 返回 `null` 也就是「200 但 body 解析不出来」时才翻假）。这个文件不在本轮可改的范围内，留作报告；真 daemon 短暂 5xx 时操作者会以为 agent 没在动。
