@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { deriveConversation, statusWord } from "./conversation.ts";
+import { splitTables } from "./table.ts";
 
 /* ------------------------------------------------------------------ ansi */
 
@@ -206,6 +207,40 @@ test("an inline code chip does not turn an answer paragraph into a user turn", (
   assert.equal(turn.user, "帮我看一下这个项目");
   assert.match(turn.answer, /仓库里有 README 和\s+Fetures\.md/);
   assert.match(turn.answer, /我会保留它们/);
+});
+
+/**
+ * devin paints that same chip inside a drawn table cell. The row then carries a
+ * background, and the orphan-box reader — there for a box whose opener was cut
+ * off above the scrollback window — moved it out of the answer. The table
+ * arrived with the row missing and its wrapped continuation standing in as a
+ * row of its own, so a two-column table rendered three cells
+ * (`["", "行", "4 个文件"]`). A drawn row carries three or more border glyphs;
+ * box body carries exactly two. Keep the row in the answer.
+ */
+test("a chip inside a drawn table cell does not lift the row out", () => {
+  const chip = (code: string): string =>
+    `${ESC}38;2;220;220;170m${ESC}48;2;0;43;54m ${code} ${RESET}`;
+  const text = snapshot([
+    band(" 看下这个项目的拆分"),
+    ink(" ┌────────────────┬──────────────────────┐"),
+    ink(" │ 问题           │ 证据                 │"),
+    ink(" ├────────────────┼──────────────────────┤"),
+    ink(` │ 单个文件太大   │ ${chip("server.go")} 2222 行 │`),
+    ink(" │                │ 按职责拆成 4 个文件  │"),
+    ink(" └────────────────┴──────────────────────┘"),
+  ]);
+  const conversation = deriveConversation(text);
+  assert.equal(conversation.turns.length, 1);
+  const turn = conversation.turns[0];
+  assert.equal(turn.user, "看下这个项目的拆分");
+  const tables = splitTables(turn.answer).flatMap((segment) =>
+    segment.kind === "table" ? [segment.table] : [],
+  );
+  assert.equal(tables.length, 1);
+  assert.deepEqual(tables[0].head, ["问题", "证据"]);
+  assert.deepEqual(tables[0].rows, [["单个文件太大", "server.go  2222 行 按职责拆成 4 个文件"]]);
+  assert.equal(turn.work.length, 0);
 });
 
 /**

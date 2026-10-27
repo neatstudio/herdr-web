@@ -543,6 +543,41 @@ const BOX_OPENER_RE = /^\+-{3,}/;
  */
 const BOX_EDGE_RE = /^[|│╎┆]/;
 const BOX_RULE_RE = /^\+-{3,}/;
+
+/**
+ * A drawn table's border rows, in the box-drawing glyphs devin and omp use for
+ * tables: `┌──┬──┐`, `├──┼──┤`, `└──┴──┘`. Only a table has `┬`, `┼` or `┴`
+ * in its border, so their presence is what tells a *table* apart from a plain
+ * box (a tool panel or a diff), whose borders are `+---+`/`|`.
+ *
+ * devin paints an inline code chip (`48;2;0;43;54`) inside a table cell. That
+ * makes the row "background filled", and the orphan-box reader — which exists
+ * for a box whose opener was cut off above the scrollback window — took the row
+ * for box body and moved it out of the answer. The table then arrived at the
+ * transcript with the whole row missing: its wrapped continuation stayed
+ * behind as a row of its own, so the first cell read empty and the tail of the
+ * cell became the third column (`["", "行", "4 个文件"]`).
+ */
+const TABLE_BORDER_RE = /^\s*[┌├└][─┬┼┴]+[┐┤┘]\s*$/;
+
+/** Whether the row sits between two borders of a drawn table. */
+function inDrawnTable(lines: readonly Line[], index: number): boolean {
+  for (const step of [-1, 1]) {
+    for (let probe = index + step; probe >= 0 && probe < lines.length; probe += step) {
+      const text = textOf(lines[probe]);
+      if (TABLE_BORDER_RE.test(text)) {
+        if (text.includes("┬") || text.includes("┼") || text.includes("┴")) {
+          return true;
+        }
+        break;
+      }
+      if (!BOX_EDGE_RE.test(text)) {
+        break;
+      }
+    }
+  }
+  return false;
+}
 const BOX_TITLED_RE = /^\+-{3,}\s+(.+?)\s+-{3,}\+?$/;
 const BOX_TITLED_LOOSE_RE = /^\+-{3,}\s+(.+?)\+?$/;
 const BOX_BARE_RE = /^\+-+\+?$/;
@@ -1185,6 +1220,15 @@ function buildBlocks(lines: Line[], groups: Map<number, BoxGroup>): Block[] {
       // A box rule (`+---+`) with no consumed opener is a border left over by a
       // window cut or a box this reader rejected; it is never a user message.
       if (BOX_RULE_RE.test(text)) {
+        index += 1;
+        continue;
+      }
+      // A drawn table row that happens to carry a chip is answer prose, not box
+      // body: the orphan reader below would lift it out of the table (see
+      // `inDrawnTable`). It can never be a user band either — `readUserBand`
+      // stops at a border glyph — so keeping it in the answer loses nothing.
+      if (BOX_EDGE_RE.test(text) && inDrawnTable(lines, index)) {
+        answer.push(text);
         index += 1;
         continue;
       }
