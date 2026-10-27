@@ -171,6 +171,7 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `a68282d` | 横屏打字时菜单把**问句**丢了：844×390 配 210px 键盘再打五行草稿，lens 只剩 82，40px 回答行 + 40px 折叠键行之后轨道只剩 **2px**——芯片还在，但「在答什么」那一行滚在外面，操作者看到一排按钮不知道在回答什么。破 167px 时改成一张卡：18px 问句条（`pickerAsk` 取下选项上方 3 行内以 `:`/`：`/`?`/`？` 收尾的那一行，`▸ ran tool` 当作上下文不算问题；96 字符封顶，超出带省略号）+ 44px 回答行，键条的 `esc`/`↵` 折进回答行做 44×32 的脸、键行不再画；轨道回到 **24px**（568×320 是 28px）。390×844 竖屏纯增量：lens 433、键条 44、问句条 `display: none`，逐字节同改动前 |
 | `0079960` | 画出来的表**少吃一行**：devin 在表格单元格里点一行内代码 chip（`48;2;0;43;54`），这一行于是带了背景色，`buildBlocks` 把所有带背景的行都送进盒子读取器，而 `readOrphanBoxRun`（本来是给「开框被滚动窗口切掉」的盒子用的）把它当成盒子正文搬出了回答——一张三列的表因此少了整行，折行后的续行独自留下来当了一行，`问题` 格读成空、`证据` 的尾巴跑进 `建议` 格，旁边还多一条重复的分隔线。390×844 真面板 `w2N:p5` 的第二张表实测第一行渲染成 `["", "行", "4 个文件"]`、第三行同样错位。判据从「数边框字形」改成「看这张表本身」：一行的上下邻行里只要有一条带 `┬`/`┼`/`┴` 的边框行，它就是画出来的表；盒面板和 diff 用 `+---+` 与 `|` 画，永远没有这三个字形，所以「窗口切在 omp diff 盒子里」那条老路径一位未动。修完同一份快照 `splitTables` 出 `单个文件太大 / server.go 2222 行、watcher.go 2113 行… / 按职责拆分。…可以拆成 4 个文件`，另外三份快照回合数与行一字未变；新增 `conversation.test.ts` 一例（合成表格 + chip 格，钉住 1 回合、表头两列、一行一格、`work` 为空），`test:unit` 372/372、`tsc --noEmit` 干净、`box-table` 2/2、`squeeze-rows` 5/5 |
 | `c512fef` | Antigravity（`agy`，Gemini 3.8）的面板在会话视图里**第一段是客户端自己的开屏**：五行半块字画（版本、账号、模型、cwd），提问那一行 `> 安装 …` 也在其中，而它不铺背景带，所以 `readUserBand` 收不到——390×844 上真面板 `w6:p8` 的回合 `user === null`，回答开头是 `▄▀▀▄  Antigravity CLI 1.4.7`、`gouki.xiao@gmail.com (Google AI Pro)` 这类账号家具，操作者看不到自己问过什么。开屏只在有一行写着 `Antigravity CLI <版本>` 时才剥（半块字也是进度条/火花线的字形，认错会吃掉 agent 自己画的东西），剥掉后同一窗口里的粗体 `> ` 行才算提问回显并开一个新回合（围栏里除外，别处的 `>` 引用仍是散文）。顺带把 `▸ Thought for 20s` 下面那几行缩进灰字收进思考块——Gemini 的思考摘要折行不带标记，原来会当回答的第一段。真快照：`w6:p8` 25 → **20** 行、`wE:pG` 146 → **138** 行，两份都从 `user=null` 变成 `user="安装 https://github.com/DietrichGebert/ponytail"` / `user="深度解析当前项目"`；devin `w2N:p5`（3 回合）与 omp `w6:p7`（1 回合）逐字未变 |
+| `22e94e3` | omp 在输入框正上方**重绘当前任务标题**，回答的末尾于是变成一行右对齐的家具：六个活 omp 面板里三个的最后一行是它（`w8:p4` 第 331/331 行 `Fix Ansible inventory tilde paths`、`w2N:p3` 第 100/100 行 `Implement GitLab provider and plugin slots`、`wE:pF` 第 52/52 行 `Build governable injection distribution agent`），带模式时则是徽章药丸（`🕵️ SPWN: …`、`🚦 SHIP: …`），恢复会话时还多一行 `Resumed session`。标题文字本身不带任何「我是家具」的记号，判据只能落在**对齐 + 邻居**：右内边距实测 110–166 列、正下方就是客户端自己的输入框行（`pi > [max] …`）。药丸有形状（`\p{Extended_Pictographic}` + 大写短词 + 冒号），形状与位置两条路都收；右对齐但没有这个邻居的行仍是散文。同一批真快照过新旧两版：12 份里 6 份逐字节不变，`w8:p4` 331 → **330**、`w2N:p3` 100 → **98**、`wE:pF` 52 → **50**、`wE:p7` 230 → **226**（药丸 + 恢复提示）、`w2T:p1` 272 → **271**，被删的每一条都只是标题行本身，`user`/`thoughts`/`work`/`recap` 一字未动 |
 
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
@@ -1958,3 +1959,53 @@ function isBareCaret(text: string): boolean {
 devin（`w2N:p5`，3 回合 / 19+117+7 行）与 omp（`w6:p7`，1 回合 / 174 行）两版输出逐字节相同：没有开屏的窗口里既没有行被剥，也没有 `>` 行被升格。
 
 **用例**：`conversation.test.ts` 新增四例——合成开屏 + 回显 ⇒ 一个回合、问题完整、回答里没有 `Antigravity`/`Google AI Pro`、折行的思考收进 `thoughts`；同一窗口第二个回显开第二个回合；没有客户端名的半块字与 `> 引用` 都留在回答里；围栏里的粗体 `> out.txt` 仍是 shell。`test:unit` **376/376**、`tsc --noEmit` 干净；`web/tests/transcript-hygiene.spec.ts` 3/3、`box-table.spec.ts` 2/2、`code-edge-fade.spec.ts` 4/4。
+
+### 4.45 omp 的标题回显不是回答的最后一句（`22e94e3`）
+
+**症状**：会话视图读到底，最后一行是 `Fix Ansible inventory tilde paths`——那是 herdr 标签条上早就写着的任务名，不是 agent 说的话。六个活 omp 面板里有三个这样收尾：
+
+| 面板 | 回答行数 | 最后一行 |
+| --- | --- | --- |
+| `w8:p4` | 331 | `Fix Ansible inventory tilde paths` |
+| `w2N:p3` | 100 | `Implement GitLab provider and plugin slots` |
+| `wE:pF` | 52 | `Build governable injection distribution agent` |
+
+带模式的面板则是一枚徽章药丸（`🕵️ SPWN: Reduce token usage, add jev decisions`、`🚦 SHIP: Add S3 bucket APK download and upload`）；从历史恢复的会话在回答下面还多一行 `Resumed session`。
+
+**面板结构**（`w8:p4`，200 列宽，`pane.read` 的 400 行窗口）：
+
+```
+                                        Fix Ansible inventory tilde paths   ← 右对齐标题（内边距 166 列）
+ pi > [max] DeepSeek V4.1 Flash 1017 (AMR) > [D] ~/remote >------328K-      ← 输入框自己的行
+╰─
+```
+
+`readLine` 只裁行尾空白，所以标题行的 `plain.length` 就是「内边距 + 标题长度」，`trimStart` 之后才是正文；`deriveConversation` 看到的只是这行字，没有 API 的 `terminalTitle` 可比。
+
+**判据**：
+
+| 情形 | 处理 | 依据 |
+| --- | --- | --- |
+| 右内边距 ≥ 24 列，且行首是 `\p{Extended_Pictographic}` + 2–7 个大写字符 + `:` | 家具（`isModePill`，纯形状） | 药丸有记号；窗口把输入框行切掉时也能认 |
+| 右内边距 ≥ 24 列，且**下一行**是客户端自己的输入框行（`isComposerFooter` 或 `INPUT_BOX_RE`） | 家具（`isTitleEcho`，位置） | 标题回显永远紧贴输入框；无徽章的裸标题只能这样认 |
+| 右对齐但下一行是散文 / 空格 / 什么都没有 | 保持散文 | 不许把操作者或 agent 自己右对齐的一行吃掉 |
+| 行落在代码围栏内 | 保持散文 | 围栏里是 agent 写的 shell 输出 |
+
+24 列是刻意留的余量：真实的标题回显内边距是 110–166 列，而 agent 会自己在行首写 `✅ PASS: all gates green`、列表缩进能到十几列——这几个都不能误伤。`INPUT_BOX_RE` 是从 `CHROME_PATTERNS` 里**提出来的同一个正则**（原来只给空输入框占位符用），现在两处共用，填满之后的 `pi > [max] <model> > …` 行同样认。
+
+**量到的东西**（同一批 400 行真快照过新旧两版 `deriveConversation`）：
+
+| 快照 | 回答行数（前 → 后） | 被删的行 |
+| --- | --- | --- |
+| `w8:p4` | 331 → **330** | `Fix Ansible inventory tilde paths` |
+| `w2N:p3` | 100 → **98** | `Implement GitLab provider and plugin slots` |
+| `wE:pF` | 52 → **50** | `Build governable injection distribution agent` |
+| `wE:p7` | 230 → **226** | `Resumed session`、`🚦 SHIP: Add S3 bucket APK download and upload` |
+| `w2T:p1` | 272 → **271** | `🕵 SPWN: Reduce token usage, add jev decisions` |
+| 其余 6 份（devin `w2N:p5`/`w6:p7`/`wE:pG`、agy `w6:p8`、shell `w6:p9`、omp `w6:p3`） | 逐字节不变 | — |
+
+每个被改动的回合里，`user`、`thoughts`、`work`、`recap` 全部逐字节相同，`lines` 计数也没变：删掉的只是标题行本身（行数变化里还含一次 `joinBlocks` 对连续空行的合并）。另跑一遍关键词泄漏扫描：`w8:p4`、`w2N:p3` 两份已无标题；`wE:pF` 的 `governable injection distribution agent` 仍在，但位置是 recap——那是 agent 在收尾里复述目标，本来就该留。
+
+**已知的坑**：omp 的输入框行有两段式（短 footer 只有两个 ` > `，例如 `w8:p4` 的 `… > [D] ~/remote >------328K-`），`COMPOSER_FOOTER_RE`（要三段）和 `isStatusBar`（要四段）都不认它，所以位置判据不能只押在 footer 的形状上，这也是把 `INPUT_BOX_RE` 一起放进来的原因。
+
+**用例**：`conversation.test.ts` 新增四例——右对齐药丸 + `Resumed session` 都不进正文（回答只剩 agent 的两句）、无徽章的裸标题（内边距 110 列）同样被删、行首的 emoji 徽章（`✅ PASS:`）仍是散文、右对齐但没有输入框邻居时保持散文。`test:unit` **380/380**、`tsc --noEmit` 干净；`web/tests/code-edge-fade.spec.ts` 4/4、`squeeze-rows.spec.ts` 5/5、`lens-typing.spec.ts` 6/6。
