@@ -162,6 +162,7 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `49b2aa0` | 手机草稿在卡片里**贴着底**：桌面把 `prompt__field` 对齐到底，好让一行高的按钮压在两行草稿的最后一行上；但手机的 pad 是 2×2（74px），比草稿两行起底（48px）高，于是草稿被顶到底：390×844 实测 field `751..825`、textarea `777..825`，占位文字比它旁边的 attach 按钮低 26px，卡片左上角是一块空洞。窄帧改成 `align-items: start`，草稿首行与 attach/image 齐平（都是 751），空出的那一行读作「可以接着写」；卡片仍是 96px，一行转录都没多花。打字态 pad 折成一行，用**三个类**把它重新居中到草稿上（`.has-keyboard .shell.is-narrow .prompt__field`，66px 卡片）；短横屏的侧折仍居中（70px）；平板 820×1180 与桌面 1280×800 还是 `end` |
 | `ec86308` | 手机上的长代码行原来不是**被裁掉**，是**看不出还能滑**：`.chat__code-body` 与 `.chat__pre` 本来就是 `white-space: pre` + 横向滚动，390×844 实测 `clientW 366 / scrollW 823`（另一块 708），滚得到，但面板边缘正好把字切在中间、又没有滚动条，读起来就是「这一行到此为止」。用 `.chat__pick` 的同一条约定：块自己带 `data-edges="more|back|both"`，CSS 用 `mask-image` 淡出还有字的那一侧（右 36px、左 22px，`-webkit-` 双写）。属性而不是 state——一条轨道里可能有十几个块，各滚各的，一个捕获阶段 `scroll` 监听统一重画；`ResizeObserver(lane)` 管旋转与换帧宽。16px 地板挡住「量出来 2–3px 舍入溢出」就去淡字的情况（横屏 820 的帧 `scrollW 823` 因此保持干净）。实测淡出末段字形亮度 688→53、跨最后 25 CSS px，是真淡出不是空转；滚到中段两侧都淡、滚到底只淡左，`webkitMaskImage` 每个状态都跟 `maskImage` 一致（iOS Safari 覆盖）。新增 `web/tests/code-edge-fade.spec.ts` 四例 |
 | `8ff5ad8` | 转录把客户端的输入框当成了 Agent 的最后一句话：可见快照止于输入框，末尾几行是客户端的家具，不是文字。Gemini（`agy`）最坏——它把思考过程画成**正体灰**`▸ Thought for 5s, 184 tokens`，既非斜体也无 dim 属性，于是「按样式认思考」的 `isReasoningLine` 把它当回答正文；一个回合的结尾会同时出现三句假话：Agent 在引用自己的计时行、光标裸 `>` 造出一个空 blockquote、`? for shortcuts` 成了回答的最后一句。规则改成「标记 + 词」：`○◌▸◉✻*` 后面必须跟 `thought\|thinking\|reasoning` 才算思考，理由是工作行 `● Ran 7 commands` 也是灰的，只有 `○`/`●` 分不出来；标记本身在进折叠时剥掉（字形是客户端的，`Thought for 5s, 184 tokens` 已经把话说全了）。`CHROME_PATTERNS` 补 `? for shortcuts`、`esc\|ctrl+c to interrupt\|cancel\|stop` 与**裸** `>` 行；`>` 后面有字仍然算正文，因为那是 Agent 真写下的引用，用例里也放了一条不许被吞掉。折叠侧零 CSS 改动：思考本来就渲染成一行可展的 `data-kind="thought"` 行，计时行现在住在里面。`tsc --noEmit` 干净，`test:unit` 333/333（新增三例），新增 `web/tests/transcript-hygiene.spec.ts` 三例（390×844 ×2、700×800 ×1），同跑 `pick-row` 4/4、`squeeze-rows` 5/5、`desktop-display-row` 2/2；真 agy 面板探头：转录止于回答与它的 meta 行 |
+| `e89d459` | 回答里的表格不是画，是表格——devin 的三列表头是「问题 / 证据 / 建议」，可 `Markdown` 把凡是画得出来的东西都当图，整块塞进 `<pre>`：真 devin 面板的一份回答量到 `scrollWidth` **1464px** 挤在 390px 手机的 **366px** 轨道里，五分之四的每一行都在侧滑后面，表头一列也看不见，读者只能猜哪一格对应哪一列。新增 `web/src/lib/table.ts` 认两种形状——盒子表（`┌─┬─┐`、`│ cells │`、`├─┼─┤`、`└─┴─┘`）与 markdown 竖线表——把回答切成「散文 / 表格」两段；盒子表只在开框、闭框、每一行的列数**与列宽**都一致时才认，所以 logo 框、目录树、被面板裁掉右框的行仍然逐字进 `.chat__pre`（`table.test.ts` 用「logo 框 + 树」这条夹具钉住字节不变）。渲染侧 `AnswerProse` 出真 `<table>`，每格带 `data-label="列名"`；`TurnList` 改用它。**560px 以下表头折进格子**：每行成一张卡、列名在值上面，一行一个 `border-top`，空格子连标签一起不印（真 devin 面板第一行第一格就被裁成空，印个「问题」再跟个空行只是噪声）。实测同一份真面板快照：390×844 下 `.chat__table` `scrollWidth == clientWidth == 366`、`.chat__pre` 0 个、`documentElement` 不横滚；719×844 下表头正常显示三列 `th`、行高与文本一致。新增 `web/tests/box-table.spec.ts` 两例（390 手机卡布局、719 桌面表格），同跑 `transcript-hygiene` 3/3、`code-edge-fade` 4/4；`tsc --noEmit` 干净，`test:unit` 341/341（含新增 8 例） |
 
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
@@ -1743,3 +1744,29 @@ function isBareCaret(text: string): boolean {
 - 700×800 细指针窄帧：同样规则，`prose` 含回答、不含键提示。
 
 `tsc --noEmit` 干净，`test:unit` 333/333（含新增三例：灰思考行折进折叠而 `● Ran` 仍算工作行；键提示与中断行被丢掉；裸光标是家具、有字的引用是正文）。同跑 `pick-row` 4/4、`squeeze-rows` 5/5、`desktop-display-row` 2/2。这一条补的是「转录末尾那几行不是人写的」这一类：判据必须落在**词**上，不能落在**样式**上。
+
+### 4.36 回答里的表格该排成表格（`e89d459`）
+
+`Markdown` 的默认判断是「画得出来的就当图」：box 字符、`|` 开头、行内三段以上空白的对齐列，全部逐字进 `<pre>`，且 `white-space: pre`。对目录树、logo、菜单这是对的——终端里唯一的排版就是坐标。对表格是错的：表格有列，列有名字，名字才是那格的意思。
+
+真 devin 面板 `w2N:p5` 的一份回答就是三列表（`问题 / 证据 / 建议`），量出来 `scrollWidth` **1464px**、容器 **366px**：横向滑四分之三才看到第三列，而表头早滑出去了，读者看见的是「建议每个版本留一天只修 Bug」却不知道它在哪一列。这不是「样式不好看」，是**信息在手机上没有入口**。
+
+**判据必须落在结构上，不能落在「像不像表格」**。纯 `|` 也算不出表格：diff 的 `+`/`-`、`||` 并集、markdown 里的竖线都能长成一行。所以 `web/src/lib/table.ts` 只认两种封闭形状：
+
+- **盒子表**：`┌─┬─┐` 开框、`├─┼─┤` 分隔、`└─┴─┘` 闭框、`│ … │` 行；开框、闭框、每一行的列数必须相同，且**各列宽度在框线里必须一致**（左边框、每根 `┬`、右边框的 x 坐标逐行对齐）。这条宽度判据就是 logo 框与目录树的防火墙——它们也是 box 字符，但右边界不在同一列。
+- **竖线表**：表头 + `|---|` 分隔 + 数据行，列数一致；`\|` 是转义、不切列，所以 `README 支持 GitLab\|Gitea` 仍是一格。
+
+不成立就**原样退回**：切分器只把散文按字节留给 `Markdown`，一处不符就整段不动，`table.test.ts` 用「logo 框 + 树」钉住这条分支的字节不变（这正是 4.34 修过的那些块的邻居，不能为了新功能回退）。被面板裁掉右框的行同理——宁可当图，也不要把半行当列。
+
+**渲染**：`web/src/components/session/AnswerProse.tsx` 里 `AnswerProse` 拿 `splitTables` 的段落，表格段出真 `<table>`（`thead` + `th scope="col"` + `td data-label="列名"`），散文段仍交给 `Markdown`；`TurnList` 的回答体换成它，复制按钮仍复制 `turn.answer` 原文（复制的是 Agent 说的话，不是渲染结果）。宽轨道是正常表格：无外框、行间 1px `--ui-border`、表头用 `--ui-label` + `--step-label` 字号，读起来是图注而不是加粗正文；第一列不给 `padding-left`，与上面的段落左缘对齐。
+
+**560px 以下是卡片**：`@media (max-width: 560px)` 里 `table/thead/tbody/td` 全 `display: block`、`thead` 藏起来、`tr` 变 flex 列并带 `gap: 5px` 与行间 `border-top`；`td::before` 用 `content: attr(data-label)` 印出列名（CSS 看不见已藏掉的 `th`，所以列名必须随格子进 DOM）。空格子 `td:empty` 整格不显示——真面板第一行第一格被裁成空，只印「问题」再跟个空行是噪声。`td[data-label=""]` 也不印标签，兼容没有表头的表。
+
+同一套淡出规则扩到表格：`ChatLens` 的 `data-edges` 扫描选择器加 `.chat__table`，三组 `mask-image` 各加一个选择器——宽轨道上列多到要滑的时候，和代码块一样在右缘淡出 36px（左 22px），滑到端点即收。
+
+**用例**：`web/tests/box-table.spec.ts` 两例，夹具是**合成**的（形状抄真面板，文字本用例自己写，因为被裁的单元格原文不进仓库）：
+
+- 390×844（`hasTouch`/`isMobile`）：`.chat__table` 恰好 1 个、`thead` 不可见、`tbody tr` 2 行、`td[data-label="证据"]` 首行含 `server.go 2222 行`（原框里那格是折成两行的）、表格含 `留一天修 Bug` 与 `大文件`、`.chat__pre` 0 个、`documentElement` 不横滚、前言两句都还在；
+- 719×844：`thead` 可见、`th` 3 个且第二个是 `证据`、2 行数据、卡片布局未触发、无 `.chat__pre`、页面不横滚。
+
+`tsc --noEmit` 干净，`test:unit` 341/341（新增 `table.test.ts` 8 例：盒子表含折行格、竖线表、`\|` 转义、logo 框 + 树逐字不变、右框被裁、只有表头的盒、无分隔行的竖线、纯散文原样）。同跑 `transcript-hygiene` 3/3、`code-edge-fade` 4/4。真 devin 面板复查：390×844 与 719×844 都只剩 1 个 `.chat__table`、`scrollWidth == clientWidth`（366 / 695），页面 390/390 与 719/719 不横滚。
