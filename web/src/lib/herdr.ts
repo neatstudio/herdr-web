@@ -53,6 +53,26 @@ export type HerdrPaneRead = {
 
 type JsonRecord = Record<string, unknown>;
 
+let consoleHost = "";
+
+/** Select the console whose herdr this page drives, through the local proxy. */
+export function setConsoleHost(host: string): void {
+  consoleHost = host.trim();
+}
+
+export function getConsoleHost(): string {
+  return consoleHost;
+}
+
+// Fleet and console-release calls stay local; herdr calls are the ones a host
+// switch forwards through /api/v1/remote/<host>/.
+export function consolePath(path: string): string {
+  if (consoleHost === "" || !path.startsWith("/api/v1/herdr/")) {
+    return path;
+  }
+  return `/api/v1/remote/${encodeURIComponent(consoleHost)}${path}`;
+}
+
 function asRecord(value: unknown): JsonRecord | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as JsonRecord)
@@ -73,16 +93,17 @@ function optionalString(value: unknown): string | undefined {
 }
 
 async function getJSON(path: string): Promise<unknown> {
-  const response = await fetch(path, { headers: { Accept: "application/json" } });
+  const target = consolePath(path);
+  const response = await fetch(target, { headers: { Accept: "application/json" } });
   if (!response.ok) {
-    throw new Error(`GET ${path} failed: ${response.status}`);
+    throw new Error(`GET ${target} failed: ${response.status}`);
   }
   return (await response.json()) as unknown;
 }
 
 async function postJSON(path: string, body: unknown): Promise<boolean> {
   try {
-    const response = await fetch(path, {
+    const response = await fetch(consolePath(path), {
       method: "POST",
       headers: { Accept: "application/json", "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -306,7 +327,7 @@ export async function uploadFile(file: File): Promise<Uploaded | null> {
   const form = new FormData();
   form.append("file", file, file.name);
   try {
-    const response = await fetch("/api/v1/herdr/uploads", { method: "POST", body: form });
+    const response = await fetch(consolePath("/api/v1/herdr/uploads"), { method: "POST", body: form });
     if (!response.ok) {
       return null;
     }
@@ -353,7 +374,7 @@ async function postJSONOutcome(
   body: unknown,
 ): Promise<{ ok: boolean; body: unknown; error: string }> {
   try {
-    const response = await fetch(path, {
+    const response = await fetch(consolePath(path), {
       method: "POST",
       headers: { Accept: "application/json", "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -372,7 +393,7 @@ async function postJSONOutcome(
 
 async function postJSONResult(path: string, body: unknown): Promise<unknown> {
   try {
-    const response = await fetch(path, {
+    const response = await fetch(consolePath(path), {
       method: "POST",
       headers: { Accept: "application/json", "Content-Type": "application/json" },
       body: JSON.stringify(body),

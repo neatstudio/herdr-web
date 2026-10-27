@@ -1813,6 +1813,38 @@ body::before {
   color: var(--ink);
 }
 
+/* A console picker, not a second navigation bar: it names the host whose herdr
+   the page is driving, and the address is the only stable name across machines. */
+.hostswitch {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.hostswitch select {
+  min-width: 0;
+  max-width: 12rem;
+  padding: 3px 18px 2px 7px;
+  border: var(--rule-w) solid var(--rule-strong);
+  background: var(--raised);
+  color: var(--ink);
+  font-family: var(--font-label);
+  font-size: var(--step-micro);
+  letter-spacing: 0.05em;
+  text-overflow: ellipsis;
+}
+
+.hostswitch select:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+@media (max-width: 700px) {
+  .hostswitch select {
+    max-width: 7.5rem;
+  }
+}
+
 /* --------------------------------------------------------- herdr panel */
 
 .hostpanel {

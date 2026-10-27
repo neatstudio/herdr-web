@@ -13,6 +13,12 @@ type Props = {
   onHost: () => void;
   /** Opens the full-screen fleet task board. */
   onFleet: () => void;
+  /** The remote console currently proxied, or "" for this one. */
+  host: string;
+  /** Other consoles this local console knows, by address. */
+  hosts: { addr: string; label: string }[];
+  /** Switch which console's herdr this page drives. */
+  onSwitchHost: (host: string) => void;
   /** True when the window is too narrow for three theme buttons. */
   narrow?: boolean;
 };
@@ -23,17 +29,22 @@ export function Masthead({
   choice,
   onChoice,
   onHost,
+  onSwitchHost,
   onFleet,
+  host,
+  hosts,
   narrow = false,
 }: Props) {
   const live = status?.status === "ok";
   const protocol = status?.protocol;
-  const octet = hostOctet(typeof window === "undefined" ? "" : window.location.hostname);
+  const hostname = host !== "" ? host.split(":")[0] : typeof window === "undefined" ? "" : window.location.hostname;
+  const octet = hostOctet(hostname);
   // The name says which machine this is and which build it runs: herdr(4)v0.3.1
   // on a tailnet address, herdr v0.3.1 on this machine. The daemon's own version
   // is not in it — it changes for reasons that have nothing to do with which
   // console a tab belongs to, and the panel is where it belongs.
   const consoleVersion = build === "" ? "—" : build;
+  const chooseHost = onSwitchHost;
   const label = octet === "" ? `herdr ${consoleVersion}` : `herdr(${octet})${consoleVersion}`;
 
   // The tab strip is the one place several consoles are seen at once, and there
@@ -80,6 +91,25 @@ export function Masthead({
         )}
         {!live && <span className="cluster__dim">{status === null ? "offline" : "down"}</span>}
       </button>
+
+      <label className="hostswitch" title="switch which console's herdr this page drives">
+        <span className="sr-only">herdr host</span>
+        <select
+          id="herdr-host-switch"
+          aria-label="herdr host"
+          value={host}
+          onChange={(event) => chooseHost(event.target.value)}
+        >
+          <option value="">this console</option>
+          {hosts
+            .filter((item) => item.addr !== "")
+            .map((item) => (
+              <option key={item.addr} value={item.addr}>
+                {item.label === "" ? item.addr : item.label}
+              </option>
+            ))}
+        </select>
+      </label>
 
       <button
         type="button"

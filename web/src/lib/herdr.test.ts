@@ -222,3 +222,15 @@ test("fetchDispatches answers null for a failed read, not a thrown timer", async
     restore();
   }
 });
+
+test("consolePath proxies herdr calls and keeps fleet/release local", () => {
+  herdr.setConsoleHost("100.89.0.9:5000");
+  assert.equal(
+    herdr.consolePath("/api/v1/herdr/status"),
+    "/api/v1/remote/100.89.0.9%3A5000/api/v1/herdr/status",
+  );
+  assert.equal(herdr.consolePath("/api/v1/fleet"), "/api/v1/fleet");
+  assert.equal(herdr.consolePath("/api/v1/herdr-web/release"), "/api/v1/herdr-web/release");
+  herdr.setConsoleHost("");
+  assert.equal(herdr.consolePath("/api/v1/herdr/status"), "/api/v1/herdr/status");
+});

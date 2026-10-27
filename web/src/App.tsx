@@ -25,6 +25,7 @@ import {
   splitPane,
   fetchStatus,
   fetchWorkspaces,
+  setConsoleHost,
   sendPaneKeys,
   type Fleet,
   type HerdrPane,
@@ -55,6 +56,12 @@ import {
   type DisplayMode,
   type ThemeChoice,
 } from "@/lib/theme";
+
+const initialConsoleHost =
+  typeof window === "undefined"
+    ? ""
+    : (new URLSearchParams(window.location.search).get("host") ?? "").trim();
+setConsoleHost(initialConsoleHost);
 
 /** One poll drives the whole fleet: status, workspaces and every pane. */
 const FLEET_POLL_MS = 3000;
@@ -122,6 +129,7 @@ export function App() {
   const [newWorkspace, setNewWorkspace] = useState(false);
   const [dispatch, setDispatch] = useState(false);
   const [fleetView, setFleetView] = useState<Fleet | null>(null);
+  const [consoleHost] = useState(initialConsoleHost);
   const [narrow, setNarrow] = useState(false);
   // Which register the session is being read in on a phone. Seeded per pane by
   // the effect below; a shell ignores it and keeps the terminal.
@@ -501,15 +509,45 @@ export function App() {
 
   const paneTone = activePane ? toneOf(activePane.agentStatus) : null;
 
+  const hostOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const list: { addr: string; label: string }[] = [];
+    if (consoleHost !== "") {
+      list.push({ addr: consoleHost, label: consoleHost });
+      seen.add(consoleHost);
+    }
+    for (const peer of fleetView?.peers ?? []) {
+      if (peer.addr === "" || peer.stale || seen.has(peer.addr)) {
+        continue;
+      }
+      seen.add(peer.addr);
+      list.push({ addr: peer.addr, label: peer.addr });
+    }
+    return list;
+  }, [consoleHost, fleetView]);
+
+  const switchHost = (host: string): void => {
+    const url = new URL(window.location.href);
+    if (host === "") {
+      url.searchParams.delete("host");
+    } else {
+      url.searchParams.set("host", host);
+    }
+    window.location.assign(url.toString());
+  };
+
   return (
     <div className={narrow ? "shell is-narrow" : "shell"}>
       <Masthead
         onHost={() => setHostPanel(true)}
         onFleet={() => setDispatch(true)}
         status={status}
-        consoleVersion={selfVersion !== "" ? selfVersion : status?.consoleVersion ?? ""}
+        consoleVersion={consoleHost !== "" ? status?.consoleVersion ?? "" : selfVersion !== "" ? selfVersion : status?.consoleVersion ?? ""}
         choice={choice}
         onChoice={chooseTheme}
+        host={consoleHost}
+        hosts={hostOptions}
+        onSwitchHost={switchHost}
         narrow={narrow}
       />
 
