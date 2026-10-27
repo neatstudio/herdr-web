@@ -164,6 +164,8 @@ herdr 独有、Ovis 没有的一处：**聊天 lens 里出现键条**（只在�
 | `8ff5ad8` | 转录把客户端的输入框当成了 Agent 的最后一句话：可见快照止于输入框，末尾几行是客户端的家具，不是文字。Gemini（`agy`）最坏——它把思考过程画成**正体灰**`▸ Thought for 5s, 184 tokens`，既非斜体也无 dim 属性，于是「按样式认思考」的 `isReasoningLine` 把它当回答正文；一个回合的结尾会同时出现三句假话：Agent 在引用自己的计时行、光标裸 `>` 造出一个空 blockquote、`? for shortcuts` 成了回答的最后一句。规则改成「标记 + 词」：`○◌▸◉✻*` 后面必须跟 `thought\|thinking\|reasoning` 才算思考，理由是工作行 `● Ran 7 commands` 也是灰的，只有 `○`/`●` 分不出来；标记本身在进折叠时剥掉（字形是客户端的，`Thought for 5s, 184 tokens` 已经把话说全了）。`CHROME_PATTERNS` 补 `? for shortcuts`、`esc\|ctrl+c to interrupt\|cancel\|stop` 与**裸** `>` 行；`>` 后面有字仍然算正文，因为那是 Agent 真写下的引用，用例里也放了一条不许被吞掉。折叠侧零 CSS 改动：思考本来就渲染成一行可展的 `data-kind="thought"` 行，计时行现在住在里面。`tsc --noEmit` 干净，`test:unit` 333/333（新增三例），新增 `web/tests/transcript-hygiene.spec.ts` 三例（390×844 ×2、700×800 ×1），同跑 `pick-row` 4/4、`squeeze-rows` 5/5、`desktop-display-row` 2/2；真 agy 面板探头：转录止于回答与它的 meta 行 |
 | `e89d459` | 回答里的表格不是画，是表格——devin 的三列表头是「问题 / 证据 / 建议」，可 `Markdown` 把凡是画得出来的东西都当图，整块塞进 `<pre>`：真 devin 面板的一份回答量到 `scrollWidth` **1464px** 挤在 390px 手机的 **366px** 轨道里，五分之四的每一行都在侧滑后面，表头一列也看不见，读者只能猜哪一格对应哪一列。新增 `web/src/lib/table.ts` 认两种形状——盒子表（`┌─┬─┐`、`│ cells │`、`├─┼─┤`、`└─┴─┘`）与 markdown 竖线表——把回答切成「散文 / 表格」两段；盒子表只在开框、闭框、每一行的列数**与列宽**都一致时才认，所以 logo 框、目录树、被面板裁掉右框的行仍然逐字进 `.chat__pre`（`table.test.ts` 用「logo 框 + 树」这条夹具钉住字节不变）。渲染侧 `AnswerProse` 出真 `<table>`，每格带 `data-label="列名"`；`TurnList` 改用它。**560px 以下表头折进格子**：每行成一张卡、列名在值上面，一行一个 `border-top`，空格子连标签一起不印（真 devin 面板第一行第一格就被裁成空，印个「问题」再跟个空行只是噪声）。实测同一份真面板快照：390×844 下 `.chat__table` `scrollWidth == clientWidth == 366`、`.chat__pre` 0 个、`documentElement` 不横滚；719×844 下表头正常显示三列 `th`、行高与文本一致。新增 `web/tests/box-table.spec.ts` 两例（390 手机卡布局、719 桌面表格），同跑 `transcript-hygiene` 3/3、`code-edge-fade` 4/4；`tsc --noEmit` 干净，`test:unit` 341/341（含新增 8 例） |
 | `42bf53f` | 终端里的一行是**面板的宽度**，不是句子的长度：devin 一份回答到手机上时，每 200 显示列就有一个换行，而 `Markdown` 把换行一律变成空格——于是整段话成一堵墙，词中间坐着空格（`功 能`、`本次只看了一个仓库，避免了破坏既有功 能测试。`），段落之间也没有空行。新增 `web/src/lib/prose.ts` 的 `reflowProse`：按**终端列**量宽（CJK 两列），只把「上一行确实跑到换行列」的两半接回去——上一行宽度超过 `wrap - 10` 才算折行，短行结束一个句子才算段尾（补一个空行）；围栏块、`---` 规则线、画出来的表与图、列表/标题/引用开头一律逐字不动。接缝处**只有两侧都是 CJK 才不加空格**，全角标点两侧也不加（`./...、前端`、`通过：go vet`），被换行切断的 URL/括号路径（`(file:///` + `Users/…`）同样不加；反过来「上一行占满换行列、这一行是短的无标点纯文字」是 devin 那种裸标题，给它单独成段。渲染侧 `AnswerProse` 把散文段先过一遍 `reflowProse` 再交给 `Markdown`（表格段不变）。真 devin 面板 `w2N:p5` 的文本实测：第 0 回合 40 行散文 → **28 行**、9 段 → **12 段**，第 4 回合 113 → 112 行、34 → 35 段，同一份文本过两遍结果不变；390×844 渲染后 5 段 `.chat__prose` 合计 10562px，轨道 `scrollHeight` 11640 / `clientHeight` 603。`tsc --noEmit` 干净，`test:unit` 355/355（新增 `prose.test.ts` 14 例：中文折行不加空格、拉丁词之间补回一个空格、拉丁↔中文保留空格、ASCII 句点不断段、短句 `。` 断段、换行列上的 `。` 不断段、空行不跨、列表/标题/引用/规则线不动、画出来的行不动、围栏块逐字、全角标点不加空格、裸标题成段、URL 不断开、幂等），新增 `web/tests/prose-reflow.spec.ts` 4 例（390×844 手机：中文折行接回、英文折行接回、围栏块三行原样、两条列表项各自成项），同跑 `transcript-hygiene` 3/3、`box-table` 2/2、`code-edge-fade` 4/4 |
+| `728c9bd` | 客户端排队的 `/` 命令把一条回答**截成两半**：devin 在回答途中把用户排队的命令原样回显成一行 `It looks like you've queued …`，转录把它当成了新的提问带——于是「改好了，可以重试」被切成两轮，后半截还丢了作者。判据落在「这行带不带 `/`」与「客户端认不认结束标记」上：只有 devin 印 `---EOF--*`，只有在那里才证明得了这是一次回显，所以别的客户端行为一字未动 |
+| `dffbda4` | `/usage` 的答案不是一个段落，是一张**两列的表**：devin 印 `Daily/Weekly/This session/Activity/Tokens/Model` 一列标签、一列数字，过一遍散文渲染就并成两段跑句，`Model Claude Opus 5.5 Medium` 粘在 token 计数后面，数字全丢了自己的标签。改由 `lib/clientView.ts` 按行自己认形状（至少两行、每行都得是已知标签），认出来就逐字画成 `pre` 并 `pre-wrap` 折行——390px 轨道上 Weekly 那行是可用宽度的两倍，而重置时间正是提问的理由 |
 
 配套验证：`npm --prefix web run typecheck` 干净；`test:unit` 285/285（此数后被各条改动抬到 310，含 `fitComposer` 两行起底、
 `imeEnter` 各一例、`findLabel` 的 1/4、0/0 与越界夹取，以及 `lens.test.ts` 里
@@ -1785,3 +1787,37 @@ function isBareCaret(text: string): boolean {
 **用例**：`web/tests/prose-reflow.spec.ts` 四例，夹具是**合成**的（形状抄真面板，文字本用例自己写，因为被裁的单元格原文不进仓库）：390×844 手机帧下断言「功 能」的被切断处被接回、英文折行接回、围栏代码块三行原样、两条列表项各自成项。`prose.test.ts` 14 例覆盖规则本身，含幂等。
 
 `tsc --noEmit` 干净，`test:unit` 355/355（`prose.test.ts` 新增 14 例），`prose-reflow` 4/4，同跑 `transcript-hygiene` 3/3、`box-table` 2/2、`code-edge-fade` 4/4。真 devin 面板复查：390×844 下 5 段 `.chat__prose` 合计 10562px（轨道 `scrollHeight` 11640 / `clientHeight` 603），段首不再粘在一起，`项目深度评审结论` 独立成段，`file:///Users/gouki/…` 不再断成两半。
+
+### 4.38 客户端排队的命令不是新的一轮（`728c9bd`）
+
+手机上打字慢，操作者会在 agent 干活的时候先把下一条命令存进去。devin 对这种输入的处理是**回显一行**再接着干手上的活：
+
+```
+❭ /model
+  It looks like you've queued a message. I'll address it once I've finished this turn.
+  ✓ Model set to Claude Opus 5.5 Medium
+```
+
+转录把「回显那一行 + 后面的回答」当成了新的提问带，于是第 3 轮回答被截成两段：`/model` 那一轮 4023 字（其实是上一轮的后半截），真正的问题那一轮被劈开。真面板 `w2N:p5` 上量出来是 6 轮，其中 `/model` 那轮 4023 字、真正属于它的只有 39 字。
+
+**判据不能只看「作答没结束」**：那会把正常的一段散文也吞掉（`each user band opens a new turn` 就是钉这条的用例）。也**不能只看「这行是不是带 `/`」**：devin 印的家具里也有 `/`（`~/server/ide` 这种 cwd 行）。所以成立的条件是两者同时为真——作答还没结束（`!terminated`）**且**这个带子的正文以 `/` 开头。再加上一道前置闸门 `eofClient`：只有整份快照里出现过结束标记（`^-{2,}\s*EOF\b`）的客户端才允许走这条捷径。别的客户端（omp / claude / codex / kimi）不印结束标记，就分不清「客户端回显」和「agent 真的又被问了一句」——在真面板上，`/usage` 前面那行如果是家具（` ⏺ ~/server/ide`），放宽判据就会把家具当成回答继续读。
+
+被跳过的回显行会让 `answer` 里多出两个空行（`…代码。\n\n\n未提交…`），所以跳的时候立一个 `muted` 旗，下一次真正 `answer.push` 才清掉。
+
+**真面板复查（390×844，`/tmp/turns2.mts`）**：6 轮 → 5 轮；`/model` 那轮 4023 → 39 字、工作行 1；被打断的那轮恢复成 7344 字（原来被切成两半）；`/usage` 那轮 282 字、0 工作行。
+
+**用例**：`conversation.test.ts` 28 → 32 例，四例分别钉「答题途中排队的命令不切段」「斜杠命令印出来的面板就是它的答案」「答完再敲的命令另起一轮」「没有结束标记时命令带仍开新轮（2 轮）」。
+
+`tsc --noEmit` 干净，`test:unit` 359/359。
+
+### 4.39 `/usage` 的面板要画成面板（`dffbda4`）
+
+`/usage` 不由模型回答，由客户端自己印：`Daily/Weekly` 两行进度条、`This session` 下的 `Activity/Tokens`、最后一行 `Model`。过 `AnswerProse` 就并成两段跑句——`Model Claude Opus 5.5 Medium` 粘在 `(~129k per turn)` 后面，每个数字都离开了说明它的标签。同一份夹具实测：旧渲染 2 段 / 210px，新渲染 7 行 / 194px，标签列完整。
+
+**判据是行的形状，不是位置**：`web/src/lib/clientView.ts` 只认已知标签开头的行（`Daily|Weekly|Monthly|Hourly` + 进度条、`This session`、`Activity n turns`、`Tokens … in`、`Model …`），空行不计，**至少两行且每一行都得命中**。宁可漏认也不误认——误认的代价是一段真散文被画成等宽块；所以「只提到 model 的两句话」和「一句引言 + 一行标签」都判为散文（各有单例钉住）。
+
+**渲染用 `pre-wrap` 而不是横滑**：面板不是图，没有哪个字形压在另一个上，一行比轨道宽时折下去不丢意思。390px 轨道上 Weekly 那行是可用宽度的两倍，而 `resets Oct 25, 8:00 AM (UTC)` 正是操作者问 `/usage` 的理由——横滑会把这个答案滑出答案之外。所以新类 `.chat__pre--flow` 只改 `white-space: pre-wrap` 与 `word-break: break-word`，`.chat__pre` 的面板底、等宽字体、圆角、淡出规则全部照旧（`Markdown` 里真正的图仍走 `pre` 原样）。
+
+**用例**：`clientView.test.ts` 5 例（整块面板、只有 Daily+Model 的半块、单行标签不是面板、两句散文、一句引言 + 一行标签）；`web/tests/client-view.spec.ts` 两例在 390×844 手机帧下断言 7 行、`Model` 独占最后一行、`Medium Activity` 不曾出现（没并成段）、`whiteSpace === "pre-wrap"` 且 `scrollWidth == clientWidth`（没横滑）。
+
+`tsc --noEmit` 干净，`test:unit` 359 → 364（新增 5 例），`client-view` 2/2，同跑 `transcript-hygiene` 3/3、`prose-reflow` 4/4、`box-table` 2/2、`code-edge-fade` 4/4。
