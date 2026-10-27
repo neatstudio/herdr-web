@@ -35,6 +35,12 @@
   --ui-meta: 11px;
   --ui-row: 26px;
   --ui-lane: min(100% - 24px, 820px);
+  /* The reading settings (lib/reading.ts) write these same names onto <html>,
+     so the stylesheet keeps owning geometry and the choice only re-points it.
+     These are the measured defaults: a console nobody has configured computes
+     exactly what it did before the settings existed. */
+  --ui-leading: 1.65;
+  --ui-code: 12px;
 }
 
 /* The one child that takes the leftover height of the stage. The pane strip
@@ -175,5 +181,10 @@
   :root {
     --ui-body: 14px;
     --ui-meta: 10.5px;
+    /* 21.7px of leading and 11.5px monospace are the phone's measured
+       baselines; the reading settings can shrink or grow both, and this is
+       where they enter the cascade. */
+    --ui-leading: 1.55;
+    --ui-code: 11.5px;
   }
 }

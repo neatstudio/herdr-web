@@ -344,7 +344,7 @@
 .chat__prose {
   min-width: 0;
   font-size: var(--ui-body);
-  line-height: 1.65;
+  line-height: var(--ui-leading);
   overflow-wrap: anywhere;
 }
 
@@ -981,7 +981,7 @@
   padding: 10px 12px;
   color: var(--ui-text);
   font-family: var(--ui-mono);
-  font-size: 12px;
+  font-size: var(--ui-code);
   line-height: 1.5;
   white-space: pre;
   overflow-x: auto;
@@ -1000,7 +1000,7 @@
   background: var(--ui-panel);
   color: var(--ui-dim);
   font-family: var(--ui-mono);
-  font-size: 12px;
+  font-size: var(--ui-code);
   line-height: 1.45;
   white-space: pre;
   overflow-x: auto;
@@ -1188,19 +1188,25 @@
 
   /* 15px/1.65 is a document; 14px/1.55 is a column, and the paragraph gap
      drops with it — 12px between paragraphs of 14px text read as two separate
-     answers. */
+     answers. Both numbers come from the token layer so the reading settings can
+     re-point them without this rule needing to know (session.css owns the
+     phone's 14px/1.55 defaults). */
   .chat__prose {
-    font-size: 14px;
-    line-height: 1.55;
+    font-size: var(--ui-body);
+    line-height: var(--ui-leading);
   }
 
   .chat__prose p {
     margin: 0 0 8px;
   }
 
-  /* Tables are already cards below 560px; the cells keep one line each. */
+  /* Tables are already cards below 560px; the cells keep one line each.
+     Everything read rather than pressed follows the reading size: at the
+     phone's 14px default these calcs resolve to the exact px measured here
+     (12.5px cells, 12.5px work head, 12px rows, 13px empty state), so the
+     settings move them and nothing else moves on its own. */
   .chat__table {
-    font-size: 12.5px;
+    font-size: calc(var(--ui-body) - 1.5px);
   }
 
   /* The footer row (time, copy, again) is metadata, not content: 44px made it
@@ -1232,7 +1238,7 @@
      read, not pressed. */
   .work__head {
     min-height: 30px;
-    font-size: 12.5px;
+    font-size: calc(var(--ui-body) - 1.5px);
   }
 
   .work__rows {
@@ -1244,7 +1250,7 @@
   .work__row > button {
     min-height: 24px;
     padding: 2px 0;
-    font-size: 12px;
+    font-size: calc(var(--ui-body) - 2px);
   }
 
   /* Fenced output: the header existed to carry copy and "show all", and those
@@ -1278,20 +1284,20 @@
 
   .chat__code-body {
     padding: 8px 10px;
-    font-size: 11.5px;
+    font-size: var(--ui-code);
     line-height: 1.45;
   }
 
   .chat__pre {
     padding: 8px 10px;
-    font-size: 11.5px;
+    font-size: var(--ui-code);
     line-height: 1.42;
   }
 
   /* The empty lens is a first screen, not a title page: one line of 13px. */
   .chat__empty {
     gap: 10px;
-    font-size: 13px;
+    font-size: calc(var(--ui-body) - 1px);
     line-height: 1.5;
   }
 }

@@ -48,6 +48,12 @@ import { holdCreatedPane, type CreatedPane } from "@/lib/createdPane";
 import type { ComposerAction } from "@/lib/composer";
 import { longPressHandlers } from "@/lib/press";
 import {
+  applyReading,
+  readStoredReading,
+  storeReading,
+  type Reading,
+} from "@/lib/reading";
+import {
   applyTheme,
   readStoredChoice,
   readStoredDisplay,
@@ -108,6 +114,9 @@ export function App() {
   // The resolved theme, so panes can mirror their colours to match it.
   const [theme, setTheme] = useState<PageTheme>("dark");
   const [display, setDisplay] = useState<DisplayMode>(() => readStoredDisplay(safeStorage()));
+  // How large the transcript's text is and how long its measure is. Applied as
+  // custom properties on <html>; the stylesheet keeps owning the geometry.
+  const [reading, setReading] = useState<Reading>(() => readStoredReading(safeStorage()));
   const [status, setStatus] = useState<HerdrStatus | null>(null);
   const [workspaces, setWorkspaces] = useState<HerdrWorkspace[]>([]);
   const [panes, setPanes] = useState<HerdrPane[]>([]);
@@ -169,6 +178,17 @@ export function App() {
   const chooseDisplay = useCallback((next: DisplayMode) => {
     setDisplay(next);
     storeDisplay(safeStorage(), next);
+  }, []);
+
+  // The reading choice writes its own custom properties, so the first paint
+  // already has them: it runs before the fleet's first poll resolves.
+  useEffect(() => {
+    applyReading(reading);
+  }, [reading]);
+
+  const chooseReading = useCallback((next: Reading) => {
+    setReading(next);
+    storeReading(safeStorage(), next);
   }, []);
 
   const chooseTheme = useCallback((next: ThemeChoice) => {
@@ -746,6 +766,8 @@ export function App() {
           setNewWorkspace(true);
         }}
         onClose={() => setPicker(false)}
+        reading={reading}
+        onReading={chooseReading}
       />
 
       <FileViewer path={openPath} onClose={() => setOpenPath(null)} />
